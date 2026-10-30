@@ -115,7 +115,8 @@ def status(root: Path) -> list[str]:
     """The problems of the repository settings. An empty list means that the settings are correct.
 
     The server files must agree with the team config on the default branch, as CODEOWNERS does. Each examination
-    also updates the record that the session start notice reads, with the warnings that do not stop a handover."""
+    also updates the record that the session start notice reads. The record also keeps the warnings that do not stop
+    a handover, for `infra` and `setup`."""
     found = repository(root)
     if found is None:
         problems = ["Akasha cannot read the GitHub repository — make sure that gh is installed and logged in"]
@@ -221,13 +222,15 @@ def _examine_administrator(root: Path, team: config.Team, approved_by: str) -> N
                               "administrator of the repository to approve the change on their own computer")
 
 
-def apply(root: Path, approved_by: str = "") -> list[str]:
-    """Write the repository files and change the GitHub settings. An administrator must approve first.
+def apply(root: Path, approved_by: str = "") -> tuple[list[str], list[str]]:
+    """Write the repository files and change the GitHub settings. An administrator must approve first. Return the
+    problems, and the warnings that do not stop a handover.
 
     Akasha turns on the branch protection and the auto-merge of GitHub. When the plan of the repository has none,
     Akasha records `[server] rules = "akasha"`, and its merge and watch workflows enforce the rules. Akasha keeps the
     CODEOWNERS lines and the pull request template that the team already has. The server files get the values of
-    the team config in this checkout: the administrator commits them with the team config in one pull request."""
+    the team config in this checkout: the administrator commits them with the team config in one pull request. Thus
+    the warnings are for the team config in this checkout, before the pull request merges."""
     team = config.load(root)
     _examine_administrator(root, team, approved_by)
     for target, text in desired.workflows(team).items():
@@ -243,7 +246,7 @@ def apply(root: Path, approved_by: str = "") -> list[str]:
         template.write_text(desired.template(), encoding="utf-8")
     found = repository(root)
     if found is None:
-        return ["Akasha wrote the files, but cannot reach GitHub to change the settings"]
+        return ["Akasha wrote the files, but cannot reach GitHub to change the settings"], []
     slug, branch = found
     problems = []
     rules = "github"
@@ -262,8 +265,9 @@ def apply(root: Path, approved_by: str = "") -> list[str]:
         problems.append(f"GitHub refused the repository settings: {changed.stderr.strip()[:300]}")
     # GitHub can accept the request and keep a setting off, for example auto-merge in a private repository on the
     # free plan. Thus Akasha reads the settings again.
-    problems += [f"GitHub kept a setting off: {item}" for item in desired.settings_drift(settings(root, slug), wanted)]
-    return problems
+    current = settings(root, slug)
+    problems += [f"GitHub kept a setting off: {item}" for item in desired.settings_drift(current, wanted)]
+    return problems, desired.warnings(team, current)
 
 
 def pull_request(root: Path, address_or_branch: str) -> dict:

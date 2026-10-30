@@ -45,11 +45,12 @@ def secrets_status(workcopy: Path, changed: list[str]) -> tuple[str, str]:
 
 
 def _decode(raw: bytes) -> str:
-    """Most tools write UTF-8. Windows tools can write the code page of the computer, for example Korean."""
+    """Most tools write UTF-8. Windows tools can write the code page of the computer, for example Korean. The hooks
+    and the server check run Python in UTF-8 mode, so Akasha asks for the code page of the computer itself."""
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError:
-        return raw.decode(locale.getpreferredencoding(False), errors="replace")
+        return raw.decode(locale.getencoding(), errors="replace")
 
 
 def passed(status: dict[str, str]) -> bool:

@@ -101,8 +101,9 @@ def run(root: Path, approved_by: str) -> list[str]:
                           encoding="utf-8")
     report.append("Akasha wrote " + ", ".join(codex.write(root)) + ". Codex needs Akasha installed with pip.")
     if approved_by:
-        refused = github.apply(root, approved_by)
+        refused, risks = github.apply(root, approved_by)
         report += [f"GitHub: {item}" for item in refused] or ["GitHub settings agree with akasha.toml."]
+        report += [f"GitHub warning: {item}" for item in risks]
         report.append(RULES_TEXT[config.load(root).server_rules])
     else:
         report += [f"GitHub: {item}" for item in problems] + warned

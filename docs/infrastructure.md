@@ -31,10 +31,10 @@ The helpers are always installed. Before each action, they examine the default b
 
 The check runs on each pull request and on each merge queue run. It runs on the machine of `[ci] runs-on` with the Python of `[ci] python` in `akasha.toml`, by default `ubuntu-latest` and Python 3.12. Its steps use bash, also on a Windows runner:
 
-1. It installs Akasha. The repository variable `AKASHA_SOURCE` can name another source, for example a mirror or a fork.
+1. It installs Akasha. The repository variable `AKASHA_SOURCE` can name another source, for example a mirror or a fork. It installs Akasha again on each run, also when the machine has it: a runner of the team keeps its Python between runs, and an update of Akasha keeps the version 1.0.0.
 2. It takes `akasha.toml` from the default branch.
 3. It runs the `setup` command of the team.
-4. It runs the required checks on the files that the pull request changes. A check with `only_when` runs only when the pull request changes a file that it examines, or a file of `run_all_when`.
+4. It runs the required checks on the files that the pull request changes. A check with `only_when` runs only when the pull request changes a file that it examines, or a file of `run_all_when`. Akasha runs in the UTF-8 mode of Python, so that it can write each result also on a Windows runner.
 
 The rules come from the default branch. Thus a pull request that makes the checks weaker cannot pass with its own rules.
 
@@ -42,7 +42,7 @@ Akasha makes `akasha.yml` from its template and `[ci]`. The examination of the s
 
 The merge and watch helpers always run on `ubuntu-latest`, because they can write to the repository. [Team config](team-config.md) tells the keys of `[ci]` and what a Windows runner needs.
 
-> **CAUTION:** In a public repository, a pull request from a fork runs its code in the required check. On a runner of the team, that code runs on a machine of the team. In this condition, `infra` and `setup` show a warning. The warning does not stop a handover.
+> **CAUTION:** In a public repository, a pull request from a fork runs its code in the required check. On a runner of the team, that code runs on a machine of the team. In this condition, Akasha shows a warning. `infra --apply` and `setup --approve-infra` show it for the team config in the checkout, when they write `akasha.yml`. `infra` and `setup` show it for the team config on the default branch. The warning does not stop a handover.
 
 ## GitHub branch protection and auto-merge
 
@@ -88,7 +88,7 @@ A plain GitHub name gets the prefix `@`.
 
 1. Run `infra`. Akasha shows each setting that is different from the team config. It reads the server files and the team config from the default branch. It also shows the warnings that do not stop a handover, for example a runner of the team in a public repository.
 2. Ask an administrator to approve the correction.
-3. On the computer of the administrator, run `infra --apply`. Akasha writes the server files with the values of the team config in the checkout, sets branch protection or records the helpers, and changes the repository settings. Akasha does not trust a typed name: the GitHub account of the computer must be in `[roles] administrators`, when the list names people, and must administer the repository on GitHub. `--by` is optional, and it must be that account. Without GitHub, `--by <administrator>` names the administrator.
+3. On the computer of the administrator, run `infra --apply`. Akasha writes the server files with the values of the team config in the checkout, sets branch protection or records the helpers, and changes the repository settings. It shows the warnings for the team config in the checkout. Akasha does not trust a typed name: the GitHub account of the computer must be in `[roles] administrators`, when the list names people, and must administer the repository on GitHub. `--by` is optional, and it must be that account. Without GitHub, `--by <administrator>` names the administrator.
 4. Make a new branch. Commit the server files and `akasha.toml` on it and open a pull request.
 5. Ask an administrator to merge the pull request.
 6. Run `infra` again. Make sure that it shows no problem.

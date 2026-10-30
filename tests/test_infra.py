@@ -9,6 +9,53 @@ from akasha import config
 from akasha.config import Team
 from akasha.infra import desired, github, server
 
+# The required check without [ci]. Akasha 1.0.0 had the same text without the bash default, the fresh install, and
+# the UTF-8 mode. A change of this text makes the handover wait in each repository until an administrator sets up
+# Akasha again, so change it only on purpose.
+DEFAULT_CHECK = """\
+# Akasha installs this file. It runs the required checks of the team on each pull request.
+# The rules come from the default branch, so a pull request cannot make its own checks weaker.
+name: akasha
+on:
+  pull_request:
+  merge_group:
+permissions:
+  contents: read
+jobs:
+  akasha:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash               # also on a Windows runner: it needs Git Bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Akasha
+        env:
+          AKASHA_SOURCE: ${{ vars.AKASHA_SOURCE }}      # a repository variable can name a mirror or a fork
+        # A runner of the team keeps its Python between runs, and an update of Akasha keeps the version 1.0.0. Without
+        # --force-reinstall, pip keeps the Akasha that it installed first.
+        run: pip install --force-reinstall --no-cache-dir "${AKASHA_SOURCE:-git+https://github.com/Gruci/akasha-team-harness@v1.0.0}"
+      - name: Find the base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}
+        run: echo "BASE=${BASE_REF#refs/heads/}" >> "$GITHUB_ENV"
+      - name: Take the team config from the default branch
+        run: |
+          if git cat-file -e "origin/$BASE:akasha.toml" 2>/dev/null; then
+            git show "origin/$BASE:akasha.toml" > "$RUNNER_TEMP/akasha.toml"
+          else
+            cp akasha.toml "$RUNNER_TEMP/akasha.toml"
+          fi
+      - name: Required checks
+        # UTF-8 mode: on a Windows runner, Python writes to a pipe in the code page, which cannot write all text
+        run: python -X utf8 -m akasha check --ci --config "$RUNNER_TEMP/akasha.toml" --base "origin/$BASE"
+"""
+
 
 class InfraTests(unittest.TestCase):
     def test_codeowners_follow_the_gates_and_keep_the_rules_with_the_administrators(self):
@@ -62,7 +109,7 @@ class InfraTests(unittest.TestCase):
         check = files[".github/workflows/akasha.yml"]
         self.assertIn("Take the team config from the default branch", check)
         self.assertIn("refs/heads/", check)
-        self.assertIn("    runs-on: ubuntu-latest ", check)
+        self.assertIn("    runs-on: ubuntu-latest\n", check)
         self.assertIn('python-version: "3.12"', check)
         for helper in (".github/workflows/akasha-merge.yml", ".github/workflows/akasha-watch.yml"):
             self.assertIn("When GitHub protects the default branch, it does nothing", files[helper])
@@ -71,19 +118,18 @@ class InfraTests(unittest.TestCase):
         self.assertEqual(desired.settings_drift({}), [])                # hidden settings are not problems
 
     def test_the_team_config_gives_the_machine_and_the_python_of_the_check(self):
-        source = (desired.TEMPLATES / "akasha.yml").read_text(encoding="utf-8")
         default = desired.workflows()
         self.assertEqual(default, desired.workflows(Team()))
-        self.assertEqual(default[".github/workflows/akasha.yml"],          # the template with the default values
-                         source.replace("@@AKASHA_RUNS_ON@@", "ubuntu-latest").replace("@@AKASHA_PYTHON@@", "3.12"))
+        self.assertEqual(default[".github/workflows/akasha.yml"], DEFAULT_CHECK)
+        self.assertIn("pip install --force-reinstall --no-cache-dir ", DEFAULT_CHECK)    # a runner keeps its Python
+        self.assertIn("python -X utf8 -m akasha check --ci ", DEFAULT_CHECK)           # the code page of Windows
         team = Team(runs_on=("self-hosted", "windows"), python="3.13")
         files = desired.workflows(team)
         check = files[".github/workflows/akasha.yml"]
         self.assertNotIn("@@", "".join(files.values()))
         self.assertIn('python-version: "3.13"', check)
         line = next(line for line in check.splitlines() if line.startswith("    runs-on: "))
-        listed = line.removeprefix("    runs-on: ").split("#")[0].strip()
-        self.assertEqual(json.loads(listed), ["self-hosted", "windows"])    # a JSON list is a YAML flow list
+        self.assertEqual(json.loads(line.removeprefix("    runs-on: ")), ["self-hosted", "windows"])  # a YAML flow list
         self.assertIn("        shell: bash", check)                      # the steps use bash, also on Windows
         for helper in (".github/workflows/akasha-merge.yml", ".github/workflows/akasha-watch.yml"):
             self.assertEqual(files[helper], default[helper])               # the helpers stay on ubuntu-latest
@@ -99,9 +145,13 @@ class InfraTests(unittest.TestCase):
             'the required check runs on the runner ["self-hosted", "linux"] of [ci] runs-on'))
         self.assertEqual(desired.warnings(own, {"private": True}), [])
         self.assertEqual(desired.warnings(own, {}), [])                  # GitHub did not tell: no warning
-        for labels in (("ubuntu-latest",), ("windows-2022",), ("macos-15",), ("ubuntu-24.04-arm",)):
+        for labels in (("ubuntu-latest",), ("windows-2022",), ("macos-15",), ("ubuntu-24.04-arm",), ("windows-11-arm",),
+                       ("macos-15-intel",), ("macos-14-large",), ("macos-latest-xlarge",), ("ubuntu-slim",)):
             with self.subTest(labels=labels):
                 self.assertEqual(desired.warnings(Team(runs_on=labels), {"private": False}), [])
+        for labels in (("ubuntu-22.04-gpu",), ("windows-2022-ours",), ("ubuntu-latest", "gpu")):    # a team label
+            with self.subTest(labels=labels):
+                self.assertEqual(len(desired.warnings(Team(runs_on=labels), {"private": False})), 1)
 
     def test_drift(self):
         self.assertEqual(desired.drift(None), ["the default branch has no branch protection"])
@@ -129,11 +179,13 @@ class ApplyTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         (self.root / "akasha.toml").write_text('[roles]\nadministrators = ["Admin-A"]\n', encoding="utf-8")
 
-    def apply(self, login: str, admin: bool = True, by: str = "", origin: str = "team/app") -> list[str]:
+    def apply(self, login: str, admin: bool = True, by: str = "", origin: str = "team/app",
+              private: bool = True) -> tuple[list[str], list[str]]:
         done = subprocess.CompletedProcess([], 0, "{}", "")
+        current = {"private": private, "permissions": {"admin": admin}}
         with patch("akasha.repo.origin", return_value=origin), patch("akasha.repo.me", return_value=login), \
                 patch("akasha.infra.github.repository", return_value=("team/app", "main") if origin else None), \
-                patch("akasha.infra.github.settings", return_value={"permissions": {"admin": admin}}), \
+                patch("akasha.infra.github.settings", return_value=current), \
                 patch("akasha.infra.github.gh", return_value=done):
             return github.apply(self.root, by)
 
@@ -146,22 +198,30 @@ class ApplyTests(unittest.TestCase):
                 self.apply(login, admin, by)
             self.assertIn(reason, str(refused.exception))
         self.assertFalse((self.root / ".github").exists())               # nothing written
-        self.assertEqual(self.apply("admin-a", by="@Admin-A"), [])
+        self.assertEqual(self.apply("admin-a", by="@Admin-A"), ([], []))
         self.assertTrue((self.root / ".github" / "workflows" / "akasha.yml").is_file())
 
     def test_the_server_files_get_the_team_config_of_this_checkout(self):
         (self.root / "akasha.toml").write_text('[roles]\nadministrators = ["Admin-A"]\n[ci]\nruns-on = "windows-latest"\n'
                                                'python = "3.11"\n', encoding="utf-8")
-        self.assertEqual(self.apply("admin-a"), [])
+        self.assertEqual(self.apply("admin-a", private=False), ([], []))
         check = (self.root / ".github" / "workflows" / "akasha.yml").read_text(encoding="utf-8")
-        self.assertIn("    runs-on: windows-latest ", check)
+        self.assertIn("    runs-on: windows-latest\n", check)
         self.assertIn('python-version: "3.11"', check)
+
+    def test_the_administrator_gets_the_warning_when_akasha_writes_the_file(self):
+        (self.root / "akasha.toml").write_text('[roles]\nadministrators = ["Admin-A"]\n[ci]\n'
+                                               'runs-on = ["self-hosted", "linux"]\n', encoding="utf-8")
+        self.assertEqual(self.apply("admin-a"), ([], []))                # a private repository
+        problems, warned = self.apply("admin-a", private=False)
+        self.assertEqual(problems, [])                                   # a warning does not stop a handover
+        self.assertIn("a pull request from a fork runs its code on that machine", warned[0])
 
     def test_without_github_the_name_of_the_team_config(self):
         with self.assertRaises(PermissionError):
             self.apply("", by="dev-b", origin="")
         self.assertEqual(self.apply("", by="admin-a", origin=""),
-                         ["Akasha wrote the files, but cannot reach GitHub to change the settings"])
+                         (["Akasha wrote the files, but cannot reach GitHub to change the settings"], []))
 
 
 class StatusTests(unittest.TestCase):

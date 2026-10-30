@@ -8,7 +8,7 @@ permissions:
   contents: read
 jobs:
   akasha:
-    runs-on: @@AKASHA_RUNS_ON@@        # [ci] runs-on in akasha.toml
+    runs-on: @@AKASHA_RUNS_ON@@
     defaults:
       run:
         shell: bash               # also on a Windows runner: it needs Git Bash
@@ -22,7 +22,9 @@ jobs:
       - name: Install Akasha
         env:
           AKASHA_SOURCE: ${{ vars.AKASHA_SOURCE }}      # a repository variable can name a mirror or a fork
-        run: pip install "${AKASHA_SOURCE:-git+https://github.com/Gruci/akasha-team-harness@v1.0.0}"
+        # A runner of the team keeps its Python between runs, and an update of Akasha keeps the version 1.0.0. Without
+        # --force-reinstall, pip keeps the Akasha that it installed first.
+        run: pip install --force-reinstall --no-cache-dir "${AKASHA_SOURCE:-git+https://github.com/Gruci/akasha-team-harness@v1.0.0}"
       - name: Find the base branch
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}
@@ -35,4 +37,5 @@ jobs:
             cp akasha.toml "$RUNNER_TEMP/akasha.toml"
           fi
       - name: Required checks
-        run: python -m akasha check --ci --config "$RUNNER_TEMP/akasha.toml" --base "origin/$BASE"
+        # UTF-8 mode: on a Windows runner, Python writes to a pipe in the code page, which cannot write all text
+        run: python -X utf8 -m akasha check --ci --config "$RUNNER_TEMP/akasha.toml" --base "origin/$BASE"

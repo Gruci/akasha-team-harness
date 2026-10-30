@@ -23,9 +23,10 @@ NO_PLAN = ("GitHub has no branch protection for this private repository on its p
 # fill the template: it has ${{ }} of GitHub and ${…} of the shell.
 RUNS_ON_MARK, PYTHON_MARK = "@@AKASHA_RUNS_ON@@", "@@AKASHA_PYTHON@@"
 PLAIN_LABEL = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9.]+)+")     # YAML reads ubuntu-latest as text without quotes
-# The labels of the standard machines that GitHub gives, for example ubuntu-latest, windows-2022, and macos-15. Other
+# The labels of the standard machines that GitHub gives, for example ubuntu-latest, windows-2022, macos-15, and
+# ubuntu-24.04-arm. Only the suffixes of GitHub: a runner of the team can have a label such as ubuntu-22.04-gpu. Other
 # labels name a runner of the team, or a larger runner of GitHub with the name that the team gave it.
-HOSTED = re.compile(r"(?:ubuntu|windows|macos)-(?:latest|slim|\d+(?:\.\d+)?)(?:-[a-z0-9]+)*", re.I)
+HOSTED = re.compile(r"(?:ubuntu|windows|macos)-(?:latest|slim|\d+(?:\.\d+)?)(?:-(?:arm|intel|large|xlarge))?", re.I)
 
 
 def protection() -> dict:

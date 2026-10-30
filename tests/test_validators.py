@@ -157,6 +157,13 @@ class CheckTests(unittest.TestCase):
                 with self.subTest(windows=windows, word=word), patch.object(runner, "WINDOWS", windows):
                     self.assertEqual(runner.run(team, Path(folder), []).details["build"], word)
 
+    def test_output_in_the_code_page_of_the_computer_is_read_in_utf8_mode(self):
+        korean = "테스트 실패"
+        self.assertEqual(runner._decode(korean.encode("utf-8")), korean)
+        with patch("locale.getpreferredencoding", return_value="utf-8"), \
+                patch("locale.getencoding", return_value="cp949"):     # Python -X utf8 on a Korean Windows
+            self.assertEqual(runner._decode(korean.encode("cp949")), korean)
+
     def test_a_timeout_stops_the_command_and_its_children(self):
         child = "import subprocess, sys; subprocess.run([sys.executable, '-c', 'import time; time.sleep(60)'])"
         hung = Team(required_checks=("tests",), checks={"tests": Check(python(child))})

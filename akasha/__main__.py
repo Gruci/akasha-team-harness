@@ -253,9 +253,12 @@ def main(argv: list[str] | None = None) -> int:
                   f"{held} · feature {task.feature or 'none'} · {task.title}")
         return 0
     if args.command == "infra":
-        problems = github.apply(root, args.by) if args.apply else github.status(root)
+        if args.apply:                                # the warnings are for the team config in this checkout
+            problems, warned = github.apply(root, args.by)
+        else:
+            problems, warned = github.status(root), github.warnings(root)
         print("\n".join(f"- {item}" for item in problems) or "The GitHub settings agree with akasha.toml.")
-        for item in [] if args.apply else github.warnings(root):        # a warning does not stop a handover
+        for item in warned:                           # a warning does not stop a handover
             print(f"Warning: {item}")
         print(setup.RULES_TEXT[config.load(root).server_rules])
         return 1 if problems else 0
