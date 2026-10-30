@@ -10,7 +10,7 @@ from akasha.coordinator import board, overlap
 from akasha.core import handover as handover_document, risk, stages, workcopy
 from akasha.core import task as tasks
 from akasha.core.task import Task
-from akasha.infra import github
+from akasha.infra import github, server
 from akasha.repo import gh
 from akasha.validators import briefing as briefing_rules, runner
 
@@ -327,9 +327,10 @@ def _examine_base(root: Path, task: Task) -> None:
 def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     """Check the change again on the latest default branch, open the pull request, and turn on auto-merge.
 
-    GitHub merges the pull request as one squash commit when the required check passes. The commit body is the
-    briefing, so a person who must revert the change later finds it fast. Return the pull request address and the
-    reasons that keep the task at the handover stage."""
+    The pull request merges as one squash commit when the required check passes: by GitHub auto-merge, or by the
+    merge workflow of Akasha where GitHub has none. The commit body is the briefing, so a person who must revert the
+    change later finds it fast. Return the pull request address and the reasons that keep the task at the handover
+    stage."""
     task = tasks.load(root, task_id)
     if task.stage != "handover" or task.status != "open":
         raise ValueError(f"the task is {task.status} at the {task.stage} stage — the handover needs an open task "
@@ -370,14 +371,18 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     if pushed.returncode:
         raise RuntimeError(f"git push failed: {pushed.stderr.strip()[:300]}")
     team = config.load(root)
+    helped = team.server_rules == "akasha"            # the merge workflow of Akasha merges a pull request with the label
     if not task.pull_request:                         # a second handover only pushes the new commits
         created = gh(root, "pr", "create", "--base", branch, "--head", task.branch, "--title", task.title,
-                     "--body", handover_document.pull_request_body(task, branch, team.commands))
+                     "--body", handover_document.pull_request_body(task, branch, team.commands),
+                     *(["--label", server.MERGE_LABEL] if helped else []))
         if created.returncode:
             raise RuntimeError(f"gh pr create failed: {created.stderr.strip()[:300]}")
         task.pull_request = created.stdout.strip().splitlines()[-1]
         _publish(root, task)
-    if not known.get("autoMergeRequest"):
+    elif helped and server.MERGE_LABEL not in {label.get("name") for label in known.get("labels", [])}:
+        gh(root, "pr", "edit", task.pull_request, "--add-label", server.MERGE_LABEL)
+    if not helped and not known.get("autoMergeRequest"):
         number = task.pull_request.rstrip("/").rsplit("/", 1)[-1]
         queued = github.auto_merge(root, task.pull_request, f"{task.title} (#{number})",
                                    handover_document.commit_body(task, branch, team.commands))

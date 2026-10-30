@@ -10,7 +10,7 @@ from pathlib import Path
 
 from akasha import config
 from akasha.core.workcopy import git
-from akasha.infra import desired
+from akasha.infra import desired, server
 from akasha.repo import gh
 
 SERVER_STATE = config.STATE_DIR / "server.json"      # the last examination of the server rules on this computer
@@ -77,22 +77,27 @@ def status(root: Path) -> list[str]:
         return problems
     slug, branch = found
     current = settings(root, slug)
-    problems = desired.drift(protection(root, slug, branch)) + desired.settings_drift(current)
     git(root, "fetch", "-q", "origin", branch)                        # the server uses the default branch
-    if _server_file(root, branch, desired.WORKFLOW_FILE) != desired.workflow():
-        problems.append(f"{desired.WORKFLOW_FILE} on {branch} is missing or different")
+    team = _server_team(root, branch)
+    if team.server_rules == "akasha":                 # GitHub has no protection on this plan; the helpers enforce
+        problems = desired.settings_drift(current, ("allow_squash_merge",))
+    else:
+        problems = desired.drift(protection(root, slug, branch)) + desired.settings_drift(current)
+    problems += [f"{target} on {branch} is missing or different" for target, text in desired.workflows().items()
+                 if _server_file(root, branch, target) != text]
     owners = next((text for path in desired.CODEOWNERS_FILES
                    if (text := _server_file(root, branch, path)) is not None), "")
-    if desired.block(owners) != desired.codeowners(_server_team(root, branch)):
+    if desired.block(owners) != desired.codeowners(team):
         problems.append(f"the Akasha block of CODEOWNERS on {branch} is missing or different from akasha.toml")
-    _remember(root, problems, bool((current.get("permissions") or {}).get("admin")))
+    _remember(root, problems, bool((current.get("permissions") or {}).get("admin")), team.server_rules)
     return problems
 
 
-def _remember(root: Path, problems: list[str], admin: bool) -> None:
+def _remember(root: Path, problems: list[str], admin: bool, rules: str = "github") -> None:
     path = root / SERVER_STATE
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"checked": time.time(), "problems": problems, "admin": admin}), encoding="utf-8")
+    path.write_text(json.dumps({"checked": time.time(), "problems": problems, "admin": admin, "rules": rules}),
+                    encoding="utf-8")
 
 
 def readiness(root: Path, max_age: float = 12 * 3600) -> dict:
@@ -113,14 +118,17 @@ def readiness(root: Path, max_age: float = 12 * 3600) -> dict:
 def apply(root: Path, approved_by: str) -> list[str]:
     """Write the repository files and change the GitHub settings. An administrator must approve first.
 
-    Akasha keeps the CODEOWNERS lines and the pull request template that the team already has."""
+    Akasha turns on the branch protection and the auto-merge of GitHub. When the plan of the repository has none,
+    Akasha records `[server] rules = "akasha"`, and its merge and watch workflows enforce the rules. Akasha keeps the
+    CODEOWNERS lines and the pull request template that the team already has."""
     team = config.load(root)
     named = {person.lstrip("@") for person in team.administrators}
     if not approved_by or (named and approved_by.lstrip("@") not in named):
         raise PermissionError("an administrator that akasha.toml names must approve a change to the repository settings")
-    workflow = root / desired.WORKFLOW_FILE
-    workflow.parent.mkdir(parents=True, exist_ok=True)
-    workflow.write_text(desired.workflow(), encoding="utf-8")
+    for target, text in desired.workflows().items():
+        path = root / target
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
     owners = next((root / path for path in desired.CODEOWNERS_FILES if (root / path).is_file()),
                   root / desired.CODEOWNERS_FILES[0])
     owners.write_text(desired.merge(owners.read_text(encoding="utf-8") if owners.is_file() else "",
@@ -133,16 +141,23 @@ def apply(root: Path, approved_by: str) -> list[str]:
         return ["Akasha wrote the files, but cannot reach GitHub to change the settings"]
     slug, branch = found
     problems = []
+    rules = "github"
     done = gh(root, "api", "--method", "PUT", f"repos/{slug}/branches/{branch}/protection", "--input", "-",
               payload=desired.protection())
-    if done.returncode:
+    if done.returncode and _NO_PLAN in done.stdout + done.stderr:
+        rules = "akasha"                              # the helpers of Akasha take over on this plan
+    elif done.returncode:
         problems.append(f"GitHub refused the branch protection: {done.stderr.strip()[:300]}")
-    changed = gh(root, "api", "--method", "PATCH", f"repos/{slug}", "--input", "-", payload=desired.SETTINGS)
+    config.set_server_rules(root, rules)
+    gh(root, "label", "create", server.MERGE_LABEL, "--color", "0e8a16", "--force",
+       "--description", "Akasha merges this pull request after the check passes")
+    wanted = desired.SETTINGS if rules == "github" else {"allow_squash_merge": True, "delete_branch_on_merge": True}
+    changed = gh(root, "api", "--method", "PATCH", f"repos/{slug}", "--input", "-", payload=wanted)
     if changed.returncode:
         problems.append(f"GitHub refused the repository settings: {changed.stderr.strip()[:300]}")
     # GitHub can accept the request and keep a setting off, for example auto-merge in a private repository on the
     # free plan. Thus Akasha reads the settings again.
-    problems += [f"GitHub kept a setting off: {item}" for item in desired.settings_drift(settings(root, slug))]
+    problems += [f"GitHub kept a setting off: {item}" for item in desired.settings_drift(settings(root, slug), wanted)]
     return problems
 
 
@@ -150,7 +165,7 @@ def pull_request(root: Path, address_or_branch: str) -> dict:
     """The pull request of a task: url, state (OPEN, MERGED, or CLOSED), and autoMergeRequest. Empty when none."""
     if not address_or_branch:
         return {}
-    viewed = gh(root, "pr", "view", address_or_branch, "--json", "url,state,autoMergeRequest")
+    viewed = gh(root, "pr", "view", address_or_branch, "--json", "url,state,autoMergeRequest,labels")
     return json.loads(viewed.stdout) if viewed.returncode == 0 else {}
 
 

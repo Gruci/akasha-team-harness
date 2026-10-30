@@ -6,10 +6,15 @@ from pathlib import Path
 
 from akasha import config
 from akasha.engine import codex
-from akasha.infra import desired, github
+from akasha.infra import github
 from akasha.validators import langs
 
 IGNORED = (".akasha/state/", ".akasha/work/")
+RULES_TEXT = {
+    "github": "Server rules: GitHub branch protection and auto-merge.",
+    "akasha": "Server rules: GitHub has no branch protection on this plan, so the merge and watch workflows of Akasha "
+              "enforce the rules. When the plan changes, set up Akasha again to use the GitHub rules.",
+}
 PRODUCT_MAP = """# Product map
 
 Akasha keeps this map. The agent engine reads it before each impact analysis and updates it before each handover.
@@ -74,11 +79,10 @@ def run(root: Path, approved_by: str) -> list[str]:
     if approved_by:
         refused = github.apply(root, approved_by)
         report += [f"GitHub: {item}" for item in refused] or ["GitHub settings agree with akasha.toml."]
+        report.append(RULES_TEXT[config.load(root).server_rules])
     else:
         report += [f"GitHub: {item}" for item in problems]
-        if desired.NO_PLAN in problems:
-            report.append("The owner of the repository must change the plan or make the repository public first.")
-        elif github.readiness(root).get("admin"):
+        if github.readiness(root).get("admin"):
             report.append("You administer this repository. Approve the change, then run setup again with "
                           "--approve-infra <your GitHub name>.")
         else:

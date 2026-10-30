@@ -153,6 +153,29 @@ class FlowTests(unittest.TestCase):
         self.assertEqual((task.status, task.workcopy), ("done", ""))
         self.assertEqual(workcopy.git(remote, "log", "-1", "--format=%s", task.branch).stdout.strip(), task.title)
 
+    def test_without_github_protection_the_pull_request_gets_the_merge_label(self):
+        root = make_repo(PASS)
+        add_remote(root)
+        with (root / "akasha.toml").open("a", encoding="utf-8") as file:
+            file.write('[server]\nrules = "akasha"\n')
+        task, _ = flow.start(root, "Change the search", "ops-member", workflow="small")
+        (Path(task.workcopy) / "search.py").write_text("x = 1\n", encoding="utf-8")
+        flow.impact(root, task.id, IMPACT, map_note="The change adds no feature, screen, table, or API.")
+        flow.advance(root, task.id)
+        flow.check(root, task.id)
+        with patch("akasha.flow.github.status", return_value=[]):
+            flow.advance(root, task.id)
+        flow.brief(root, task.id, BRIEFING)
+        opened = subprocess.CompletedProcess([], 0, PULL_REQUEST + "\n", "")
+        with patch("akasha.flow.github.repository", return_value=("team/app", "main")), \
+                patch("akasha.flow.github.pull_request", return_value={}), \
+                patch("akasha.flow.github.merged", return_value=False), \
+                patch("akasha.flow.github.auto_merge") as auto_merge, patch("akasha.flow.gh", return_value=opened) as gh:
+            flow.handover(root, task.id)
+        created = gh.call_args_list[0].args
+        self.assertEqual(created[created.index("--label") + 1], "akasha-merge")
+        auto_merge.assert_not_called()                       # the merge workflow of Akasha merges it
+
     def test_a_task_builds_on_an_earlier_task(self):
         root = make_repo(PASS)
         add_remote(root)
@@ -288,7 +311,7 @@ class HookTests(unittest.TestCase):
                     patch("akasha.infra.github.protection", return_value=None), \
                     patch("akasha.infra.desired.drift", return_value=problems), \
                     patch("akasha.infra.github._server_file", side_effect=lambda r, b, p: None), \
-                    patch("akasha.infra.desired.workflow", return_value=None), \
+                    patch("akasha.infra.desired.workflows", return_value={}), \
                     patch("akasha.infra.desired.block", return_value=""), \
                     patch("akasha.infra.desired.codeowners", return_value=""), redirect_stdout(output):
                 hooks.session_start(root)
@@ -297,7 +320,9 @@ class HookTests(unittest.TestCase):
         self.assertNotIn("server rules", notice([], admin=False))                # ready: nothing to tell
         self.assertIn("You administer this repository", notice(["the check akasha is not required"], admin=True))
         self.assertIn("Ask an administrator", notice(["the check akasha is not required"], admin=False))
-        self.assertIn("change the plan", notice([desired.NO_PLAN], admin=True))
+        plan = notice([desired.NO_PLAN], admin=True)                             # the setup switches to the helpers
+        self.assertIn("merge and watch workflows of Akasha", plan)
+        self.assertIn("You administer this repository", plan)
         with patch("akasha.infra.github.status") as examined, redirect_stdout(io.StringIO()):
             hooks.session_start(root)                                            # a fresh record needs no network
         examined.assert_not_called()

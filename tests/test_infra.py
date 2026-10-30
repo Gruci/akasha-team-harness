@@ -36,8 +36,13 @@ class InfraTests(unittest.TestCase):
         self.assertEqual(wanted["required_status_checks"], {"strict": True, "contexts": ["akasha"]})
         self.assertEqual(wanted["required_pull_request_reviews"],
                          {"required_approving_review_count": 0, "require_code_owner_reviews": True})
-        self.assertIn("Take the team config from the default branch", desired.workflow())
-        self.assertIn("refs/heads/", desired.workflow())
+        files = desired.workflows()
+        self.assertEqual(set(files), {f".github/workflows/akasha{name}.yml" for name in ("", "-merge", "-watch")})
+        check = files[".github/workflows/akasha.yml"]
+        self.assertIn("Take the team config from the default branch", check)
+        self.assertIn("refs/heads/", check)
+        for helper in (".github/workflows/akasha-merge.yml", ".github/workflows/akasha-watch.yml"):
+            self.assertIn("When GitHub protects the default branch, it does nothing", files[helper])
         self.assertEqual(desired.settings_drift({"allow_auto_merge": False, "allow_squash_merge": True}),
                          ["the repository setting allow_auto_merge is off"])
         self.assertEqual(desired.settings_drift({}), [])                # hidden settings are not problems

@@ -13,7 +13,7 @@ from pathlib import Path
 from akasha import config, flow
 from akasha.core import task as tasks
 from akasha.core import workcopy
-from akasha.infra import desired, github
+from akasha.infra import github
 from akasha.repo import main_root
 from akasha.validators import guard, secrets
 
@@ -70,9 +70,7 @@ def _server_notice(root: Path) -> list[str]:
     known = github.readiness(root)
     if not known["problems"]:
         return []
-    if known["problems"][0] == desired.NO_PLAN:
-        who = "[AKASHA] The owner of the repository must change the plan or make the repository public first."
-    elif known.get("admin"):
+    if known.get("admin"):
         who = "[AKASHA] You administer this repository. To turn the server rules on, use the akasha-setup skill."
     else:
         who = "[AKASHA] Ask an administrator of the repository to turn them on. You can work now; the handover waits."

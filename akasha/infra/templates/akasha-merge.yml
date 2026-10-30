@@ -1,0 +1,30 @@
+# Akasha installs this file. It helps only where GitHub has no auto-merge, for example a private repository on
+# GitHub Free. When GitHub protects the default branch, it does nothing and GitHub merges.
+# After the check akasha passes, it merges a pull request that has the label akasha-merge.
+name: akasha-merge
+on:
+  workflow_run:
+    workflows: [akasha]
+    types: [completed]
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+jobs:
+  merge:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Akasha
+        env:
+          AKASHA_SOURCE: ${{ vars.AKASHA_SOURCE }}      # a repository variable can name a mirror or a fork
+        run: pip install "${AKASHA_SOURCE:-git+https://github.com/Gruci/akasha-team-harness@v1.0.0}"
+      - name: Merge the pull request
+        env:
+          GH_TOKEN: ${{ secrets.AKASHA_TOKEN || github.token }}    # a token secret lets the merge start other workflows
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: python -m akasha server merge --repository "$GITHUB_REPOSITORY" --head-sha "$HEAD_SHA"

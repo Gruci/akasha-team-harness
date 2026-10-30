@@ -33,9 +33,20 @@ class ConfigTests(unittest.TestCase):
 
     def test_incorrect_shapes_are_refused(self):
         for text in ('[colors]\nx = 1\n', '[roles]\nowners = []\n', '[risk]\nhigh = "auth"\n',
-                     '[approval]\nhigh = ["boss"]\n', '[workflows]\nenabled = ["none"]\n', 'broken = [\n'):
+                     '[approval]\nhigh = ["boss"]\n', '[workflows]\nenabled = ["none"]\n', 'broken = [\n',
+                     '[server]\nrules = "someone"\n'):
             with self.subTest(text=text), self.assertRaises(config.ConfigError):
                 config.load(self.repo(text))
+
+    def test_the_setup_records_who_enforces_the_server_rules(self):
+        root = self.repo('[roles]\nadministrators = ["admin"]\n')
+        self.assertEqual(config.load(root).server_rules, "github")
+        config.set_server_rules(root, "akasha")
+        self.assertEqual(config.load(root).server_rules, "akasha")
+        config.set_server_rules(root, "github")
+        text = (root / config.CONFIG_FILE).read_text(encoding="utf-8")
+        self.assertEqual((text.count("[server]"), text.count("rules =")), (1, 1))
+        self.assertEqual(config.load(root).administrators, ("admin",))
 
     def test_team_workflow_replaces_the_built_in_one(self):
         root = self.repo()

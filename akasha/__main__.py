@@ -84,6 +84,15 @@ def _parser() -> argparse.ArgumentParser:
     hook = commands.add_parser("hook", help="the entry point for agent hooks")
     hook.add_argument("--agent", choices=("claude", "codex"), default="claude")
     hook.add_argument("--event", required=True)
+    helper = commands.add_parser("server", help="the merge and watch workflows of Akasha run these on GitHub")
+    jobs = helper.add_subparsers(dest="job", required=True)
+    merge = jobs.add_parser("merge", help="merge a pull request with the label akasha-merge after its check passed")
+    merge.add_argument("--repository", required=True)
+    merge.add_argument("--head-sha", required=True)
+    watch = jobs.add_parser("watch", help="undo a change on the default branch that went around the check")
+    watch.add_argument("--repository", required=True)
+    for name in ("branch", "before", "after", "forced", "pusher"):
+        watch.add_argument(f"--{name}", default="")
     return parser
 
 
@@ -96,6 +105,14 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as error:     # noqa: BLE001 — a defect in Akasha must never stop the work of the agent
             print(f"Akasha hook problem: {error}", file=sys.stderr)
             return 0
+    if args.command == "server":                      # GitHub Actions run this in the checkout of the repository
+        from akasha.infra import server
+        if args.job == "merge":
+            print(server.merge(Path.cwd(), args.repository, args.head_sha))
+        else:
+            print(server.watch(Path.cwd(), args.repository, args.branch, args.before, args.after,
+                               args.forced.lower() == "true", args.pusher))
+        return 0
     if args.command == "check" and args.ci:
         result = flow.ci_check(Path.cwd(), args.config, args.base)
         for name, status in result.status.items():
@@ -197,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "infra":
         problems = github.apply(root, args.by) if args.apply else github.status(root)
         print("\n".join(f"- {item}" for item in problems) or "The GitHub settings agree with akasha.toml.")
+        print(setup.RULES_TEXT[config.load(root).server_rules])
         return 1 if problems else 0
     return 2
 

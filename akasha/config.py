@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,7 +28,11 @@ _KEYS: dict[str, set[str] | None] = {
     "preview": {"command", "database"},
     "contracts": None,                       # the team gives the contract names
     "workflows": {"enabled"},
+    "server": {"rules"},
 }
+# Who enforces the server rules: "github" (branch protection and auto-merge of GitHub) or "akasha" (the merge and
+# watch workflows of Akasha, for a plan without branch protection). The setup selects it.
+SERVER_RULES = ("github", "akasha")
 
 
 class ConfigError(ValueError):
@@ -68,6 +73,7 @@ class Team:
     preview: dict[str, str] = field(default_factory=dict)
     contracts: dict[str, tuple[str, ...]] = field(default_factory=dict)
     workflows: dict[str, Workflow] = field(default_factory=dict)
+    server_rules: str = "github"
 
 
 def _strings(value: object, where: str) -> tuple[str, ...]:
@@ -149,6 +155,9 @@ def load(root: Path, path: Path | None = None) -> Team:
         unknown = [role for role in _strings(holders, f"[approval] {level}") if role not in ROLES]
         if unknown:
             raise ConfigError(f"{CONFIG_FILE}: unknown role {unknown[0]} in [approval] — use {', '.join(ROLES)}")
+    rules = data.get("server", {}).get("rules", "github")
+    if rules not in SERVER_RULES:
+        raise ConfigError(f"{CONFIG_FILE}: [server] rules must be {' or '.join(SERVER_RULES)}")
     return Team(
         developers=_strings(roles.get("developers", []), "[roles] developers"),
         administrators=_strings(roles.get("administrators", []), "[roles] administrators"),
@@ -160,4 +169,18 @@ def load(root: Path, path: Path | None = None) -> Team:
         preview={name: _text(value, f"[preview] {name}") for name, value in preview.items()},
         contracts={name: _strings(globs, f"[contracts] {name}") for name, globs in contracts.items()},
         workflows={name: flows[name] for name in enabled},
+        server_rules=rules,
     )
+
+
+def set_server_rules(root: Path, rules: str) -> None:
+    """Write the [server] rules into akasha.toml and keep each other line."""
+    path = root / CONFIG_FILE
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    line = f'rules = "{rules}"'
+    if re.search(r"(?m)^\[server\]\s*$", text):
+        text = re.sub(r'(?m)^rules\s*=.*$', line, text, count=1) if re.search(r"(?m)^rules\s*=", text) else \
+            re.sub(r"(?m)^\[server\]\s*$", f"[server]\n{line}", text, count=1)
+    else:
+        text = text.rstrip("\n") + ("\n\n" if text.strip() else "") + f"[server]\n{line}\n"
+    path.write_text(text, encoding="utf-8")

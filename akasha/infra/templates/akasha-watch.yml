@@ -1,0 +1,36 @@
+# Akasha installs this file. It helps only where GitHub has no branch protection, for example a private repository
+# on GitHub Free. When GitHub protects the default branch, it does nothing.
+# After each push to the default branch, it undoes each change that went around the check akasha and opens an issue.
+name: akasha-watch
+on:
+  push:
+permissions:
+  contents: write
+  issues: write
+  pull-requests: read
+  checks: read
+jobs:
+  watch:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Akasha
+        env:
+          AKASHA_SOURCE: ${{ vars.AKASHA_SOURCE }}      # a repository variable can name a mirror or a fork
+        run: pip install "${AKASHA_SOURCE:-git+https://github.com/Gruci/akasha-team-harness@v1.0.0}"
+      - name: Undo a change that went around the check
+        env:
+          GH_TOKEN: ${{ github.token }}                 # a push with this token starts no workflow, so no loop
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          FORCED: ${{ github.event.forced }}
+          PUSHER: ${{ github.event.pusher.name }}
+        run: >-
+          python -m akasha server watch --repository "$GITHUB_REPOSITORY" --branch "$GITHUB_REF_NAME"
+          --before "$BEFORE" --after "$AFTER" --forced "$FORCED" --pusher "$PUSHER"

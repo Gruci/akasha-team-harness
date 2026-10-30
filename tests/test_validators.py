@@ -28,7 +28,8 @@ class GuardTests(unittest.TestCase):
                      "Remove-Item -Recurse -Force C:\\Windows", "git status && git push -f",
                      'rm -rf "$HOME/Documents"', "rm -rf $HOME", 'Remove-Item -Recurse "$env:USERPROFILE\\Documents"',
                      "rd /s /q %USERPROFILE%", "cd .. && rm -rf project", "git push -fu origin main",
-                     "git push origin -d main", "git push \\\n--force origin main", "sleep 1 & rm -rf ~"):
+                     "git push origin -d main", "git push \\\n--force origin main", "sleep 1 & rm -rf ~",
+                     "git push origin main", "git push origin HEAD:main", "git push origin HEAD:refs/heads/master"):
             with self.subTest(line=line):
                 self.assertIsNotNone(self.stop(line))
 

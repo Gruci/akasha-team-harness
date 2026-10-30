@@ -57,6 +57,9 @@ def _git_reason(args: list[str]) -> str | None:
             return "it deletes the default branch on the server"
         if any(arg in (f":{branch}" for branch in DEFAULT_BRANCHES) for arg in rest):
             return "it deletes the default branch on the server"
+        targets = {arg.split(":")[-1].removeprefix("refs/heads/") for arg in rest if not arg.startswith("-")}
+        if targets & set(DEFAULT_BRANCHES):
+            return "it pushes straight to the default branch. Akasha merges each change through a pull request"
     if "branch" in args:
         rest = args[args.index("branch") + 1:]
         if any(flag in rest for flag in ("-D", "--delete", "-d")) and any(b in rest for b in DEFAULT_BRANCHES):

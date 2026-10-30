@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from akasha.config import CONFIG_FILE, TEAM_WORKFLOWS, Team
 
 CHECK_NAME = "akasha"
 TEMPLATES = Path(__file__).parent / "templates"
-WORKFLOW_FILE = ".github/workflows/akasha.yml"
+# The required check, and the two helpers that act only where GitHub has no branch protection or auto-merge
+WORKFLOW_FILES = {f".github/workflows/{name}": name for name in ("akasha.yml", "akasha-merge.yml", "akasha-watch.yml")}
 TEMPLATE_FILE = ".github/pull_request_template.md"
 CODEOWNERS_FILES = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")     # GitHub uses the first that exists
 START, END = "# akasha:start", "# akasha:end"
 SETTINGS = {"allow_auto_merge": True, "allow_squash_merge": True, "delete_branch_on_merge": True}
-NO_PLAN = ("the GitHub plan of this private repository has no branch protection — use a public repository, "
-           "or GitHub Pro, Team, or Enterprise")
+NO_PLAN = ("GitHub has no branch protection for this private repository on its plan — set up Akasha again, "
+           "so that the merge and watch workflows of Akasha enforce the rules")
 
 
 def protection() -> dict:
@@ -73,8 +75,9 @@ def merge(text: str, new_block: str) -> str:
     return (rest.rstrip() + "\n\n" if rest.strip() else "") + new_block
 
 
-def workflow() -> str:
-    return (TEMPLATES / "akasha.yml").read_text(encoding="utf-8")
+def workflows() -> dict[str, str]:
+    """The workflow files that Akasha installs, with their text."""
+    return {target: (TEMPLATES / source).read_text(encoding="utf-8") for target, source in WORKFLOW_FILES.items()}
 
 
 def template() -> str:
@@ -108,7 +111,7 @@ def drift(current: dict | None) -> list[str]:
     return problems
 
 
-def settings_drift(current: dict) -> list[str]:
+def settings_drift(current: dict, names: Iterable[str] = tuple(SETTINGS)) -> list[str]:
     """Repository settings that are off. GitHub hides some settings from people without administrator rights, so
     Akasha examines only the settings that it can read."""
-    return [f"the repository setting {name} is off" for name in SETTINGS if current.get(name) is False]
+    return [f"the repository setting {name} is off" for name in names if current.get(name) is False]
