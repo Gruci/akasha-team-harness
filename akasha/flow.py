@@ -1113,14 +1113,14 @@ def accept(root: Path, task_id: str, condition: str | None, result: bool, reason
 def check(root: Path, task_id: str) -> runner.Result:
     """Run the required checks in the work copy. Each failure counts as one failed repair.
 
-    When all checks pass, Akasha saves the work as a commit and pushes the task branch (_push). Thus the task branch
-    on the server always passed the checks, and other tasks can build on it. Akasha saves nothing while the work copy
-    has files outside the scope, for example files that a test made. A push that the server refused goes into the
-    notes of the task and of the result (_push)."""
+    When each check passes or is not needed (runner.passed), Akasha saves the work as a commit and pushes the task
+    branch (_push). Thus the task branch on the server always passed the checks, and other tasks can build on it.
+    Akasha saves nothing while the work copy has files outside the scope, for example files that a test made. A push
+    that the server refused goes into the notes of the task and of the result (_push)."""
     team, task = rules(root), _held(root, task_id)
     tree = _tree(task)
     result = runner.run(team, tree, workcopy.changed_files(task))
-    if _passed(result) and not _strays(team, task):
+    if runner.passed(result.status) and not _strays(team, task):
         _commit(tree, task.title)
         result = _push(root, team, tree, task, result)
     task.checks = result.status
@@ -1130,11 +1130,6 @@ def check(root: Path, task_id: str) -> runner.Result:
             _tell_stop(root, team, task)
     _publish(root, task)
     return result
-
-
-def _passed(result: runner.Result) -> bool:
-    """True when the team has checks, and each of them passed."""
-    return bool(result.status) and all(status == "PASS" for status in result.status.values())
 
 
 def _push(root: Path, team: Team, tree: Path, task: Task, result: runner.Result) -> runner.Result:
@@ -1167,7 +1162,7 @@ def _push(root: Path, team: Team, tree: Path, task: Task, result: runner.Result)
             task.base = found
         if workcopy.git(tree, "rev-parse", "HEAD^{tree}").stdout.strip() != checked:
             result = runner.run(team, tree, workcopy.changed_files(task))
-            if not _passed(result):
+            if not runner.passed(result.status):
                 return result                         # the merged work waits for a repair; the next check pushes it
         pushed = workcopy.git(tree, "push", "-q", "-u", "origin", task.branch)
     stale = (f"Akasha could not update the task branch {task.branch} on the server, so the branch there is older "
@@ -1218,7 +1213,8 @@ def _strays(team: Team, task: Task) -> tuple[str, ...]:
 
 
 def ci_check(root: Path, config_path: Path | None, base: str) -> runner.Result:
-    """The server check: the rules come from config_path, which CI takes from the default branch."""
+    """The server check: the rules come from config_path, which CI takes from the default branch. The changed files
+    of the pull request select the checks with only_when, as in a work copy (runner.run)."""
     team = config.load(root, config_path)
     changed = workcopy.names(root, "diff", "--name-only", "--no-renames", f"{base}...HEAD")
     status, detail = runner.prepare(team, root)
@@ -1296,7 +1292,7 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     task.base = workcopy.git(tree, "rev-parse", f"origin/{branch}").stdout.strip() or task.base
     _publish(root, task)                              # from now on, the changed files are the changes of this task
     result = check(root, task_id)
-    if any(status != "PASS" for status in result.status.values()):
+    if not runner.passed(result.status):
         raise RuntimeError("a required check did not pass on the latest default branch: " + str(result.status))
     task = load(root, task_id)
     pushed = workcopy.git(tree, "push", "-u", "origin", task.branch)
@@ -1308,7 +1304,7 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     helped = team.server_rules == "akasha"            # the merge workflow of Akasha merges a pull request with the label
     if not task.pull_request:                         # a second handover only pushes the new commits
         created = gh(root, "pr", "create", "--base", branch, "--head", task.branch, "--title", task.title,
-                     "--body", handover_document.pull_request_body(task, branch, team.commands),
+                     "--body", handover_document.pull_request_body(task, branch, team.checks),
                      *(["--label", server.MERGE_LABEL] if helped else []))
         if created.returncode:
             raise RuntimeError(f"gh pr create failed: {created.stderr.strip()[:300]}")
@@ -1319,7 +1315,7 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     if not helped and not known.get("autoMergeRequest"):
         number = task.pull_request.rstrip("/").rsplit("/", 1)[-1]
         queued = github.auto_merge(root, task.pull_request, f"{task.title} (#{number})",
-                                   handover_document.commit_body(task, branch, team.commands))
+                                   handover_document.commit_body(task, branch, team.checks))
         if queued.returncode:
             raise RuntimeError(f"the pull request is open, but GitHub did not turn on auto-merge: "
                                f"{queued.stderr.strip()[:300]}. An administrator must correct the GitHub settings")

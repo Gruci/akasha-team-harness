@@ -113,7 +113,9 @@ To continue the task of another person:
 
 ## Stage 4 — Checks and repair
 
-1. Run `akasha check <task>`. When all checks pass, Akasha saves the work and pushes the task branch.
+1. Run `akasha check <task>`. When each check passes or is NOT_NEEDED, Akasha saves the work and pushes the task branch.
+   - NOT_NEEDED means that the change touches no file that the check examines. It is not a failure. Do not repair it.
+   - SKIP means that the team config has no command for a required check. SKIP is not a pass. Tell the user that an administrator must add the command to `akasha.toml`.
    - If Akasha says that the task branch on the server has commits that conflict with the work copy, do the steps in the message. Then run the check again.
    - If Akasha says that it could not update the task branch on the server, tell the user the reason. Run the check again later.
 2. Repair each failure. Then run the check again.
@@ -130,7 +132,7 @@ To continue the task of another person:
      - APIs: the endpoints or functions that other features use
      - Depends on: the feature keys of the features that this feature uses
      ```
-6. When all checks pass, run `akasha advance <task>`.
+6. When each check passes or is NOT_NEEDED, run `akasha advance <task>`.
 7. Continue with the akasha-inspect skill. For the `small` workflow, continue with the akasha-handover skill.
 
 > **NOTE:** Do not show the raw output of a check to the requester. Tell the result in simple words.

@@ -38,7 +38,7 @@ class Task:
     risk_reasons: list[str] = field(default_factory=list)
     approvals: dict[str, str] = field(default_factory=dict)    # role -> the person who approved
     accepted: dict[str, bool] = field(default_factory=dict)    # condition -> result of the inspection
-    checks: dict[str, str] = field(default_factory=dict)       # check -> PASS, FAIL, or SKIP
+    checks: dict[str, str] = field(default_factory=dict)       # check -> PASS, FAIL, SKIP, or NOT_NEEDED
     impact: dict[str, str] = field(default_factory=dict)       # the impact analysis of the agent engine
     map_note: str = ""                                         # why the map file of the feature does not change
     briefing: str = ""                                         # the pull request briefing, without Verification

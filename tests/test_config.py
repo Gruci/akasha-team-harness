@@ -28,7 +28,8 @@ class ConfigTests(unittest.TestCase):
             'tests = "python -m pytest -q"\n[contracts]\norders = ["api/orders/**"]\n'
             '[workflows]\nenabled = ["feature"]\n'))
         self.assertEqual(team.developers, ("@lead",))
-        self.assertEqual(team.commands, {"tests": "python -m pytest -q"})
+        self.assertEqual(team.checks, {"tests": config.Check("python -m pytest -q")})     # the format of 1.0.0
+        self.assertEqual((team.setup, team.run_all_when), ("", config.RUN_ALL_WHEN))
         self.assertEqual(list(team.workflows), ["feature"])
         self.assertEqual(set(team.defined), {"feature", "fix", "small"})      # for the tasks that started before
         self.assertEqual(team.contracts["orders"], ("api/orders/**",))
@@ -39,6 +40,44 @@ class ConfigTests(unittest.TestCase):
                      '[server]\nrules = "someone"\n'):
             with self.subTest(text=text), self.assertRaises(config.ConfigError):
                 config.load(self.repo(text))
+
+    def test_named_checks(self):
+        team = config.load(self.repo(
+            '[checks]\nrequired = ["secrets", "static", "pytest", "front", "lint"]\n'
+            'setup = "pip install -r requirements.txt"\nlint = "ruff check ."\nrun_all_when = ["requirements*.txt"]\n'
+            '[checks.static]\ncommand = "python -X utf8 static_check.py"\n'
+            '[checks.pytest]\ncommand = "python -m pytest -q"\nonly_when = ["**/*.py", "tests/**"]\n'
+            "[checks.front]\ncommand = \"npm ci && npm run build\"\ncwd = './frontend\\app'\n"
+            'only_when = ["frontend/**"]\ncommand_windows = "npm ci & npm run build"\n'))
+        self.assertEqual(team.required_checks, ("secrets", "static", "pytest", "front", "lint"))
+        self.assertEqual((team.setup, team.run_all_when), ("pip install -r requirements.txt", ("requirements*.txt",)))
+        self.assertEqual(team.checks, {
+            "lint": config.Check("ruff check ."),
+            "static": config.Check("python -X utf8 static_check.py"),
+            "pytest": config.Check("python -m pytest -q", only_when=("**/*.py", "tests/**")),
+            "front": config.Check("npm ci && npm run build", cwd="frontend/app", only_when=("frontend/**",),
+                                  command_windows="npm ci & npm run build"),
+        })
+        top = config.load(self.repo('[checks.static]\ncommand = "x"\ncwd = "."\n[checks]\nrun_all_when = []\n'))
+        self.assertEqual((top.checks["static"].cwd, top.run_all_when), ("", ()))
+
+    def test_incorrect_checks_are_refused(self):
+        for text in ('[checks.secrets]\ncommand = "x"\n', '[checks.setup]\ncommand = "x"\n',
+                     '[checks.required]\ncommand = "x"\n', '[checks.run_all_when]\ncommand = "x"\n',
+                     '[checks]\nsecrets = "x"\n', '[checks]\nstatic = "python static_check.py"\n',
+                     '[checks]\ntests = ""\n', '[checks]\nlint = 1\n', '[checks]\nrequired = []\n',
+                     '[checks]\nrun_all_when = "akasha.toml"\n', '[checks."my check"]\ncommand = "x"\n',
+                     '[checks.static]\ncwd = "src"\n', '[checks.static]\ncommand = "x"\nshell = "bash"\n',
+                     '[checks.static]\ncommand = "x"\ncwd = "../other"\n',
+                     '[checks.static]\ncommand = "x"\ncwd = "/srv"\n', '[checks.static]\ncommand = "x"\ncwd = "C:/app"\n',
+                     '[checks.static]\ncommand = "x"\nonly_when = []\n',
+                     '[checks.static]\ncommand = "x"\nonly_when = "src/**"\n',
+                     '[checks.static]\ncommand = "x"\ncommand_windows = ""\n'):
+            with self.subTest(text=text), self.assertRaises(config.ConfigError):
+                config.load(self.repo(text))
+        with self.assertRaises(config.ConfigError) as refused:
+            config.load(self.repo('[checks.secrets]\ncommand = "x"\n'))
+        self.assertIn("secrets cannot be the name of a check", str(refused.exception))
 
     def test_the_map_folder_is_a_folder_in_the_repository(self):
         self.assertEqual(config.load(self.repo()).map_dir, ".akasha/context/map")

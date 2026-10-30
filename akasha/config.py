@@ -36,7 +36,7 @@ _KEYS: dict[str, set[str] | None] = {
     "roles": {"developers", "administrators"},
     "risk": {"high", "medium"},
     "approval": {"high", "medium"},
-    "checks": {"required", "setup", "tests", "lint"},
+    "checks": None,                          # the team gives the check names (_checks)
     "preview": {"command", "database"},
     "contracts": None,                       # the team gives the contract names
     "workflows": {"enabled"},
@@ -46,6 +46,20 @@ _KEYS: dict[str, set[str] | None] = {
 # Who enforces the server rules: "github" (branch protection and auto-merge of GitHub) or "akasha" (the merge and
 # watch workflows of Akasha, for a plan without branch protection). The setup selects it.
 SERVER_RULES = ("github", "akasha")
+# The keys of a check in [checks.<name>].
+CHECK_KEYS = ("command", "cwd", "only_when", "command_windows")
+# The keys of [checks] that are settings, not checks. secrets is the built-in check: it has no command.
+CHECK_SETTINGS = ("required", "setup", "run_all_when")
+RESERVED_CHECKS = CHECK_SETTINGS + ("secrets",)
+ONE_LINE_CHECKS = ("tests", "lint")          # Akasha 1.0.0 had one command line for each of these checks
+CHECK_NAME = re.compile(r"[A-Za-z0-9_-]+")
+# A change of these files can break each check, so each check runs, also a check with only_when: the dependencies,
+# the project settings, the team config, and the server workflows.
+RUN_ALL_WHEN = ("**/requirements*.txt", "**/pyproject.toml", "**/setup.cfg", "**/setup.py", "**/Pipfile",
+                "**/Pipfile.lock", "**/poetry.lock", "**/uv.lock", "**/package.json", "**/package-lock.json",
+                "**/npm-shrinkwrap.json", "**/yarn.lock", "**/pnpm-lock.yaml", "**/go.mod", "**/go.sum",
+                "**/build.gradle", "**/build.gradle.kts", "**/settings.gradle", "**/settings.gradle.kts",
+                "**/gradle.properties", "**/pom.xml", CONFIG_FILE, ".github/workflows/**")
 
 
 class ConfigError(ValueError):
@@ -76,13 +90,24 @@ class Workflow:
 
 
 @dataclass(frozen=True)
+class Check:
+    """A check of the team in [checks.<name>]: a command that must pass."""
+    command: str
+    cwd: str = ""                             # the folder of the command, with / between the parts. "" is the top
+    only_when: tuple[str, ...] = ()           # the check runs only when a changed file matches. () is each change
+    command_windows: str = ""                 # the command on Windows, for cmd.exe
+
+
+@dataclass(frozen=True)
 class Team:
     developers: tuple[str, ...] = ()
     administrators: tuple[str, ...] = ()
     risk: dict[str, tuple[str, ...]] = field(default_factory=dict)
     approval: dict[str, tuple[str, ...]] = field(default_factory=dict)     # no person gate unless the team sets one
     required_checks: tuple[str, ...] = ("secrets",)
-    commands: dict[str, str] = field(default_factory=dict)
+    checks: dict[str, Check] = field(default_factory=dict)          # only the checks in required_checks run
+    setup: str = ""                                                  # the command that prepares a new copy
+    run_all_when: tuple[str, ...] = RUN_ALL_WHEN
     preview: dict[str, str] = field(default_factory=dict)
     contracts: dict[str, tuple[str, ...]] = field(default_factory=dict)
     workflows: dict[str, Workflow] = field(default_factory=dict)     # the enabled workflows, for new requests
@@ -103,18 +128,65 @@ def _text(value: object, where: str) -> str:
     return value
 
 
-def _folder(value: object, where: str) -> str:
-    """A folder in the repository, with / between the parts. An absolute path, a drive, `..`, and the top of the
-    repository are refused: Akasha puts the folder outside each task scope. A device name of Windows is refused too,
-    because each Windows checkout of the folder would fail."""
+def _relative(value: object, where: str, example: str, top: bool = True) -> str:
+    """A folder in the repository, with / between the parts. "" is the top of the repository, unless `top` is False.
+    An absolute path, a drive, and `..` are refused."""
     path = PureWindowsPath(_text(value, where).strip())       # it reads both / and \ and finds each drive
-    if path.anchor or ".." in path.parts or not path.parts:
-        raise ConfigError(f"{CONFIG_FILE}: {where} must be a folder in the repository, for example "
-                          f"{MAP_DIR.as_posix()}. Do not use an absolute path or ..")
-    device = [part for part in path.parts if re.fullmatch(WINDOWS_NAMES, part.split(".")[0].rstrip(" "), re.I)]
+    if path.anchor or ".." in path.parts or not (path.parts or top):
+        raise ConfigError(f"{CONFIG_FILE}: {where} must be a folder in the repository, for example {example}. Do not "
+                          "use an absolute path or ..")
+    return "/".join(path.parts)
+
+
+def _folder(value: object, where: str) -> str:
+    """The map folder, with / between the parts. The top of the repository is refused too: Akasha puts the folder
+    outside each task scope. A device name of Windows is refused too, because each Windows checkout of the folder
+    would fail."""
+    folder = _relative(value, where, MAP_DIR.as_posix(), top=False)
+    device = [part for part in folder.split("/") if re.fullmatch(WINDOWS_NAMES, part.split(".")[0].rstrip(" "), re.I)]
     if device:
         raise ConfigError(f"{CONFIG_FILE}: {where} cannot have the part {device[0]}: it is a device name of Windows")
-    return "/".join(path.parts)
+    return folder
+
+
+def _check(name: str, value: object) -> Check:
+    """One check of [checks]: a table [checks.<name>], or one command line for tests or lint, as in Akasha 1.0.0."""
+    where = f"[checks.{name}]"
+    if name in RESERVED_CHECKS:
+        raise ConfigError(f"{CONFIG_FILE}: {name} cannot be the name of a check in [checks] — use another name")
+    if name in ONE_LINE_CHECKS and not isinstance(value, dict):
+        return Check(_text(value, f"[checks] {name}"))
+    if not isinstance(value, dict):
+        raise ConfigError(f"{CONFIG_FILE}: unknown key {name} in [checks] — write a check as a table {where} with "
+                          'command = "<command>"')
+    if not CHECK_NAME.fullmatch(name):
+        raise ConfigError(f"{CONFIG_FILE}: the check name {name} can have only letters, digits, - and _")
+    unknown = sorted(set(value) - set(CHECK_KEYS))
+    if unknown:
+        raise ConfigError(f"{CONFIG_FILE}: unknown key {unknown[0]} in {where} — use {', '.join(CHECK_KEYS)}")
+    only_when = _strings(value.get("only_when", []), f"{where} only_when")
+    if "only_when" in value and not only_when:
+        raise ConfigError(f"{CONFIG_FILE}: {where} only_when needs one or more file patterns. To run the check for "
+                          "each change, remove only_when")
+    return Check(command=_text(value.get("command"), f"{where} command"),
+                 cwd=_relative(value.get("cwd", "."), f"{where} cwd", "frontend"), only_when=only_when,
+                 command_windows=_text(value["command_windows"], f"{where} command_windows")
+                 if "command_windows" in value else "")
+
+
+def _checks(section: dict) -> dict[str, Check]:
+    """The checks in [checks]. A setting with a table is a check with a reserved name, which _check refuses."""
+    return {name: _check(name, value) for name, value in section.items()
+            if name not in CHECK_SETTINGS or isinstance(value, dict)}
+
+
+def _required(section: dict) -> tuple[str, ...]:
+    """The names of the required checks. The default is the built-in check secrets. An empty list is refused: no
+    check is not a pass, so each task would wait at its checks."""
+    required = _strings(section.get("required", ["secrets"]), "[checks] required")
+    if not required:
+        raise ConfigError(f'{CONFIG_FILE}: [checks] required needs one or more checks, for example ["secrets"]')
+    return required
 
 
 def _examine_keys(data: dict) -> None:
@@ -209,14 +281,17 @@ def _team(data: dict, flows: dict[str, Workflow]) -> Team:
     rules = data.get("server", {}).get("rules", "github")
     if rules not in SERVER_RULES:
         raise ConfigError(f"{CONFIG_FILE}: [server] rules must be {' or '.join(SERVER_RULES)}")
+    named = _checks(checks)
     return Team(
         developers=_strings(roles.get("developers", []), "[roles] developers"),
         administrators=_strings(roles.get("administrators", []), "[roles] administrators"),
         risk={level: _strings(globs, f"[risk] {level}") for level, globs in risk.items()},
         approval={level: _strings(holders, f"[approval] {level}") for level, holders in approval.items()},
-        required_checks=_strings(checks.get("required", ["secrets"]), "[checks] required"),
-        commands={name: _text(checks[name], f"[checks] {name}") for name in ("setup", "tests", "lint")
-                  if name in checks},
+        required_checks=_required(checks),
+        checks=named,
+        setup=_text(checks["setup"], "[checks] setup") if "setup" in checks else "",
+        run_all_when=_strings(checks["run_all_when"], "[checks] run_all_when") if "run_all_when" in checks
+        else RUN_ALL_WHEN,
         preview={name: _text(value, f"[preview] {name}") for name, value in preview.items()},
         contracts={name: _strings(globs, f"[contracts] {name}") for name, globs in contracts.items()},
         workflows={name: flows[name] for name in enabled},

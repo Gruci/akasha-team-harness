@@ -19,10 +19,14 @@ medium = ["**/api/**"]
 high = ["developer"]
 
 [checks]
-required = ["secrets", "tests", "lint"]
-setup = "npm ci"
-tests = "npm test --silent"
-lint = "npx eslint ."
+required = ["secrets", "tests", "front"]
+setup = "python -m pip install -r requirements.txt"
+tests = "python -m pytest -q"
+
+[checks.front]
+command = "npm ci && npm run build"
+cwd = "frontend"
+only_when = ["frontend/**"]
 
 [preview]
 command = "npm run dev -- --port {port}"
@@ -77,12 +81,56 @@ The roles are `requester`, `developer`, and `administrator`. Akasha also writes 
 
 | Key | Value |
 |:--|:--|
-| `required` | The checks that must pass: `secrets`, `tests`, and `lint`. The default is `["secrets"]` |
-| `setup` | The command that installs the dependencies in a new copy. Akasha runs it in each new work copy and in CI |
-| `tests` | The command that runs the tests |
-| `lint` | The command that runs the lint |
+| `required` | The checks that must pass. Only these checks run. The default is `["secrets"]`. The list cannot be empty |
+| `setup` | The command that installs the dependencies in a new copy. Akasha runs it in each new work copy and in the server check. It is not a check |
+| `run_all_when` | File patterns. When a changed file matches one, each required check runs, also a check with `only_when`. The default is the dependency files, the lock files, and the settings files of the projects (for example `**/requirements*.txt`, `**/pyproject.toml`, `**/setup.py`, `**/package.json`, `**/package-lock.json`, `**/go.mod`, and `**/build.gradle`), `akasha.toml`, and `.github/workflows/**`. `[]` turns it off |
+| `tests`, `lint` | One command line for the check `tests` or `lint`, as in Akasha 1.0.0. It is the same as a table with only `command` |
+| `<name>` | A table `[checks.<name>]`: one check. See below |
 
-The `secrets` check is built in. A required check without a command gets the result SKIP. SKIP is not a pass.
+The `secrets` check is built in. It examines each changed file, and it has no table.
+
+### `[checks.<name>]`
+
+Each table in `[checks]` is one check. Add its name to `required`: a check that is not in `required` does not run.
+
+```toml
+[checks]
+required = ["secrets", "static", "pytest", "front"]
+
+[checks.static]
+command = "python -X utf8 static_check.py"
+
+[checks.pytest]
+command = "python -m pytest tests/ -q"
+only_when = ["**/*.py", "tests/**", "pytest.ini", "conftest.py"]
+
+[checks.front]
+command = "npm ci && npm run build"
+cwd = "frontend"
+only_when = ["frontend/**"]
+```
+
+| Key | Value |
+|:--|:--|
+| `command` | The command of the check. It is necessary. The check passes when the command stops with the exit code 0 |
+| `cwd` | The folder of the command, relative to the top of the repository. The default is the top. Akasha refuses an absolute path, a drive, and `..`. When the folder does not exist, the check fails and tells why |
+| `only_when` | File patterns, relative to the top of the repository, also when the check has `cwd`. The check runs only when a changed file matches one, or a changed file matches `run_all_when`. Else its result is NOT_NEEDED. Without `only_when`, the check runs for each change |
+| `command_windows` | The command on Windows, in the words of `cmd.exe`. On Windows, it replaces `command` |
+
+A check name has only letters, digits, `-`, and `_`. `required`, `setup`, `run_all_when`, and `secrets` cannot be check names.
+
+The results:
+
+- PASS: the check passed.
+- NOT_NEEDED: the change touches no file that the check examines. NOT_NEEDED is a pass. The Verification section of the pull request tells these checks apart from the checks that passed.
+- SKIP: a required check without a command. SKIP is not a pass.
+- FAIL: the check failed.
+
+Akasha runs each command in the shell of the operating system: `cmd.exe` on Windows, and `/bin/sh` on macOS and Linux. It is not the shell of the person, for example PowerShell or zsh. The server check runs on Linux (`ubuntu-latest`), so it uses `command`.
+
+The patterns of `only_when` and `run_all_when` use the pattern rules of `[risk]`. The default `run_all_when` closes a gap: a pull request that changes only a dependency file, for example `requirements.txt`, can break each check, but it matches no `only_when` of the code.
+
+> **CAUTION:** An Akasha plugin that is not updated refuses `[checks.<name>]` and `run_all_when`. Make sure that each person updated the Akasha plugin before you add them.
 
 ## `[preview]`
 

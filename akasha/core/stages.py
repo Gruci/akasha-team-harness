@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from akasha.config import Workflow
 from akasha.core.task import Task
+from akasha.validators.runner import passed
 
 MAX_FAILURES = 3
 IMPACT_KEYS = ("features", "data", "contracts", "tasks", "rollback")
@@ -44,7 +45,8 @@ def _scope_respected(task: Task, context: Context) -> bool:
 
 
 def _checks_pass(task: Task, context: Context) -> bool:
-    return all(task.checks.get(name) == "PASS" for name in context.required_checks) and \
+    """Each required check passed or was not needed (runner.passed), and no check failed."""
+    return passed({name: task.checks.get(name, "") for name in context.required_checks}) and \
         "FAIL" not in task.checks.values()
 
 

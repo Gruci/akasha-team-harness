@@ -11,6 +11,7 @@ from akasha.coordinator import board, resources
 from akasha.core import task as tasks
 from akasha.infra import github
 from akasha.repo import main_root
+from akasha.validators import runner
 
 
 def _root() -> Path:
@@ -136,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         result = flow.ci_check(Path.cwd(), args.config, args.base)
         for name, status in result.status.items():
             print(f"[{status}] {name}" + (f"\n{result.details[name]}" if status != "PASS" and result.details[name] else ""))
-        return 0 if all(status == "PASS" for status in result.status.values()) else 1
+        return 0 if runner.passed(result.status) else 1
     root = _root()
     if args.command == "setup":
         for line in setup.run(root, args.approve_infra or ""):
@@ -233,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
             print(note)
         if task.status == "stopped":
             print(task.notes[-1])
-        return 0 if all(status == "PASS" for status in result.status.values()) else 1
+        return 0 if runner.passed(result.status) else 1
     if args.command == "accept":
         _show(flow.accept(root, args.task, args.condition, args.result == "yes", args.reason))
         return 0

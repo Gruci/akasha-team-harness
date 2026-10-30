@@ -340,6 +340,63 @@ class FlowTests(unittest.TestCase):
         self.assertIn("1234567", task.setup_output)                   # the output stays on this computer
         self.assertNotIn("1234567", board.body(task))
 
+    def test_a_check_that_is_not_needed_does_not_stop_the_work(self):
+        root = make_repo(PASS)
+        (root / "akasha.toml").write_text(
+            f'[checks]\nrequired = ["secrets", "tests", "front"]\ntests = \'{PASS}\'\n'
+            f'[checks.front]\ncommand = \'{FAIL}\'\ncwd = "frontend"\nonly_when = ["frontend/**"]\n', encoding="utf-8")
+        workcopy.git(root, "commit", "-qam", "a check of the front end")
+        remote = add_remote(root)
+        task, _ = flow.start(root, "Change the search", "ops-member", workflow="small")
+        (Path(task.workcopy) / "search.py").write_text("x = 1\n", encoding="utf-8")
+        flow.impact(root, task.id, IMPACT, map_note="The change adds no feature, screen, table, or API.")
+        self.assertEqual(flow.advance(root, task.id), [])
+        output = io.StringIO()
+        with patch("akasha.__main__.main_root", return_value=root), redirect_stdout(output):
+            self.assertEqual(command_line.run(["check", task.id]), 0)
+        self.assertIn("[NOT_NEEDED] front\nno changed file matches only_when: frontend/**", output.getvalue())
+        self.assertEqual(tasks.load(root, task.id).checks, {"secrets": "PASS", "tests": "PASS", "front": "NOT_NEEDED"})
+        self.assertEqual(workcopy.git(remote, "rev-parse", "--verify", "-q", task.branch).returncode, 0)    # pushed
+        with patch("akasha.flow.github.status", return_value=[]):
+            self.assertEqual(flow.advance(root, task.id), [])                # checks_pass
+        flow.brief(root, task.id, BRIEFING)
+        with github_merges_later() as gh:
+            address, _blocked = flow.handover(root, task.id)
+        self.assertEqual(address, PULL_REQUEST)
+        created = gh.call_args_list[0].args
+        body = created[created.index("--body") + 1]
+        self.assertIn(f"passed on the latest main: secrets, tests (`{PASS}`). These checks did not run, because the "
+                      "change touches no file that they examine: front.", body)
+
+    def test_the_server_check_selects_the_checks_with_the_changed_files(self):
+        root = make_repo(PASS)
+        (root / "akasha.toml").write_text(
+            f'[checks]\nrequired = ["secrets", "front"]\n[checks.front]\ncommand = \'{PASS}\'\n'
+            f'command_windows = \'{PASS}\'\ncwd = "frontend"\nonly_when = ["frontend/**"]\n', encoding="utf-8")
+        workcopy.git(root, "commit", "-qam", "a check of the front end")
+        base = workcopy.git(root, "rev-parse", "HEAD").stdout.strip()
+        (root / "search.py").write_text("x = 1\n", encoding="utf-8")
+        workcopy.git(root, "add", "-A")
+        workcopy.git(root, "commit", "-qm", "the search")
+        self.assertEqual(flow.ci_check(root, None, base).status, {"secrets": "PASS", "front": "NOT_NEEDED"})
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(root)                                                       # the checkout of the server check
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(command_line.run(["check", "--ci", "--base", base]), 0)
+        (root / "frontend").mkdir()
+        (root / "frontend" / "app.js").write_text("let x = 1\n", encoding="utf-8")
+        workcopy.git(root, "add", "-A")
+        workcopy.git(root, "commit", "-qm", "the front end")
+        self.assertEqual(flow.ci_check(root, None, base).status, {"secrets": "PASS", "front": "PASS"})
+        (root / "frontend" / "app.js").unlink()
+        (root / "frontend").rmdir()
+        (root / "package.json").write_text("{}\n", encoding="utf-8")                # a file of run_all_when
+        workcopy.git(root, "add", "-A")
+        workcopy.git(root, "commit", "-qm", "the dependencies, without the front end")
+        result = flow.ci_check(root, None, base)
+        self.assertEqual(result.status["front"], "FAIL")                    # it runs, and its folder is not there
+        self.assertIn("the folder frontend of the check front does not exist", result.details["front"])
+
     def test_a_wider_scope_finds_overlaps(self):
         root = make_repo(PASS)
         first, _ = flow.start(root, "Change the search", "ops-a", scope=["src/search/**"])

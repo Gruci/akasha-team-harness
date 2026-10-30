@@ -62,21 +62,26 @@ The `brief` command examines the briefing before the handover:
 
 ## The check runner
 
-The check runner runs the required checks in the work copy of the task. Each check gets one result.
+The check runner runs the required checks in the work copy of the task. The server check uses the same runner on the files that the pull request changes. Each check gets one result.
 
 | Result | Meaning |
 |:--|:--|
 | PASS | The check passed |
-| FAIL | The check failed. A FAIL counts as one failed repair |
+| FAIL | The check failed. A FAIL counts as one failed repair. A check whose `cwd` folder does not exist also fails |
 | SKIP | The team config has no command for the check. SKIP is not a pass |
+| NOT_NEEDED | The check has `only_when`, and the change touches no file that matches it or `run_all_when`. The check did not run. NOT_NEEDED is a pass |
+
+The exit condition `checks_pass`, `check`, `handover`, and the server check use one rule: the result has one or more checks, and each check is PASS or NOT_NEEDED.
+
+Each check runs in its `cwd` folder, else at the top of the work copy. The command runs in the shell of the operating system: `cmd.exe` on Windows, and `/bin/sh` on macOS and Linux. On Windows, `command_windows` replaces `command` when the check has it. [Team config](team-config.md) tells the keys of a check.
 
 A check command that does not stop in 30 minutes gets the result FAIL. Akasha then stops the command and all the processes that it started. The runner keeps the last 3000 characters of the output for the agent engine.
 
-When all checks pass, Akasha saves the work as a commit and pushes the task branch. It saves nothing while the work copy has a file outside the scope, for example a file that a test made. The handover stops for the same reason and names the files.
+When each check passes or is NOT_NEEDED, Akasha saves the work as a commit and pushes the task branch. It saves nothing while the work copy has a file outside the scope, for example a file that a test made. The handover stops for the same reason and names the files.
 
 ## Language packs
 
-A language pack gives the default commands for one language. `setup` writes them into `akasha.toml` when git tracks files of that language. When the repository has files of more than one language, `setup` uses the first pack in alphabetical order.
+A language pack gives the default commands for one language. `setup` writes them into `akasha.toml` as the one-line checks `tests` and `lint` when git tracks files of that language. When the repository has files of more than one language, `setup` uses the first pack in alphabetical order.
 
 | Pack | File extensions | Setup | Tests | Lint |
 |:--|:--|:--|:--|:--|

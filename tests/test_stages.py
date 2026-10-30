@@ -45,8 +45,12 @@ class StageTests(unittest.TestCase):
         context = stages.Context(required_checks=("tests", "secrets"))
         self.task.checks = {"tests": "PASS", "secrets": "SKIP"}
         self.assertEqual(stages.advance(self.task, self.flow, context), ["checks_pass"])
+        self.task.checks = {"tests": "NOT_NEEDED", "secrets": "FAIL"}
+        self.assertEqual(stages.advance(self.task, self.flow, context), ["checks_pass"])
         self.task.checks["secrets"] = "PASS"
-        self.assertEqual(stages.advance(self.task, self.flow, context), [])
+        self.assertEqual(stages.advance(self.task, self.flow, stages.Context()), ["checks_pass"])   # no check
+        self.assertEqual(stages.advance(self.task, self.flow, context), [])      # NOT_NEEDED is a pass
+        self.assertEqual(self.task.stage, "inspection")
 
     def test_the_inspection_needs_the_product_map_and_the_server_rules(self):
         self.task.stage, self.task.conditions = "inspection", ["Filter by the transaction date"]

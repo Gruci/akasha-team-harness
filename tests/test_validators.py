@@ -6,9 +6,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from akasha.config import Team
+from akasha.config import Check, Team
 from akasha.core.task import Task
 from akasha.validators import guard, langs, runner, secrets
+
+
+def python(code: str) -> str:
+    """A check command that runs Python code. It is correct for cmd.exe and for /bin/sh."""
+    return f'"{sys.executable}" -c "{code}"'
+
+
+PASS = python("raise SystemExit(0)")
 
 
 class GuardTests(unittest.TestCase):
@@ -100,16 +108,58 @@ class CheckTests(unittest.TestCase):
             work = Path(folder)
             (work / "config.py").write_text("TOKEN = 'ghp_" + "b" * 36 + "'\n", encoding="utf-8")
             team = Team(required_checks=("secrets", "tests", "lint"),
-                        commands={"tests": f'"{sys.executable}" -c "raise SystemExit(0)"'})
+                        checks={"tests": Check(python("raise SystemExit(0)"))})
             result = runner.run(team, work, ["config.py"])
             self.assertEqual(result.status, {"secrets": "FAIL", "tests": "PASS", "lint": "SKIP"})
             self.assertIn("config.py:1 GitHub token", result.details["secrets"])
-            failing = Team(required_checks=("tests",), commands={"tests": f'"{sys.executable}" -c "raise SystemExit(3)"'})
+            failing = Team(required_checks=("tests",), checks={"tests": Check(python("raise SystemExit(3)"))})
             self.assertEqual(runner.run(failing, work, []).status, {"tests": "FAIL"})
+
+    def test_not_needed_is_a_pass_and_skip_is_not(self):
+        self.assertTrue(runner.passed({"secrets": "PASS", "front": "NOT_NEEDED"}))
+        for status in ({}, {"secrets": "PASS", "lint": "SKIP"}, {"secrets": "FAIL", "front": "NOT_NEEDED"}):
+            with self.subTest(status=status):
+                self.assertFalse(runner.passed(status))
+
+    def test_a_check_runs_only_when_the_change_touches_its_files(self):
+        team = Team(required_checks=("pytest",), checks={"pytest": Check(PASS, only_when=("**/*.py", "tests/**"))})
+        with tempfile.TemporaryDirectory() as folder:
+            work = Path(folder)
+            for changed, status in ((["docs/guide.md"], "NOT_NEEDED"), ([], "NOT_NEEDED"), (["app.py"], "PASS"),
+                                    (["src/app/main.py"], "PASS"), (["tests/data.json"], "PASS"),
+                                    (["requirements-dev.txt"], "PASS"), (["web/package.json"], "PASS"),
+                                    (["akasha.toml"], "PASS"), ([".github/workflows/deploy.yml"], "PASS")):
+                with self.subTest(changed=changed):          # the files of run_all_when run each check
+                    self.assertEqual(runner.run(team, work, changed).status, {"pytest": status})
+            quiet = Team(required_checks=("pytest",), checks=team.checks, run_all_when=())
+            result = runner.run(quiet, work, ["requirements.txt"])
+            self.assertEqual(result.status, {"pytest": "NOT_NEEDED"})
+            self.assertIn("only_when: **/*.py, tests/**", result.details["pytest"])
+
+    def test_a_check_runs_in_its_folder(self):
+        where = python("import os; print(os.path.basename(os.getcwd()))")
+        team = Team(required_checks=("front", "mobile"),
+                    checks={"front": Check(where, cwd="frontend/app"), "mobile": Check(where, cwd="mobile")})
+        with tempfile.TemporaryDirectory() as folder:
+            work = Path(folder)
+            (work / "frontend" / "app").mkdir(parents=True)
+            result = runner.run(team, work, ["frontend/app/main.ts"])
+        self.assertEqual(result.status, {"front": "PASS", "mobile": "FAIL"})          # no traceback
+        self.assertEqual(result.details["front"], "app")
+        self.assertIn("the folder mobile of the check mobile does not exist", result.details["mobile"])
+
+    def test_command_windows_replaces_the_command_on_windows(self):
+        say = lambda word: python(f"print({word!r})")  # noqa: E731
+        both = Team(required_checks=("build",), checks={"build": Check(say("posix"), command_windows=say("windows"))})
+        one = Team(required_checks=("build",), checks={"build": Check(say("posix"))})
+        with tempfile.TemporaryDirectory() as folder:
+            for windows, team, word in ((True, both, "windows"), (False, both, "posix"), (True, one, "posix")):
+                with self.subTest(windows=windows, word=word), patch.object(runner, "WINDOWS", windows):
+                    self.assertEqual(runner.run(team, Path(folder), []).details["build"], word)
 
     def test_a_timeout_stops_the_command_and_its_children(self):
         child = "import subprocess, sys; subprocess.run([sys.executable, '-c', 'import time; time.sleep(60)'])"
-        hung = Team(required_checks=("tests",), commands={"tests": f'"{sys.executable}" -c "{child}"'})
+        hung = Team(required_checks=("tests",), checks={"tests": Check(python(child))})
         with tempfile.TemporaryDirectory() as folder, patch.object(runner, "TIMEOUT_SECONDS", 2):
             started = time.monotonic()
             result = runner.run(hung, Path(folder), [])

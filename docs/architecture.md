@@ -39,7 +39,7 @@ flowchart LR
 4. The agent engine reads the map file of the feature, finds the effects of the change, and records the impact analysis.
 5. The requester approves the specification in simple words. With GitHub, the requester writes a decision comment on the issue of the task.
 6. The core makes a work copy. The agent engine builds the change and a test for each completion condition.
-7. The validators run the required checks. When all checks pass, Akasha saves the work and pushes the task branch.
+7. The validators run the required checks. A check with `only_when` runs only when the change touches its files. When each check passes or is not needed, Akasha saves the work and pushes the task branch.
 8. The requester examines the result in a preview and accepts it, with GitHub also in a decision comment.
 9. The agent engine updates the map file of the feature and writes the briefing.
 10. Akasha opens the pull request and turns on auto-merge. GitHub merges it as one squash commit when the server check passes.
@@ -84,7 +84,7 @@ The agent engine runs these commands. People do not have to remember them. The s
 | `approve` | Records the approval of a requester or of a gate role. With GitHub, it writes the decision comment only for the GitHub account of this computer, else it tells the comment that the person must write. Without GitHub, `--by` names the person |
 | `advance` | Moves the task to the next stage, or shows what blocks it |
 | `show` | Shows one task: stage, risk, holder, feature key and map file, scope, the revision of the specification, the numbered conditions, impact, approvals, checks, preview values, and the decision comments that do not count. It only reads |
-| `check` | Runs the required checks in the work copy. When they pass, it saves the work and pushes the task branch. It tells a push that the server refuses |
+| `check` | Runs the required checks in the work copy. When each check passes or is NOT_NEEDED, it saves the work and pushes the task branch. It tells a push that the server refuses |
 | `accept` | Records the inspection of the requester, of one condition by its text or number, or of all conditions. With GitHub, the same rule as `approve` |
 | `brief` | Examines and records the briefing |
 | `handover` | Checks the change again on the latest default branch, opens the pull request, and turns on auto-merge |

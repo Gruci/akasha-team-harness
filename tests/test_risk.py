@@ -1,10 +1,10 @@
 import unittest
 
-from akasha.config import Team
+from akasha.config import Check, Team
 from akasha.core.handover import commit_body, pull_request_body
 from akasha.core.risk import assess, matches
 from akasha.core.task import Task, new_id
-from akasha.validators.briefing import examine
+from akasha.validators.briefing import MAX_LINES, examine
 
 TEAM = Team(risk={"high": ("**/auth/**", "**/migrations/**"), "medium": ("**/api/**",)},
             contracts={"orders-api": ("api/orders/**",)})
@@ -83,7 +83,7 @@ class HandoverTests(unittest.TestCase):
                     accepted={"Filter by the transaction date": True, "Keep the other filters": True},
                     checks={"secrets": "PASS", "tests": "PASS"}, briefing=BRIEFING.strip(),
                     board="https://github.com/team/app/issues/12")
-        body = commit_body(task, "main", {"tests": "npm test --silent"})
+        body = commit_body(task, "main", {"tests": Check("npm test --silent")})
         self.assertTrue(body.startswith("## Why"))
         self.assertIn("passed on the latest main: secrets, tests (`npm test --silent`).", body)
         self.assertIn("accepted 2 of 2 completion conditions", body)
@@ -93,6 +93,22 @@ class HandoverTests(unittest.TestCase):
         self.assertIn("<!-- akasha-task: date-filter-0a1b -->", text)
         task.accepted = {}
         self.assertIn("no inspection by the requester", commit_body(task, "main", {}))
+
+    def test_a_check_that_did_not_run_is_not_told_as_a_pass(self):
+        task = Task(id="date-filter-0a1b", title="Add a date filter", workflow="small", stage="handover",
+                    checks={"secrets": "PASS", "pytest": "PASS", "front": "NOT_NEEDED", "static": "NOT_NEEDED"},
+                    briefing=BRIEFING.strip())
+        checks = {"pytest": Check("python -m pytest -q"), "front": Check("npm run build", cwd="frontend"),
+                  "static": Check("python static_check.py")}
+        body = commit_body(task, "main", checks)
+        self.assertIn("- The required checks passed on the latest main: pytest (`python -m pytest -q`), secrets. "
+                      "These checks did not run, because the change touches no file that they examine: front, "
+                      "static.\n", body)
+        task.checks["front"] = "PASS"
+        self.assertIn("passed on the latest main: front (`npm run build` in `frontend`), pytest", commit_body(
+            task, "main", checks))
+        task.briefing = "\n".join(["The longest briefing."] * MAX_LINES)
+        self.assertLess(len(commit_body(task, "main", checks).splitlines()), 40)
 
 
 if __name__ == "__main__":
