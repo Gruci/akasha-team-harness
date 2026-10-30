@@ -18,8 +18,18 @@ CONTEXT_PREFIX = config.TEAM_CONTEXT.as_posix() + "/"
 
 
 def _publish(root: Path, task: Task) -> None:
+    """Save the task on this computer, then put it on the shared board.
+
+    When the board write fails, the task stays saved here. The error names the task, so that the person puts this
+    task on the board later and does not record a second task."""
     tasks.save(root, task)
-    if board.publish(root, task):
+    try:
+        published = board.publish(root, task)
+    except board.BoardError as error:
+        raise board.BoardError(f"{error}. Akasha saved the task {task.id} on this computer. When gh works again, "
+                               f"run `akasha specify {task.id}` to put it on the board. Do not record the task "
+                               "again") from error
+    if published:
         tasks.save(root, task)
 
 
@@ -78,7 +88,10 @@ def _tidy(root: Path) -> None:
     """Finish the tasks whose pull request merged, and remove the work copies of finished tasks."""
     for task in tasks.all_tasks(root):
         if task.status == "open" and task.stage == "handover" and task.pull_request:
-            advance(root, task.id)                    # the task is done when GitHub merged the pull request
+            try:
+                advance(root, task.id)                # the task is done when GitHub merged the pull request
+            except board.BoardError:
+                pass        # for example a person deleted the issue. The request reads and writes the board itself
             task = tasks.load(root, task.id)
         if task.status == "done" and task.workcopy:
             try:
@@ -232,11 +245,13 @@ def impact(root: Path, task_id: str, values: dict[str, str], map_note: str = "",
             told = f"Akasha cannot find the task {other_id} on the shared task board. Tell its requester yourself."
         else:
             person = f"@{other.requester.lstrip('@')} " if other.requester else ""
-            board.comment(root, other.board, f"{person}Akasha: the task {task.id} ({task.title}) of "
-                          f"{task.requester or 'another requester'} changes behavior that you accepted: {what}")
-            task.notes.append(f"told {other.requester or 'the requester'} of {other_id} about a change of "
-                              f"accepted behavior: {what}")
-            told = f"Akasha told {other.requester or 'the requester'} on {other.board}."
+            if board.comment(root, other.board, f"{person}Akasha: the task {task.id} ({task.title}) of "
+                             f"{task.requester or 'another requester'} changes behavior that you accepted: {what}"):
+                task.notes.append(f"told {other.requester or 'the requester'} of {other_id} about a change of "
+                                  f"accepted behavior: {what}")
+                told = f"Akasha told {other.requester or 'the requester'} on {other.board}."
+            else:
+                told = f"Akasha cannot write on {other.board}. Tell the requester of {other_id} yourself."
     _publish(root, task)
     return task, told
 

@@ -3,7 +3,7 @@ import unittest
 from akasha.config import Team
 from akasha.core.handover import commit_body, pull_request_body
 from akasha.core.risk import assess, matches
-from akasha.core.task import Task
+from akasha.core.task import Task, new_id
 from akasha.validators.briefing import examine
 
 TEAM = Team(risk={"high": ("**/auth/**", "**/migrations/**"), "medium": ("**/api/**",)},
@@ -66,6 +66,14 @@ class BriefingTests(unittest.TestCase):
         for expected, text in cases.items():
             with self.subTest(expected=expected):
                 self.assertTrue(any(expected in problem for problem in examine(text)), examine(text))
+
+    def test_a_task_name_is_not_a_commit_hash(self):
+        names = ["add-a-date-filter-1f3a9c0b", "task-0b7c2e91"] + [new_id("Add a date filter") for _ in range(200)]
+        for name in names:
+            with self.subTest(name=name):
+                self.assertEqual(examine(BRIEFING.replace("date filter.", f"date filter of {name}.")), [])
+        self.assertIn("remove the commit hash — the reader has the diff",
+                      examine(BRIEFING.replace("date filter.", "date filter of task-0b7c2e91 from 3f2a9c1.")))
 
 
 class HandoverTests(unittest.TestCase):

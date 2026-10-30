@@ -15,7 +15,8 @@ LIMITS = {"Why": (1, 3, "sentences"), "What changed": (1, 3, "items"), "Scope": 
 MAX_LINES = 34          # Akasha adds the Verification section, and the commit body must stay under 40 lines
 MAX_WORDS = 25          # the STE limit for a descriptive sentence
 _ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+")
-_SHA = re.compile(r"\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b")
+# A word of hexadecimal characters. Not after a hyphen: a task name ends with eight of them, for example -1f3a9c0b
+_SHA = re.compile(r"(?<![\w-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b")
 _HISTORY = re.compile(r"\bbased on (?:origin/)?(?:main|master)\b|\brebased?\b", re.I)
 
 

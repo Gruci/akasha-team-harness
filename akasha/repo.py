@@ -92,8 +92,32 @@ def me(root: Path) -> str:
     return login
 
 
+def _write_whole(path: Path, text: str, replace: bool) -> bool:
+    """Write the file in one step, so that no other process reads it empty or half written. Without replace, the
+    file must be new: False when it is already there.
+
+    The text goes into a temporary file first. os.replace puts it in place of any file. A rename on Windows and a
+    hard link elsewhere fail when the file is already there."""
+    temporary = path.with_name(f"{path.name}.{secrets.token_hex(4)}.tmp")
+    temporary.write_text(text, encoding="utf-8")
+    try:
+        if replace:
+            os.replace(temporary, path)
+        elif os.name == "nt":
+            os.rename(temporary, path)
+        else:
+            os.link(temporary, path)
+        return True
+    except FileExistsError:
+        return False
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def host(root: Path) -> str:
-    """The random mark of this copy of the repository on this computer. Akasha makes it at the first call."""
+    """The random mark of this copy of the repository on this computer. Akasha makes it at the first call.
+
+    When two processes make the mark at the same time, both get the mark of the process that wrote it first."""
     path = root / _MACHINE_FILE
     missing = False
     try:
@@ -106,12 +130,6 @@ def host(root: Path) -> str:
         return mark
     made = secrets.token_hex(8)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if missing:
-        try:
-            with path.open("x", encoding="utf-8") as file:    # two processes at the same time keep one mark
-                file.write(json.dumps({"host": made}))
-            return made
-        except FileExistsError:
-            return host(root)
-    path.write_text(json.dumps({"host": made}), encoding="utf-8")
-    return made
+    if _write_whole(path, json.dumps({"host": made}), replace=not missing):
+        return made
+    return host(root)                                 # another process wrote its mark first

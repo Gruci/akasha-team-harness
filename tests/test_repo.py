@@ -100,6 +100,24 @@ class IdentityTests(unittest.TestCase):
         self.assertNotEqual(repo.host(first), mark)              # a damaged file gets a new mark
         self.assertEqual(repo.host(first), repo.host(first))
 
+    def test_a_process_that_reads_while_another_writes_gets_the_same_mark(self):
+        root = make_clone()
+        opened = Path.open
+        other: list[str] = []
+
+        def interrupted(self, mode="r", *args, **values):      # the other process runs between the open and the write
+            file = opened(self, mode, *args, **values)
+            if ("w" in mode or "x" in mode) and not other:
+                other.append("")
+                other[0] = repo.host(root)
+            return file
+
+        with patch.object(Path, "open", interrupted):
+            mine = repo.host(root)
+        self.assertEqual(mine, other[0])
+        self.assertEqual(repo.host(root), mine)
+        self.assertEqual([item.name for item in (root / STATE_DIR).iterdir()], ["machine.json"])   # no temporary file
+
 
 if __name__ == "__main__":
     unittest.main()

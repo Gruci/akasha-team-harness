@@ -26,7 +26,11 @@ The issue body holds a JSON block with the name `akasha-scope`. The agent engine
 
 Each task name is unique in the repository. The name has the letters a to z and the digits of the title in lower case, and eight random characters, for example `add-a-date-filter-1f3a9c0b`. A title without these letters and digits, for example a Korean title, gives `task-<random characters>`. Before a task starts, Akasha makes sure that no task file, no branch on this computer or on the server, and no issue on the board has the same name.
 
-When `origin` is a GitHub repository, the board must work. If `gh` cannot read or write the board, the command stops and tells you to examine `gh auth status`. Thus nobody works on a task that the other people cannot see.
+When `origin` is a GitHub repository, the board must work. If `gh` cannot read or write the board, the command stops and tells you to examine `gh auth status`. Thus nobody works on a task that the other people cannot see. This also applies to the comments that Akasha writes on the issues.
+
+If a write fails after Akasha saved the change on this computer, the message names the task. When `gh` works again, run `specify <task>`. It puts the saved task on the board. Do not record the task again, because that makes a second task.
+
+Before a request, Akasha finishes the tasks on this computer whose pull request merged. If Akasha cannot update the issue of such a task, for example because a person deleted the issue, the request continues. The request itself reads and writes the board.
 
 > **NOTE:** Without GitHub, the board holds only the active tasks on one computer.
 

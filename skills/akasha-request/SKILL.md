@@ -37,7 +37,7 @@ If the requester withdraws the request, run `akasha cancel <task> --by <requeste
 
 > **NOTE:** The `fix` and `small` workflows have no specification stage. For these workflows, do steps 1 to 3 of stage 2 before you advance from the build stage.
 
-> **NOTE:** If Akasha says that it cannot read or write the shared task board, do not continue without the board. Ask the user to log in with `gh auth login`. Then do the step again.
+> **NOTE:** If Akasha says that it cannot read or write the shared task board, do not continue without the board. Ask the user to log in with `gh auth login`. If Akasha also says that it saved the task on this computer, run the `akasha specify <task>` command that Akasha shows, and continue with that task. Do not record the task again, because that makes a second task. Else do the step again.
 
 ## Stage 2 — Specification and impact
 

@@ -15,7 +15,7 @@ from akasha.core import workcopy
 from akasha.core import task as tasks
 from akasha.engine import hooks
 from akasha.infra import desired, github
-from tests.test_coordinator import FakeBoard
+from tests.test_coordinator import FakeBoard, answer
 from tests.test_risk import BRIEFING
 
 PASS = f'"{sys.executable}" -c "raise SystemExit(0)"'
@@ -23,6 +23,7 @@ FAIL = f'"{sys.executable}" -c "raise SystemExit(1)"'
 IMPACT = {"features": "The customer search", "data": "No data change", "contracts": "No public contract",
           "tasks": "No other task", "rollback": "Revert the squash commit"}
 PULL_REQUEST = "https://github.com/team/app/pull/7"
+WRITES = (("issue", "create"), ("issue", "edit"), ("issue", "close"))
 
 
 def make_repo(tests_command: str) -> Path:
@@ -233,12 +234,33 @@ class FlowTests(unittest.TestCase):
         earlier.board = "https://github.com/team/app/issues/3"
         tasks.save(root, earlier)
         later, _ = flow.start(root, "Use the transaction date", "ops-b")
-        with patch("akasha.flow.board.comment") as comment:
+        with patch("akasha.flow.board.comment", return_value=True) as comment:
             _task, told = flow.impact(root, later.id, IMPACT, changes=(earlier.id, "The filter uses another date"))
         address, text = comment.call_args.args[1:3]
         self.assertEqual(address, earlier.board)
         self.assertTrue(text.startswith("@ops-a Akasha:"))
         self.assertIn("ops-a", told)
+
+    def test_a_notice_that_github_refused_is_not_told(self):
+        root = make_repo(PASS)
+        fake = FakeBoard()
+
+        def refuse(root, *args, **values):                   # the board reads and updates work, comments do not
+            if args[:2] == ("issue", "comment"):
+                return answer("", 1, "HTTP 403: Resource not accessible")
+            return fake(root, *args, **values)
+
+        with patch("akasha.coordinator.board.available", return_value=True):
+            with patch("akasha.coordinator.board.gh", fake):
+                earlier, _ = flow.start(root, "Add a date filter", "ops-a")
+                later, _ = flow.start(root, "Use the transaction date", "ops-b")
+            with patch("akasha.coordinator.board.gh", refuse), self.assertRaises(board.BoardError):
+                flow.impact(root, later.id, IMPACT, changes=(earlier.id, "The filter uses another date"))
+            self.assertEqual((tasks.load(root, later.id).notes, fake.issues[earlier.board]["comments"]), ([], []))
+            with patch("akasha.coordinator.board.gh", fake):
+                _task, told = flow.impact(root, later.id, IMPACT, changes=(earlier.id, "The filter uses another date"))
+        self.assertEqual(told, f"Akasha told ops-a on {earlier.board}.")
+        self.assertEqual(len(fake.issues[earlier.board]["comments"]), 1)
 
     def test_the_setup_command_runs_in_a_new_copy_and_in_ci(self):
         root = make_repo(PASS)
@@ -294,6 +316,48 @@ class FlowTests(unittest.TestCase):
                 self.assertEqual(command_line.run(["board"]), 2)
             self.assertIn("cannot read the shared task board", output.getvalue())
         self.assertEqual([item.id for item in tasks.all_tasks(root)], [first.id])
+
+    def test_a_failed_board_write_keeps_the_task_and_names_it(self):
+        root = make_repo(PASS)
+        fake = FakeBoard()
+
+        def refuse(root, *args, **values):                   # the board reads work, the writes do not
+            return answer("", 1, "HTTP 502: Bad Gateway") if args[:2] in WRITES else fake(root, *args, **values)
+
+        with patch("akasha.coordinator.board.available", return_value=True):
+            with patch("akasha.coordinator.board.gh", refuse), self.assertRaises(board.BoardError) as stopped:
+                flow.start(root, "Add a date filter", "ops-a")
+            [saved] = tasks.all_tasks(root)
+            self.assertIn(f"run `akasha specify {saved.id}`", str(stopped.exception))
+            self.assertEqual(fake.issues, {})
+            with patch("akasha.coordinator.board.gh", fake):
+                flow.specify(root, saved.id, [], [], False)          # puts the saved task on the board
+            address = tasks.load(root, saved.id).board
+            self.assertEqual(board.parse(fake.issues[address]["body"]).id, saved.id)
+            with patch("akasha.coordinator.board.gh", refuse), self.assertRaises(board.BoardError) as stopped:
+                flow.cancel(root, saved.id, "ops-a")
+            self.assertIn(saved.id, str(stopped.exception))
+            self.assertEqual(fake.issues[address]["state"], "OPEN")
+            with patch("akasha.coordinator.board.gh", fake):
+                flow.specify(root, saved.id, [], [], False)
+        self.assertEqual(fake.issues[address]["state"], "CLOSED")
+        self.assertEqual(board.parse(fake.issues[address]["body"]).status, "cancelled")
+        self.assertEqual([item.id for item in tasks.all_tasks(root)], [saved.id])
+
+    def test_an_issue_that_akasha_cannot_update_does_not_stop_a_request(self):
+        root = make_repo(PASS)
+        fake = FakeBoard()
+        with patch("akasha.coordinator.board.gh", fake), \
+                patch("akasha.coordinator.board.available", return_value=True):
+            first, _ = flow.start(root, "Add a date filter", "ops-a")
+            first = tasks.load(root, first.id)
+            first.stage, first.pull_request = "handover", PULL_REQUEST
+            tasks.save(root, first)
+            del fake.issues[first.board]                             # a person deleted the issue
+            with patch("akasha.flow.github.merged", return_value=True):
+                second, _ = flow.start(root, "Export the filtered list", "ops-b")
+        self.assertEqual(tasks.load(root, first.id).status, "done")
+        self.assertIn(second.board, fake.issues)
 
     def test_a_gate_needs_a_person_from_the_team_config(self):
         root = make_repo(PASS)

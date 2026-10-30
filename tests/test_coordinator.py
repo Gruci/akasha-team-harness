@@ -129,10 +129,12 @@ class BoardTests(unittest.TestCase):
             self.assertEqual(board.read(root)[1], "local")                 # without GitHub, as before
             self.assertIsNone(board.find(root, "date-filter-0a1b2c3d"))
             self.assertEqual(board.publish(root, task("date-filter-0a1b2c3d")), "")
+            self.assertFalse(board.comment(root, "https://github.com/team/app/issues/1", "text"))
             with patch("akasha.coordinator.board.available", return_value=True):
                 for action in (lambda: board.read(root), lambda: board.find(root, "date-filter-0a1b2c3d"),
                                lambda: board.publish(root, task("date-filter-0a1b2c3d")),
-                               lambda: board.comments(root, "https://github.com/team/app/issues/1")):
+                               lambda: board.comments(root, "https://github.com/team/app/issues/1"),
+                               lambda: board.comment(root, "https://github.com/team/app/issues/1", "text")):
                     with self.assertRaises(board.BoardError) as stopped:
                         action()
                     self.assertIn("gh auth status", str(stopped.exception))
@@ -161,7 +163,7 @@ class BoardTests(unittest.TestCase):
              "createdAt": "2026-10-31T01:00:00Z", "includesCreatedEdit": True, "isMinimized": False,
              "url": "https://github.com/team/app/issues/1#issuecomment-123456"}])
         with patch("akasha.coordinator.board.gh", fake):
-            board.comment(root, address, "/approve risk high")
+            self.assertTrue(board.comment(root, address, "/approve risk high"))
             first, second = board.comments(root, address)
         self.assertEqual(first, board.Comment(123456, "Ops-A", "NONE", "2026-10-31T01:00:00Z", True, False,
                                               "/approve spec r1"))

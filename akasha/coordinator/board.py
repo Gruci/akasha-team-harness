@@ -145,9 +145,9 @@ def comments(root: Path, address: str) -> list[Comment]:
     return found
 
 
-def comment(root: Path, address: str, text: str) -> None:
-    """Write on the issue of a task. GitHub tells the people who follow the issue."""
-    gh(root, "issue", "comment", address, "--body", text)
+def comment(root: Path, address: str, text: str) -> bool:
+    """Write on the issue of a task. GitHub tells the people who follow the issue. True when the comment is on it."""
+    return _answered(root, gh(root, "issue", "comment", address, "--body", text), "write")
 
 
 def publish(root: Path, task: Task) -> str:
