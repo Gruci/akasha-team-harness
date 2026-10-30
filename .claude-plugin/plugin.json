@@ -1,0 +1,12 @@
+{
+  "name": "akasha",
+  "version": "1.0.0",
+  "description": "Akasha: let any person on your team make features with an AI agent. Your developers get pull requests that they can merge.",
+  "author": {"name": "Daehyun Kim", "url": "https://github.com/Gruci"},
+  "homepage": "https://github.com/Gruci/akasha-team-harness",
+  "repository": "https://github.com/Gruci/akasha-team-harness",
+  "license": "MIT",
+  "keywords": ["akasha", "team", "harness", "workflow", "claude-code", "codex"],
+  "skills": ["./skills/akasha-setup", "./skills/akasha-request", "./skills/akasha-inspect", "./skills/akasha-handover"],
+  "hooks": "./.claude-plugin/hooks.json"
+}

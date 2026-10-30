@@ -124,9 +124,11 @@ def workflows(root: Path) -> dict[str, Workflow]:
     return found
 
 
-def load(root: Path) -> Team:
-    """The team config of the repository at root. Without akasha.toml, Akasha uses the default rules."""
-    path = root / CONFIG_FILE
+def load(root: Path, path: Path | None = None) -> Team:
+    """The team config of the repository at root. Without akasha.toml, Akasha uses the default rules.
+
+    CI gives `path`: the team config from the default branch, so that a pull request cannot change its own rules."""
+    path = path or root / CONFIG_FILE
     data: dict = {}
     if path.is_file():
         try:

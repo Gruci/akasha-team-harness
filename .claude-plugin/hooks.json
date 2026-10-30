@@ -1,0 +1,17 @@
+{
+  "description": "Akasha hooks. They act only in repositories that have akasha.toml.",
+  "hooks": {
+    "SessionStart": [{"matcher": "startup|resume|clear|compact", "hooks": [
+      {"type": "command", "timeout": 20,
+       "command": "\"$(command -v python || command -v python3)\" -X utf8 \"${CLAUDE_PLUGIN_ROOT}/akasha_run.py\" hook --event SessionStart"}]}],
+    "PreToolUse": [{"matcher": "Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit", "hooks": [
+      {"type": "command", "timeout": 20,
+       "command": "\"$(command -v python || command -v python3)\" -X utf8 \"${CLAUDE_PLUGIN_ROOT}/akasha_run.py\" hook --event PreToolUse"}]}],
+    "PostToolUse": [{"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [
+      {"type": "command", "timeout": 20,
+       "command": "\"$(command -v python || command -v python3)\" -X utf8 \"${CLAUDE_PLUGIN_ROOT}/akasha_run.py\" hook --event PostToolUse"}]}],
+    "Stop": [{"hooks": [
+      {"type": "command", "timeout": 20,
+       "command": "\"$(command -v python || command -v python3)\" -X utf8 \"${CLAUDE_PLUGIN_ROOT}/akasha_run.py\" hook --event Stop"}]}]
+  }
+}

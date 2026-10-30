@@ -1,0 +1,13 @@
+{
+  "name": "akasha",
+  "description": "Akasha: a team harness for coding agents.",
+  "owner": {"name": "Daehyun Kim", "url": "https://github.com/Gruci"},
+  "plugins": [
+    {
+      "name": "akasha",
+      "source": "./",
+      "description": "Requests, risk levels, checks, inspection, and pull request handover for the whole team.",
+      "version": "1.0.0"
+    }
+  ]
+}
