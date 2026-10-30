@@ -34,8 +34,10 @@ from akasha.validators import briefing as briefing_rules, runner
 
 CONTEXT_PREFIX = config.TEAM_CONTEXT.as_posix() + "/"
 # A feature key: a to z, 0 to 9, and -, with / between the parts of a large feature, for example billing/invoice.
-# The key is also the path of the map file of the feature, so it must be a file name on each computer.
-FEATURE_KEY = re.compile(r"[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*")
+# The key is also the path of the map file of the feature, so it must be a file name on each computer: a part is not
+# a device name of Windows, and the key is not readme, which is the guide README.md where case does not count.
+_KEY_PART = rf"(?!{config.WINDOWS_NAMES}(?:/|\Z))[a-z0-9][a-z0-9-]*"
+FEATURE_KEY = re.compile(rf"(?!readme\Z){_KEY_PART}(?:/{_KEY_PART})*")
 OLD_SETUP_NOTE = "the setup command failed in the work copy: "     # Akasha 1.0.0 wrote the output after it
 _ignored: dict[str, list[tuple[board.Comment, str]]] = {}         # the decision comments that did not count, by task
 _read_status: dict[str, str] = {}             # the status of each task before the decision comments of its last read
@@ -663,7 +665,9 @@ def _feature_key(key: str) -> str:
     key = key.strip()
     if key and not FEATURE_KEY.fullmatch(key):
         raise ValueError(f"the feature key {key} is not correct. Use a to z, 0 to 9, and -, and / between the parts of "
-                         "a large feature, for example billing or billing/invoice")
+                         "a large feature, for example billing or billing/invoice. Windows cannot make a file for "
+                         "a part con, prn, aux, nul, com0 to com9, or lpt0 to lpt9, and readme is the guide of the "
+                         "map folder")
     return key
 
 
@@ -672,6 +676,11 @@ def map_file(team: Team, feature: str) -> str:
     files. billing gives <map folder>/billing.md, and billing/invoice gives <map folder>/billing/invoice.md. "" for
     no key, and for a key of Akasha 1.0.0 with another shape."""
     return f"{team.map_dir}/{feature}.md" if FEATURE_KEY.fullmatch(feature) else ""
+
+
+def _product_map(team: Team, path: str) -> bool:
+    """True for a file of the product map: a file in the map folder, or the one product map of Akasha 1.0.0."""
+    return path.startswith(team.map_dir + "/") or path == config.LEGACY_MAP.as_posix()
 
 
 def _map_changed(team: Team, task: Task, changed: list[str]) -> bool:
@@ -752,12 +761,14 @@ def _workflow(team: Team, task: Task) -> config.Workflow:
 
 def context(root: Path, team: Team, task: Task) -> stages.Context:
     """Measure the facts for the exit conditions. The risk level can only go up when the real changes are known.
+    The files of the product map do not raise it: the map file of the feature auth/login is not code of auth.
 
     Akasha asks GitHub only for the facts that the exit conditions of the current stage need."""
     exits = set(_workflow(team, task).stage(task.stage).exit)
     changed = workcopy.changed_files(task) if task.workcopy else []
-    if changed:
-        _raise_risk(task, changed, team)
+    code = [path for path in changed if not _product_map(team, path)]
+    if code:
+        _raise_risk(task, code, team)
     return stages.Context(
         approval_roles=team.approval.get(task.risk, ()), required_checks=team.required_checks,
         outside_scope=outside_scope(team, task, changed), map_changed=_map_changed(team, task, changed),

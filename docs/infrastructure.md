@@ -72,7 +72,7 @@ Akasha writes its lines between `# akasha:start` and `# akasha:end`, at the end 
 
 - `akasha.toml`, `.akasha/workflows/`, `.github/`, and the CODEOWNERS file belong to the administrators.
 - Each gate in `[approval]` gives the risk patterns of its level to the people with the gate roles.
-- `.akasha/context/` and the map folder have no owner, so that an update of the product map does not stop a merge. If a line of your team owns the map folder, for example `docs/`, each update of a map file waits for that review.
+- `.akasha/context/` and the map folder have no owner, so that an update of the product map does not stop a merge. A risk pattern can match a map file, for example `**/auth/**` and `.akasha/context/map/auth/login.md`. Thus, when a gate gives risk patterns to people, Akasha writes a line without owners for the map folder and for `.akasha/context/product-map.md` after the risk patterns. That line also wins over a line of your team for the map folder. Without a gate, a line of your team that owns the map folder, for example `docs/`, makes each update of a map file wait for that review.
 
 A plain GitHub name gets the prefix `@`.
 

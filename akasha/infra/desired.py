@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from akasha.config import CONFIG_FILE, TEAM_WORKFLOWS, Team
+from akasha.config import CONFIG_FILE, LEGACY_MAP, TEAM_WORKFLOWS, Team
 
 CHECK_NAME = "akasha"
 TEMPLATES = Path(__file__).parent / "templates"
@@ -46,12 +46,20 @@ def _holders(team: Team, roles: tuple[str, ...]) -> list[str]:
 
 def codeowners(team: Team) -> str:
     """The Akasha block of CODEOWNERS. The team rules belong to the administrators. A gate in `[approval]` gives the
-    risk patterns of its level to the people with the gate roles."""
+    risk patterns of its level to the people with the gate roles.
+
+    The product map has no owner. After the risk patterns, lines without owners take the map folder and the one
+    product map of Akasha 1.0.0 back, because the last matching line wins: the map file of the feature auth/login is
+    not code of auth."""
     lines = [START, "# Akasha writes this block from akasha.toml. To change it, change akasha.toml and set up Akasha."]
+    gated = []
     for level in ("medium", "high"):
         owners = _holders(team, team.approval.get(level, ()))
         if owners:
-            lines += [f"{pattern} {' '.join(owners)}" for pattern in team.risk.get(level, ())]
+            gated += [f"{pattern} {' '.join(owners)}" for pattern in team.risk.get(level, ())]
+    if gated:
+        gated += [f"/{team.map_dir}/", f"/{LEGACY_MAP.as_posix()}"]
+    lines += gated
     rules = " ".join(sorted(_owner(person) for person in team.administrators))
     if rules:
         owned = (CONFIG_FILE, TEAM_WORKFLOWS.as_posix() + "/", ".github/", "CODEOWNERS", "docs/CODEOWNERS")

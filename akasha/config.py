@@ -21,6 +21,9 @@ TEAM_CONTEXT = Path(".akasha") / "context"           # the decisions and lessons
 MAP_DIR = TEAM_CONTEXT / "map"
 MAP_README = "README.md"                             # the guide of the map folder. It maps no feature
 LEGACY_MAP = TEAM_CONTEXT / "product-map.md"
+# The device names of Windows. Windows cannot make a file or a folder with such a name, also with an extension, so
+# git cannot check out a commit that has one.
+WINDOWS_NAMES = "(?:con|prn|aux|nul|com[0-9]|lpt[0-9])"
 BUILT_IN_WORKFLOWS = Path(__file__).parent / "workflows"
 
 RISK_LEVELS = ("low", "medium", "high")
@@ -102,11 +105,15 @@ def _text(value: object, where: str) -> str:
 
 def _folder(value: object, where: str) -> str:
     """A folder in the repository, with / between the parts. An absolute path, a drive, `..`, and the top of the
-    repository are refused: Akasha puts the folder outside each task scope."""
+    repository are refused: Akasha puts the folder outside each task scope. A device name of Windows is refused too,
+    because each Windows checkout of the folder would fail."""
     path = PureWindowsPath(_text(value, where).strip())       # it reads both / and \ and finds each drive
     if path.anchor or ".." in path.parts or not path.parts:
         raise ConfigError(f"{CONFIG_FILE}: {where} must be a folder in the repository, for example "
                           f"{MAP_DIR.as_posix()}. Do not use an absolute path or ..")
+    device = [part for part in path.parts if re.fullmatch(WINDOWS_NAMES, part.split(".")[0].rstrip(" "), re.I)]
+    if device:
+        raise ConfigError(f"{CONFIG_FILE}: {where} cannot have the part {device[0]}: it is a device name of Windows")
     return "/".join(path.parts)
 
 

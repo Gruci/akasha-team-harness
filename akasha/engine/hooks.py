@@ -68,11 +68,12 @@ def _uses_akasha(root: Path) -> bool:
 
 def _rules(root: Path) -> config.Team:
     """The team rules on the default branch as git fetched it last: the hooks use no network for them. A team config
-    with a problem gives the default rules here. The commands of a task tell the problem."""
+    with a problem gives the default rules here, so that the other notices stay. The commands of a task tell the
+    problem."""
     branch = github.known_branch(root)
     try:
         return config.shared(root, f"origin/{branch}" if branch else "")
-    except config.ConfigError:
+    except (config.ConfigError, LookupError, ValueError, TypeError, AttributeError, OSError):
         return config.Team()
 
 
@@ -97,12 +98,25 @@ def session_start(root: Path) -> int:
     return 0
 
 
-def _map_lines(root: Path, team: config.Team) -> list[str]:
-    """Where the map file of each feature is, and the feature keys that have a map file in this checkout. A new task
-    takes one of these keys when it fits."""
+def _map_files(root: Path, team: config.Team) -> list[str]:
+    """The files in the map folder, relative to the top of the repository: on the default branch as git fetched it
+    last, so that an old checkout also knows the map files that other people merged. Else in this checkout."""
+    branch = github.known_branch(root)
+    listed = workcopy.git(root, "ls-tree", "-r", "-z", "--name-only", "--full-tree", f"origin/{branch}", "--",
+                          team.map_dir) if branch else None
+    if listed is not None and listed.returncode == 0:
+        return [path for path in listed.stdout.split("\0") if path]
     folder = root / team.map_dir
-    names = sorted(path.relative_to(folder).with_suffix("").as_posix() for path in folder.rglob("*.md")
-                   if path.is_file()) if folder.is_dir() else []
+    return [path.relative_to(root).as_posix() for path in folder.rglob("*.md") if path.is_file()] \
+        if folder.is_dir() else []
+
+
+def _map_lines(root: Path, team: config.Team) -> list[str]:
+    """Where the map file of each feature is, and the feature keys that have a map file. A new task takes one of
+    these keys when it fits."""
+    prefix = team.map_dir + "/"
+    names = sorted(path[len(prefix):-len(".md")] for path in _map_files(root, team)
+                   if path.startswith(prefix) and path.endswith(".md"))
     keys = [name for name in names if flow.FEATURE_KEY.fullmatch(name)]      # not the guide README.md
     lines = [f"[AKASHA] Product map: {team.map_dir}/<feature key>.md. Read the file of the feature before the impact "
              "analysis, and update it before the handover."]

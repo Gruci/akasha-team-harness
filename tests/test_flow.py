@@ -540,6 +540,23 @@ class ProductMapTests(unittest.TestCase):
             self.assertEqual(flow.advance(root, task.id), [])
         self.assertEqual(tasks.load(root, task.id).stage, "handover")
 
+    def test_the_map_files_do_not_raise_the_risk_level(self):
+        rules = ('[roles]\ndevelopers = ["lead"]\n[risk]\nhigh = ["**/migrations/**", "**/auth/**", "**/payments/**"]\n'
+                 'medium = ["**/api/**"]\n[approval]\nhigh = ["developer"]\n')         # the rules of setup, and a gate
+        root, task = self.started("auth/login-page", rules, scope=["src/**"])
+        work = Path(task.workcopy)
+        for path in ("src/login.py", f"{config.MAP_DIR.as_posix()}/auth/login-page.md",
+                     f"{config.MAP_DIR.as_posix()}/api/orders.md", config.LEGACY_MAP.as_posix()):
+            (work / path).parent.mkdir(parents=True, exist_ok=True)
+            (work / path).write_text("# Login page\n", encoding="utf-8")
+        flow.impact(root, task.id, IMPACT)
+        self.assertEqual(flow.advance(root, task.id), [])
+        self.assertEqual((tasks.load(root, task.id).risk, tasks.load(root, task.id).risk_reasons), ("low", []))
+        (work / "src" / "auth").mkdir()
+        (work / "src" / "auth" / "token.py").write_text("x = 1\n", encoding="utf-8")       # code of auth counts
+        self.assertEqual(flow.advance(root, task.id), ["a developer must approve the high risk level"])
+        self.assertEqual(tasks.load(root, task.id).risk_reasons, ["src/auth/token.py matches **/auth/**"])
+
     def test_advance_names_the_map_file_that_akasha_expects(self):
         root, task = self.started("billing/invoice")
         flow.impact(root, task.id, IMPACT)
@@ -557,12 +574,15 @@ class ProductMapTests(unittest.TestCase):
     def test_a_feature_key_has_one_shape(self):
         root = make_repo(PASS)
         for key in ("Billing", "billing/", "/billing", "billing//invoice", "../billing", "billing invoice", "-billing",
-                    "billing\\invoice", "청구"):
+                    "billing\\invoice", "청구", "aux", "billing/con", "nul", "prn", "com0", "lpt9/list", "readme"):
             with self.subTest(key=key):
                 with self.assertRaises(ValueError) as refused:
                     flow.start(root, "Change the billing", "ops-a", feature=key)
                 self.assertIn(f"the feature key {key} is not correct", str(refused.exception))
         self.assertEqual(tasks.all_tasks(root), [])                  # nothing recorded
+        for key in ("console", "com10", "aux-page", "billing/readme", "readme-page"):  # Windows can make these files
+            with self.subTest(key=key):
+                self.assertEqual(flow._feature_key(key), key)
         task, _ = flow.start(root, "Change the billing", "ops-a", feature="billing/invoice-2")
         with self.assertRaises(ValueError):
             flow.specify(root, task.id, ["Show the total"], [], False, feature="Billing")
@@ -607,6 +627,27 @@ class ProductMapTests(unittest.TestCase):
         self.assertNotIn("README", keys)
         self.assertNotIn("Old notes", keys)
         self.assertIn(config.LEGACY_MAP.as_posix(), output.getvalue())       # in the team context, as before
+
+    def test_an_old_checkout_shows_the_feature_keys_of_the_default_branch(self):
+        root = make_repo(PASS)
+        remote = add_remote(root)
+        workcopy.git(root, "remote", "set-head", "origin", "main")     # git knows the default branch
+        other = clone(remote)
+        with (other / "akasha.toml").open("a", encoding="utf-8") as file:
+            file.write('[context]\nmap = "docs/features"\n')             # the map folder moved on the server
+        (other / "docs" / "features").mkdir(parents=True)
+        (other / "docs" / "features" / "search.md").write_text("# Search\n", encoding="utf-8")
+        for args in (("add", "-A"), ("commit", "-qm", "the map of search"), ("push", "-q", "origin", "main")):
+            workcopy.git(other, *args)
+        workcopy.git(root, "fetch", "-q", "origin")                      # the checkout stays behind
+        output = io.StringIO()
+        with patch("akasha.engine.hooks._server_notice", return_value=[]), redirect_stdout(output):
+            hooks.session_start(root)
+        lines = output.getvalue().splitlines()
+        self.assertIn("[AKASHA] Product map: docs/features/<feature key>.md. Read the file of the feature before the "
+                      "impact analysis, and update it before the handover.", lines)
+        self.assertIn("[AKASHA] Feature keys with a map file: search", lines)
+        self.assertFalse((root / "docs").exists())
 
 
 class SharedTaskTests(unittest.TestCase):
@@ -1522,6 +1563,33 @@ class HookTests(unittest.TestCase):
         self.assertIn("Do each change as an Akasha task", output.getvalue())
         self.assertIn("this checkout is old and has no akasha.toml", output.getvalue())
         self.assertEqual(guarded(), 2)                                   # the guard runs before the pull
+
+    def test_a_team_config_with_a_problem_keeps_the_notices_of_the_hooks(self):
+        root = make_repo(PASS)
+        stopped, _ = flow.start(root, "Change the search", "ops-member", workflow="small")
+        flow.start(root, "Change the export", "ops-member", workflow="small", scope=["src/**"])
+        task = tasks.load(root, stopped.id)
+        task.status = "stopped"
+        tasks.save(root, task)
+        original = (root / "akasha.toml").read_bytes()
+        for name, text in (("akasha.toml", b"[workflows]\n"),                                 # no enabled
+                           ("akasha.toml", b"[checks]\nrequired = ['\xff']\n"),                # not UTF-8
+                           (".akasha/workflows/x.toml", b'name = "x"\nstages = ["x"]\n')):     # a stage is not a table
+            with self.subTest(name=name, text=text):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_bytes(text)
+                try:
+                    with patch("akasha.engine.hooks._server_notice", return_value=[]), \
+                            redirect_stdout(io.StringIO()) as started:
+                        hooks.session_start(root)
+                    with redirect_stdout(io.StringIO()) as ended:
+                        hooks.turn_end(root)
+                finally:
+                    (root / "akasha.toml").write_bytes(original)
+                    (root / ".akasha" / "workflows" / "x.toml").unlink(missing_ok=True)
+                self.assertIn("[AKASHA] Do each change as an Akasha task", started.getvalue())
+                self.assertIn("[AKASHA] Product map: .akasha/context/map/<feature key>.md", started.getvalue())
+                self.assertIn(f"Task {stopped.id} stopped after failed repairs", ended.getvalue())
 
     def test_session_start_shows_the_team_context(self):
         root = make_repo(PASS)

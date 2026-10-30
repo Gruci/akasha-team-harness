@@ -119,7 +119,17 @@ To continue the task of another person:
 2. Repair each failure. Then run the check again.
 3. If Akasha stops the task after three failed repairs, stop the work. Tell the requester in simple words that a developer must examine the problem.
 4. With GitHub, the developer writes `/resume` on the issue of the task. If the developer is the GitHub account of this computer and tells you to continue, run `akasha resume <task>`. Then run `akasha advance <task>`.
-5. Update the map file of the feature in the work copy for each screen, table, or API that the change adds or changes. `akasha show <task>` names the file. If the file does not exist, make it with the shape in `README.md` of the map folder. If nothing changes, record why: `akasha impact <task> --map-unchanged "<reason>"`.
+5. Update the map file of the feature in the work copy for each screen, table, or API that the change adds or changes. `akasha show <task>` names the file. If nothing changes, record why: `akasha impact <task> --map-unchanged "<reason>"`.
+   - If the file does not exist, make it with this shape. `README.md` of the map folder shows the same shape. A repository that Akasha 1.0.0 set up can have no `README.md` there.
+
+     ```markdown
+     # <Feature name>
+     - Purpose: what the feature does for the user
+     - Screens: the screens or commands that show the feature
+     - Data: the tables, columns, or files that the feature reads or writes
+     - APIs: the endpoints or functions that other features use
+     - Depends on: the feature keys of the features that this feature uses
+     ```
 6. When all checks pass, run `akasha advance <task>`.
 7. Continue with the akasha-inspect skill. For the `small` workflow, continue with the akasha-handover skill.
 

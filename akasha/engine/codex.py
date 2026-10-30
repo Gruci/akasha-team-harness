@@ -38,7 +38,8 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
    on the issue. If the requester is the GitHub account of this computer, run
    `python -m akasha accept <task> --condition <number> --result yes`.
 9. Update the map file of the feature in the work copy, or record why it does not change:
-   `python -m akasha impact <task> --map-unchanged "<reason>"`.
+   `python -m akasha impact <task> --map-unchanged "<reason>"`. A new map file has the title `# <Feature name>`
+   and the lines Purpose, Screens, Data, APIs, and Depends on (the feature keys that the feature uses).
 10. Write the briefing with the sections Why, What changed, Scope, Tradeoffs, and Blast Radius. Record it:
     `python -m akasha brief <task> --file <path>`. Then run `python -m akasha handover <task>`.
 

@@ -46,8 +46,9 @@ class ConfigTests(unittest.TestCase):
                      '[context]\nmap = "./docs/features"\n'):
             with self.subTest(text=text):
                 self.assertEqual(config.load(self.repo(text)).map_dir, "docs/features")
+        self.assertEqual(config.load(self.repo('[context]\nmap = "docs/console-map"\n')).map_dir, "docs/console-map")
         for value in ('"/docs/features"', '"C:/docs"', '"c:docs"', '"../features"', '"docs/../../features"', '"."',
-                      '""', '" "', "1"):
+                      '""', '" "', "1", '"docs/aux"', '"CON/map"', '"docs/nul.d"', '"lpt1"'):    # also Windows names
             with self.subTest(value=value), self.assertRaises(config.ConfigError):
                 config.load(self.repo(f"[context]\nmap = {value}\n"))
         with self.assertRaises(config.ConfigError):

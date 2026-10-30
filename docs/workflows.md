@@ -28,7 +28,7 @@ A workflow is a list of stages. Each stage has exit conditions. A task goes to t
 
 ## How the risk level changes
 
-Akasha sets the risk level from the scope when the task starts. Each time the task tries to advance, Akasha examines the real changed files again. The risk level can go up. It never goes down.
+Akasha sets the risk level from the scope when the task starts. Each time the task tries to advance, Akasha examines the real changed files again. The risk level can go up. It never goes down. The files of the product map do not count: the map file of the feature `auth/login` is not code of `auth`, also when it matches the pattern `**/auth/**`.
 
 When `[approval]` names a gate for a risk level, Akasha examines the gate at each advance after the build starts. Thus a risk that the real changes raise still needs the approval of the gate.
 

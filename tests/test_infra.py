@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from akasha.config import Team
-from akasha.infra import desired, github
+from akasha.infra import desired, github, server
 
 
 class InfraTests(unittest.TestCase):
@@ -20,11 +20,26 @@ class InfraTests(unittest.TestCase):
         self.assertIn("**/api/** @admin @lead", lines)
         self.assertIn("/akasha.toml @admin", lines)
         self.assertIn("/.akasha/workflows/ @admin", lines)
-        self.assertFalse(any(line.startswith("/.akasha/context") or line == "/.akasha/ @admin" for line in lines))
+        self.assertFalse(any(line.startswith("/.akasha/context") and " " in line or line == "/.akasha/ @admin"
+                             for line in lines))                # the team context and the product map have no owner
         plain = Team(developers=("lead",), risk={"high": ("**/auth/**",)}, approval={"high": ("developer",)})
         self.assertIn("**/auth/** @lead", desired.codeowners(plain).splitlines())
         no_gate = Team(developers=("lead",), risk={"high": ("**/auth/**",)})
         self.assertNotIn("**/auth/** @lead", desired.codeowners(no_gate).splitlines())
+
+    def test_a_map_file_has_no_owner_when_a_risk_pattern_matches_it(self):
+        team = Team(developers=("lead",), administrators=("admin",), risk={"high": ("**/auth/**",)},
+                    approval={"high": ("developer",)}, map_dir="docs/features")
+        lines = desired.codeowners(team).splitlines()
+        self.assertLess(lines.index("**/auth/** @lead"), lines.index("/docs/features/"))    # the last line wins
+        self.assertIn("/.akasha/context/product-map.md", lines)
+        self.assertEqual(server._owners(team, "src/auth/login.py"), {"lead"})
+        for path in ("docs/features/auth/login-page.md", ".akasha/context/product-map.md"):
+            with self.subTest(path=path):
+                self.assertEqual(server._owners(team, path), set())
+        self.assertEqual(server._owners(team, ".github/workflows/akasha.yml"), {"admin"})
+        no_gate = desired.codeowners(Team(developers=("lead",), risk={"high": ("**/auth/**",)}))
+        self.assertNotIn("/.akasha/context/map/", no_gate.splitlines())    # without a gate, the block is as before
 
     def test_the_block_keeps_the_lines_of_the_team(self):
         block = desired.codeowners(Team(administrators=("admin",)))

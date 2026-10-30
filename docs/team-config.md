@@ -117,9 +117,9 @@ The setup writes this key. Do not change it by hand. When the plan of the reposi
 
 | Key | Value |
 |:--|:--|
-| `map` | The map folder of the product map, relative to the top of the repository. The default is `.akasha/context/map`. Akasha refuses an absolute path, a drive, and `..` |
+| `map` | The map folder of the product map, relative to the top of the repository. The default is `.akasha/context/map`. Akasha refuses an absolute path, a drive, `..`, and a device name of Windows, for example `aux` |
 
-The map folder is outside each task scope, so that each task can update its map file. Use it only for the product map.
+The map folder is outside each task scope, and its files do not raise the risk level of a task, so that each task can update its map file. Use it only for the product map.
 
 > **CAUTION:** An Akasha plugin that is not updated refuses an unknown section, also `[context]`. Make sure that each person updated the Akasha plugin before you add it.
 
@@ -132,9 +132,9 @@ The product map tells how the features, screens, data, and APIs connect. It has 
 | `billing` | `.akasha/context/map/billing.md` |
 | `billing/invoice` | `.akasha/context/map/billing/invoice.md` |
 
-The whole feature key selects the file. Thus the tasks of different features, and the parts of one large feature, do not change the same file, and their pull requests do not conflict there. A feature key has only lower-case letters `a` to `z`, digits, and `-`, with `/` between the parts. `request --feature` and `specify --feature` refuse other keys.
+The whole feature key selects the file. Thus the tasks of different features, and the parts of one large feature, do not change the same file, and their pull requests do not conflict there. A feature key has only lower-case letters `a` to `z`, digits, and `-`, with `/` between the parts. A part cannot be a device name of Windows (`con`, `prn`, `aux`, `nul`, `com0` to `com9`, `lpt0` to `lpt9`), because Windows cannot make its map file, and git cannot check out a commit that has it. The key cannot be `readme`, because a file system that ignores case puts `readme.md` on the guide `README.md`. `request --feature` and `specify --feature` refuse other keys.
 
-`setup` writes the guide of the map folder, `README.md`, with the shape of a map file. The agent engine reads the map file of its feature before each impact analysis, and finds the features that depend on it ("Depends on"). It updates its map file before each handover. The session start notice shows the map folder and the feature keys that have a map file.
+`setup` writes the guide of the map folder, `README.md`, with the shape of a map file. A repository that Akasha 1.0.0 set up has no guide. The akasha-request skill and the Akasha rules in `AGENTS.md` give the shape too. The agent engine reads the map file of its feature before each impact analysis, and finds the features that depend on it ("Depends on"). It updates its map file before each handover. The session start notice shows the map folder and the feature keys that have a map file on the default branch, as git fetched it last. When git does not know the default branch, for example without a remote, it shows the map files of the checkout.
 
 Akasha 1.0.0 had one map file for all features, `.akasha/context/product-map.md`. Akasha keeps it, and a change of it still updates the product map of each task. Move its sections to the map files of the features when you can.
 
