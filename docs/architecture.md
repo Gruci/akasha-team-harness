@@ -10,11 +10,11 @@ People decide what to make, how it looks, and how people use it. The agent engin
 
 | Area | Part | Location | Function |
 |:--|:--|:--|:--|
-| Team harness | Core | `akasha/core/`, `akasha/flow.py` | Keeps the state of each task, moves the task between stages, and writes the pull request text |
-| Team harness | Workflow | `akasha/workflows/`, `.akasha/workflows/` | Declares the stages and the exit conditions |
-| Team harness | Skills and context | `skills/`, `.akasha/context/` | Give the procedures to the agent engine, and give it the product map and the decisions of your team |
-| Team harness | Validators | `akasha/validators/` | Change each rule that a machine can examine into a check |
-| Team harness | Team config | `akasha.toml`, `akasha/config.py` | Holds the team rules for one repository |
+| Work procedure | Core | `akasha/core/`, `akasha/flow.py` | Keeps the state of each task, moves the task between stages, and writes the pull request text |
+| Work procedure | Workflow | `akasha/workflows/`, `.akasha/workflows/` | Declares the stages and the exit conditions |
+| Work procedure | Skills and context | `skills/`, `.akasha/context/` | Give the procedures to the agent engine, and give it the product map and the decisions of your team |
+| Work procedure | Validators | `akasha/validators/` | Change each rule that a machine can examine into a check |
+| Work procedure | Team config | `akasha.toml`, `akasha/config.py` | Holds the team rules for one repository |
 | Agent engine | Agent engine | `akasha/engine/`, `.claude-plugin/` | Connects Claude Code and Codex to Akasha with hooks, skills, and session rules |
 | Coordination | Coordinator | `akasha/coordinator/` | Keeps the shared task board, finds overlaps, stacks tasks of one feature, and gives each preview its own resources |
 | Infrastructure control | Infrastructure manager | `akasha/infra/` | Keeps the required check, branch protection, auto-merge, and CODEOWNERS the same as the team config |

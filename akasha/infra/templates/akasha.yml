@@ -17,7 +17,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install Akasha
-        run: pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"
+        env:
+          AKASHA_SOURCE: ${{ vars.AKASHA_SOURCE }}      # a repository variable can name a mirror or a fork
+        run: pip install "${AKASHA_SOURCE:-git+https://github.com/Gruci/akasha-team-harness@v1.0.0}"
       - name: Find the base branch
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}

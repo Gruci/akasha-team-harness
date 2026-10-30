@@ -16,7 +16,7 @@ The infrastructure manager keeps the GitHub settings of the repository the same 
 
 The check runs on each pull request and on each merge queue run:
 
-1. It installs Akasha.
+1. It installs Akasha. The repository variable `AKASHA_SOURCE` can name another source, for example a mirror or a fork.
 2. It takes `akasha.toml` from the default branch.
 3. It runs the `setup` command of the team.
 4. It runs the required checks on the files that the pull request changes.

@@ -19,7 +19,7 @@ Akasha · team harness · harness v1.0.0
 ## Why teams use Akasha
 
 AI agents can write code for anyone. In a team, that causes new problems.
-Akasha stops these problems, so that developers and other team members can build one product together.
+Akasha is a harness for the whole team: each person installs it. It stops these problems, so that developers and other team members can build one product together.
 
 | Without Akasha | With Akasha |
 |:--|:--|
@@ -78,20 +78,20 @@ Akasha enforces this procedure at three layers:
 
 ## Install
 
-Akasha is a plugin. In Claude Code, type these two commands:
+Akasha is a team harness. Each person on the team installs it. In Claude Code, type these two commands:
 
 ```
 /plugin marketplace add Gruci/akasha-team-harness
 /plugin install akasha@akasha
 ```
 
-Then do these steps:
+One person sets up each repository one time:
 
-1. Open your repository.
+1. Open the repository.
 2. Say "Set up Akasha."
 3. Answer the questions about the administrators, the high-risk areas, and the preview command.
 
-Akasha writes `akasha.toml` and the product map, configures GitHub, and writes the files that Codex reads.
+Akasha writes `akasha.toml` and the product map, configures GitHub, and writes the files that Codex reads. Then each person opens the repository and asks for features.
 
 > **CAUTION:** Akasha changes branch protection, auto-merge, and CODEOWNERS only with the approval of a repository administrator.
 
@@ -103,11 +103,11 @@ Akasha has eight parts in four areas.
 
 | Area | Part | Function |
 |:--|:--|:--|
-| Team harness | Core | Keeps the state of each task, moves the task between stages, and writes the pull request briefing. The core is the same in all teams |
-| Team harness | Workflow | Declares the stages and the exit conditions. Your team can change the `feature`, `fix`, and `small` workflows and add more |
-| Team harness | Skills and context | Contain the procedures, the product map, and the decisions of your team |
-| Team harness | Validators | Change each rule that a machine can examine into a check: tests, lint, scope, secret keys, the briefing, and commands that you cannot undo |
-| Team harness | Team config | Contains the team rules for one repository in `akasha.toml`: roles, risk rules, person gates, workflows, checks, and the preview command |
+| Work procedure | Core | Keeps the state of each task, moves the task between stages, and writes the pull request briefing. The core is the same in all teams |
+| Work procedure | Workflow | Declares the stages and the exit conditions. Your team can change the `feature`, `fix`, and `small` workflows and add more |
+| Work procedure | Skills and context | Contain the procedures, the product map, and the decisions of your team |
+| Work procedure | Validators | Change each rule that a machine can examine into a check: tests, lint, scope, secret keys, the briefing, and commands that you cannot undo |
+| Work procedure | Team config | Contains the team rules for one repository in `akasha.toml`: roles, risk rules, person gates, workflows, checks, and the preview command |
 | Agent engine | Agent engine | Operates Claude Code or Codex with the session rules, hooks, and skills of Akasha |
 | Coordination | Coordinator | Keeps the shared task board on GitHub and finds overlaps before a task starts. Stacks the tasks of one feature, and gives each task its own preview resources |
 | Infrastructure control | Infrastructure manager | Keeps the required check, branch protection, auto-merge, and CODEOWNERS the same as the team config, and offers to restore a changed setting |
