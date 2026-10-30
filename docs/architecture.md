@@ -51,7 +51,7 @@ flowchart LR
 | Team rules | `akasha.toml` | Yes |
 | Team workflows | `.akasha/workflows/*.toml` | Yes |
 | Product map and team context | `.akasha/context/*.md` | Yes |
-| Server files | `.github/workflows/akasha.yml`, the Akasha block of CODEOWNERS, `.github/pull_request_template.md` | Yes |
+| Server files | `.github/workflows/akasha.yml`, `akasha-merge.yml`, `akasha-watch.yml`, the Akasha block of CODEOWNERS, `.github/pull_request_template.md` | Yes |
 | Branch protection and repository settings | GitHub | No |
 | Shared task board | GitHub issues with the label `akasha` | No |
 | Task state | `.akasha/state/tasks/<task>.json` | No |
@@ -63,7 +63,7 @@ flowchart LR
 |:--|:--|:--|
 | During the work | Before each command and edit, after each edit, and at the end of each turn | The hooks of the agent engine |
 | Before the handover | When a task tries to go to the next stage | The exit conditions of the workflow |
-| On the server | Before each merge | The required check `akasha`, branch protection, and CODEOWNERS for the team rules and the gates |
+| On the server | Before each merge | The required check `akasha`. GitHub branch protection and CODEOWNERS enforce it. Where the GitHub plan has no protection, the helpers of Akasha enforce it |
 
 > **CAUTION:** The first two layers keep a cooperative agent engine on the rules. They are not a sandbox. Only a person with administrator rights can go around the server layer.
 
@@ -89,6 +89,7 @@ The agent engine runs these commands. People do not have to remember them. The s
 | `board` | Shows the tasks of all requesters |
 | `infra` | Shows the GitHub settings that are not correct. With `--apply`, it corrects them |
 | `hook` | The entry point for the hooks of the agent engine |
+| `server` | The merge and watch helpers run this on GitHub. People and the agent engine do not run it |
 
 ## Requirements
 

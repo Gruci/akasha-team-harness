@@ -11,6 +11,7 @@ The guard examines each shell command and each edit before it runs. It stops the
 | `git push --force`, `-f`, `--force-with-lease`, a bundled flag such as `-fu`, or a `+` refspec | A force push replaces history on the server |
 | `git push --delete main`, `git push -d main`, or `git push origin :main` | It deletes the default branch on the server |
 | `git branch -d main`, `-D`, or `--delete` | It deletes the default branch |
+| `git push origin main` or `git push origin HEAD:main` | It pushes straight to the default branch. Akasha merges each change through a pull request |
 | `rm -r`, `Remove-Item -Recurse`, `rd /s`, or `del /s` on the whole project, on a folder outside the project, or on `*` | It deletes data that Akasha cannot restore |
 | A recursive delete of a path with a variable, for example `$HOME` or `%USERPROFILE%` | Akasha cannot see the target |
 | A recursive delete after `cd` or `Set-Location` in the same command | Akasha cannot see the target |
@@ -62,6 +63,8 @@ The check runner runs the required checks in the work copy of the task. Each che
 
 A check command that does not stop in 30 minutes gets the result FAIL. Akasha then stops the command and all the processes that it started. The runner keeps the last 3000 characters of the output for the agent engine.
 
+When all checks pass, Akasha saves the work as a commit and pushes the task branch. It saves nothing while the work copy has a file outside the scope, for example a file that a test made. The handover stops for the same reason and names the files.
+
 ## Language packs
 
 A language pack gives the default commands for one language. `setup` writes them into `akasha.toml` when git tracks files of that language. When the repository has files of more than one language, `setup` uses the first pack in alphabetical order.
@@ -75,6 +78,8 @@ A language pack gives the default commands for one language. `setup` writes them
 
 `setup` writes the setup command as a comment. When the command is correct for your project, remove the `#`. On Windows, Akasha runs a command that starts with `./` as `.\`.
 
+Each pack also names the files that its tests and builds make, for example `__pycache__/` for Python and `node_modules/` for TypeScript. `setup` adds them to `.gitignore`, so that they never go into a commit.
+
 For a language without a pack, write the commands in `[checks]` of `akasha.toml`. To add a pack to Akasha, add one TOML file to `akasha/validators/packs/`:
 
 ```toml
@@ -83,6 +88,7 @@ extensions = [".rs"]
 setup = "cargo fetch"
 tests = "cargo test"
 lint = "cargo clippy -- -D warnings"
+ignore = ["target/"]
 ```
 
 > **CAUTION:** The guard and the hooks keep a cooperative agent engine on the rules. They are not a sandbox. A merge cannot go around the required check on the server.

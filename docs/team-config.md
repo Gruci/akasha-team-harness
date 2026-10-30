@@ -101,6 +101,14 @@ A change that matches a contract pattern is medium risk or higher. The coordinat
 |:--|:--|
 | `enabled` | The workflows that tasks can use. The default is all workflows |
 
+## `[server]`
+
+| Key | Value |
+|:--|:--|
+| `rules` | `github` when GitHub branch protection and auto-merge enforce the server rules. `akasha` when the merge and watch helpers of Akasha enforce them, because the GitHub plan has no branch protection |
+
+The setup writes this key. Do not change it by hand. When the plan of the repository changes, run the setup again.
+
 ## Product map and team context
 
 `.akasha/context/product-map.md` tells how the features, screens, data, and APIs connect. `setup` writes an empty map. The agent engine reads it before each impact analysis and updates it before each handover.
