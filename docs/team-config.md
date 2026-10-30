@@ -37,6 +37,10 @@ customers-api = ["src/api/customers/**"]
 
 [workflows]
 enabled = ["feature", "fix", "small"]
+
+[ci]
+runs-on = "ubuntu-latest"
+python = "3.12"
 ```
 
 ## `[roles]`
@@ -126,7 +130,7 @@ The results:
 - SKIP: a required check without a command. SKIP is not a pass.
 - FAIL: the check failed.
 
-Akasha runs each command in the shell of the operating system: `cmd.exe` on Windows, and `/bin/sh` on macOS and Linux. It is not the shell of the person, for example PowerShell or zsh. The server check runs on Linux (`ubuntu-latest`), so it uses `command`.
+Akasha runs each command in the shell of the operating system: `cmd.exe` on Windows, and `/bin/sh` on macOS and Linux. It is not the shell of the person, for example PowerShell or zsh. The server check runs on the machine of `[ci] runs-on`, by default Linux (`ubuntu-latest`). Thus it uses `command`, and `command_windows` on a Windows runner.
 
 The patterns of `only_when` and `run_all_when` use the pattern rules of `[risk]`. Akasha reads `\` as `/` and removes a leading `./`. A pattern that ends with `/`, for example `frontend/`, matches each file in that folder. A folder name alone, for example `frontend`, matches only a file with that name: write `frontend/**`. A pattern that matches no changed file makes the check NOT_NEEDED, and NOT_NEEDED is a pass. Thus make sure that each pattern is relative to the top of the repository, not to `cwd`. The default `run_all_when` closes a gap: a pull request that changes only a dependency file, for example `requirements.txt`, can break each check, but it matches no `only_when` of the code.
 
@@ -160,6 +164,25 @@ A change that matches a contract pattern is medium risk or higher. The coordinat
 | `rules` | `github` when GitHub branch protection and auto-merge enforce the server rules. `akasha` when the merge and watch helpers of Akasha enforce them, because the GitHub plan has no branch protection |
 
 The setup writes this key. Do not change it by hand. When the plan of the repository changes, run the setup again.
+
+## `[ci]`
+
+The machine and the Python of the server check, `.github/workflows/akasha.yml`.
+
+| Key | Value |
+|:--|:--|
+| `runs-on` | The runner label of the machine, or a list of labels for a runner of the team, for example `["self-hosted", "windows"]`. The default is `ubuntu-latest`. Akasha refuses an empty label, a line break, and `#` |
+| `python` | The Python version of the server check, as text, for example `"3.12"` or `"3.13.1"`. It must be 3.11 or higher, because Akasha needs Python 3.11 or higher. Akasha refuses a number without quotes: TOML reads `3.10` as `3.1`. The default is `"3.12"` |
+
+Akasha writes these values into `akasha.yml` when an administrator sets up Akasha (`infra --apply` or `setup --approve-infra`). The examination of the server rules compares `akasha.yml` on the default branch with the file that `[ci]` on the default branch gives. Thus, after a change of `[ci]`, set up Akasha again, and commit `akasha.toml` and `akasha.yml` in one pull request.
+
+The steps of `akasha.yml` use bash, also on a Windows runner. A Windows runner of the team needs Git Bash. The check commands of the team run in the shell of the operating system, so they run in `cmd.exe` on a Windows runner. Give `command_windows` to each check that needs it.
+
+The merge and watch helpers always run on `ubuntu-latest`. They can write to the repository, so they must not run on a machine where the code of a pull request ran.
+
+> **CAUTION:** In a public repository, a pull request from a fork runs its code in the server check. On a runner of the team, that code runs on a machine of the team. When `runs-on` is not a standard machine of GitHub, for example `ubuntu-latest`, `windows-2022`, or `macos-15`, and the repository is public, `infra` and `setup` show a warning. Akasha cannot tell a larger runner of GitHub from a runner of the team, so a larger runner also gets the warning. The warning does not stop a handover.
+
+> **CAUTION:** An Akasha plugin that is not updated refuses `[ci]`. Make sure that each person updated the Akasha plugin before you add it.
 
 ## `[context]`
 

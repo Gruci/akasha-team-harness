@@ -75,8 +75,10 @@ def run(root: Path, approved_by: str) -> list[str]:
                 f"Akasha does not write a second team config. Pull the default branch first: git pull origin {pull}. "
                 "Then run the setup again: it examines the server rules."]
     problems = [] if approved_by else github.status(root)
+    warned = [] if approved_by else [f"GitHub warning: {item}" for item in github.warnings(root)]
     if path.is_file() and not approved_by and not problems:
-        return ["Akasha is ready in this repository: the team rules and the server rules are on. Nothing to set up."]
+        ready = "Akasha is ready in this repository: the team rules and the server rules are on. Nothing to set up."
+        return [ready] + warned
     report = []
     if path.is_file():
         report.append(f"{config.CONFIG_FILE} is present. Akasha keeps it.")
@@ -103,7 +105,7 @@ def run(root: Path, approved_by: str) -> list[str]:
         report += [f"GitHub: {item}" for item in refused] or ["GitHub settings agree with akasha.toml."]
         report.append(RULES_TEXT[config.load(root).server_rules])
     else:
-        report += [f"GitHub: {item}" for item in problems]
+        report += [f"GitHub: {item}" for item in problems] + warned
         if github.readiness(root).get("admin"):
             report.append("You administer this repository. Approve the change, then run setup again with "
                           "--approve-infra <your GitHub name>.")

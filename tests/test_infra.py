@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from akasha import config
 from akasha.config import Team
 from akasha.infra import desired, github, server
 
@@ -56,16 +57,51 @@ class InfraTests(unittest.TestCase):
         self.assertEqual(wanted["required_status_checks"], {"strict": True, "contexts": ["akasha"]})
         self.assertEqual(wanted["required_pull_request_reviews"],
                          {"required_approving_review_count": 0, "require_code_owner_reviews": True})
-        files = desired.workflows()
+        files = desired.workflows()                                      # without a team: the default values
         self.assertEqual(set(files), {f".github/workflows/akasha{name}.yml" for name in ("", "-merge", "-watch")})
         check = files[".github/workflows/akasha.yml"]
         self.assertIn("Take the team config from the default branch", check)
         self.assertIn("refs/heads/", check)
+        self.assertIn("    runs-on: ubuntu-latest ", check)
+        self.assertIn('python-version: "3.12"', check)
         for helper in (".github/workflows/akasha-merge.yml", ".github/workflows/akasha-watch.yml"):
             self.assertIn("When GitHub protects the default branch, it does nothing", files[helper])
         self.assertEqual(desired.settings_drift({"allow_auto_merge": False, "allow_squash_merge": True}),
                          ["the repository setting allow_auto_merge is off"])
         self.assertEqual(desired.settings_drift({}), [])                # hidden settings are not problems
+
+    def test_the_team_config_gives_the_machine_and_the_python_of_the_check(self):
+        source = (desired.TEMPLATES / "akasha.yml").read_text(encoding="utf-8")
+        default = desired.workflows()
+        self.assertEqual(default, desired.workflows(Team()))
+        self.assertEqual(default[".github/workflows/akasha.yml"],          # the template with the default values
+                         source.replace("@@AKASHA_RUNS_ON@@", "ubuntu-latest").replace("@@AKASHA_PYTHON@@", "3.12"))
+        team = Team(runs_on=("self-hosted", "windows"), python="3.13")
+        files = desired.workflows(team)
+        check = files[".github/workflows/akasha.yml"]
+        self.assertNotIn("@@", "".join(files.values()))
+        self.assertIn('python-version: "3.13"', check)
+        line = next(line for line in check.splitlines() if line.startswith("    runs-on: "))
+        listed = line.removeprefix("    runs-on: ").split("#")[0].strip()
+        self.assertEqual(json.loads(listed), ["self-hosted", "windows"])    # a JSON list is a YAML flow list
+        self.assertIn("        shell: bash", check)                      # the steps use bash, also on Windows
+        for helper in (".github/workflows/akasha-merge.yml", ".github/workflows/akasha-watch.yml"):
+            self.assertEqual(files[helper], default[helper])               # the helpers stay on ubuntu-latest
+            self.assertIn("runs-on: ubuntu-latest", files[helper])
+        self.assertEqual(desired.runs_on(("windows-2022",)), "windows-2022")
+        for labels in (("linux",), ("true",), ("my runner",)):           # YAML reads these as other values
+            with self.subTest(labels=labels):
+                self.assertEqual(desired.runs_on(labels), json.dumps(labels[0]))
+
+    def test_a_runner_of_the_team_in_a_public_repository_gets_a_warning(self):
+        own = Team(runs_on=("self-hosted", "linux"))
+        self.assertTrue(desired.warnings(own, {"private": False})[0].startswith(
+            'the required check runs on the runner ["self-hosted", "linux"] of [ci] runs-on'))
+        self.assertEqual(desired.warnings(own, {"private": True}), [])
+        self.assertEqual(desired.warnings(own, {}), [])                  # GitHub did not tell: no warning
+        for labels in (("ubuntu-latest",), ("windows-2022",), ("macos-15",), ("ubuntu-24.04-arm",)):
+            with self.subTest(labels=labels):
+                self.assertEqual(desired.warnings(Team(runs_on=labels), {"private": False}), [])
 
     def test_drift(self):
         self.assertEqual(desired.drift(None), ["the default branch has no branch protection"])
@@ -113,11 +149,71 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(self.apply("admin-a", by="@Admin-A"), [])
         self.assertTrue((self.root / ".github" / "workflows" / "akasha.yml").is_file())
 
+    def test_the_server_files_get_the_team_config_of_this_checkout(self):
+        (self.root / "akasha.toml").write_text('[roles]\nadministrators = ["Admin-A"]\n[ci]\nruns-on = "windows-latest"\n'
+                                               'python = "3.11"\n', encoding="utf-8")
+        self.assertEqual(self.apply("admin-a"), [])
+        check = (self.root / ".github" / "workflows" / "akasha.yml").read_text(encoding="utf-8")
+        self.assertIn("    runs-on: windows-latest ", check)
+        self.assertIn('python-version: "3.11"', check)
+
     def test_without_github_the_name_of_the_team_config(self):
         with self.assertRaises(PermissionError):
             self.apply("", by="dev-b", origin="")
         self.assertEqual(self.apply("", by="admin-a", origin=""),
                          ["Akasha wrote the files, but cannot reach GitHub to change the settings"])
+
+
+class StatusTests(unittest.TestCase):
+    """The server files must agree with the team config on the default branch, not with the checkout."""
+
+    SERVER = '[ci]\nruns-on = ["self-hosted", "linux"]\npython = "3.13"\n'
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="akasha-status-"))
+        for args in (("init", "-q"), ("config", "user.email", "test@example.com"), ("config", "user.name", "Test")):
+            subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
+        (self.root / "akasha.toml").write_text(self.SERVER, encoding="utf-8")
+        team = config.load(self.root)
+        self.push({"akasha.toml": self.SERVER, ".github/CODEOWNERS": desired.codeowners(team),
+                   **desired.workflows(team)})
+        (self.root / "akasha.toml").write_text("", encoding="utf-8")       # the checkout is old: no [ci]
+
+    def push(self, files: dict[str, str | None]) -> None:
+        """Commit the files on the default branch of the server, and only them. None removes a file."""
+        for name, text in files.items():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if text is None:
+                path.unlink()
+            else:
+                path.write_bytes(text.encode("utf-8"))
+        for args in (("add", "-A", "--", *files), ("commit", "-q", "-m", "server"),
+                     ("update-ref", "refs/remotes/origin/main", "HEAD")):
+            subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
+
+    def status(self, private: bool = True) -> list[str]:
+        correct = {"required_status_checks": {"strict": True, "contexts": ["akasha"]},
+                   "required_pull_request_reviews": {"require_code_owner_reviews": True}}
+        with patch("akasha.infra.github.repository", return_value=("team/app", "main")), \
+                patch("akasha.infra.github.settings", return_value={"private": private, "permissions": {"admin": True}}), \
+                patch("akasha.infra.github.protection", return_value=correct), \
+                patch("akasha.infra.github.fetch"):
+            return github.status(self.root)
+
+    def test_the_server_files_follow_the_team_config_on_the_default_branch(self):
+        self.assertEqual(self.status(), [])
+        self.assertEqual(github.warnings(self.root), [])
+        self.assertEqual(self.status(private=False), [])                  # a warning does not stop a handover
+        self.assertIn("a pull request from a fork runs its code on that machine", github.warnings(self.root)[0])
+        self.push({".github/workflows/akasha.yml": desired.workflows()[".github/workflows/akasha.yml"]})
+        problems = self.status()
+        self.assertEqual(len(problems), 1)
+        self.assertIn(".github/workflows/akasha.yml on main is different from the file that the Akasha on this "
+                      "computer makes", problems[0])
+        self.assertIn("update Akasha (/plugin update akasha@akasha", problems[0])
+        self.push({".github/workflows/akasha.yml": None})
+        self.assertEqual(self.status(), [".github/workflows/akasha.yml is missing on main"])
 
 
 class ReadinessTests(unittest.TestCase):

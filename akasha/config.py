@@ -42,6 +42,7 @@ _KEYS: dict[str, set[str] | None] = {
     "workflows": {"enabled"},
     "server": {"rules"},
     "context": {"map"},
+    "ci": {"runs-on", "python"},
 }
 # Who enforces the server rules: "github" (branch protection and auto-merge of GitHub) or "akasha" (the merge and
 # watch workflows of Akasha, for a plan without branch protection). The setup selects it.
@@ -60,6 +61,12 @@ RUN_ALL_WHEN = ("**/requirements*.txt", "**/pyproject.toml", "**/setup.cfg", "**
                 "**/npm-shrinkwrap.json", "**/yarn.lock", "**/pnpm-lock.yaml", "**/go.mod", "**/go.sum",
                 "**/build.gradle", "**/build.gradle.kts", "**/settings.gradle", "**/settings.gradle.kts",
                 "**/gradle.properties", "**/pom.xml", CONFIG_FILE, ".github/workflows/**")
+# The machine and the Python of the server check. The default machine is a Linux machine that GitHub gives. A team
+# can name the labels of its own runner instead.
+RUNS_ON = ("ubuntu-latest",)
+PYTHON = "3.12"
+LOWEST_PYTHON = (3, 11)                      # Akasha needs Python 3.11 or higher
+PYTHON_VERSION = re.compile(r"(\d+)\.(\d+)(?:\.\d+)?")     # for example 3.12 or 3.12.4
 
 
 class ConfigError(ValueError):
@@ -114,6 +121,8 @@ class Team:
     defined: dict[str, Workflow] = field(default_factory=dict)       # all workflows, for the tasks that started
     server_rules: str = "github"
     map_dir: str = MAP_DIR.as_posix()                                # the map folder, with / between the parts
+    runs_on: tuple[str, ...] = RUNS_ON                               # the runner labels of the server check
+    python: str = PYTHON                                             # the Python version of the server check
 
 
 def _strings(value: object, where: str) -> tuple[str, ...]:
@@ -199,6 +208,31 @@ def _required(section: dict) -> tuple[str, ...]:
     """The names of the required checks. The default is the built-in check secrets. An empty list is the default
     too: no check is not a pass (runner.passed), and Akasha 1.0.0 read the empty list, so it must still load."""
     return _strings(section.get("required", ["secrets"]), "[checks] required") or ("secrets",)
+
+
+def _runs_on(value: object) -> tuple[str, ...]:
+    """The runner labels of the server check: one label, or a list of the labels of a runner of the team. Akasha
+    writes them into the workflow file, so a line break or a # is refused."""
+    labels = [value] if isinstance(value, str) else value
+    if not isinstance(labels, list) or not labels or \
+            not all(isinstance(label, str) and label.strip() for label in labels):
+        raise ConfigError(f'{CONFIG_FILE}: [ci] runs-on must be a runner label or a list of labels, for example '
+                          '"ubuntu-latest" or ["self-hosted", "linux"]')
+    for label in labels:
+        if "#" in label or any(ord(char) < 32 for char in label):
+            raise ConfigError(f"{CONFIG_FILE}: the label {label!r} in [ci] runs-on cannot have a line break or #")
+    return tuple(label.strip() for label in labels)
+
+
+def _python(value: object) -> str:
+    """The Python version of the server check, as text, for example "3.12". A number is refused: TOML reads 3.10 as
+    3.1."""
+    found = PYTHON_VERSION.fullmatch(value.strip()) if isinstance(value, str) else None
+    if not found or (int(found[1]), int(found[2])) < LOWEST_PYTHON:
+        lowest = ".".join(map(str, LOWEST_PYTHON))
+        raise ConfigError(f'{CONFIG_FILE}: [ci] python must be the text of a Python version of {lowest} or higher, '
+                          f'for example "{PYTHON}". Akasha needs Python {lowest} or higher')
+    return value.strip()
 
 
 def _examine_keys(data: dict) -> None:
@@ -293,7 +327,7 @@ def _team(data: dict, flows: dict[str, Workflow]) -> Team:
     rules = data.get("server", {}).get("rules", "github")
     if rules not in SERVER_RULES:
         raise ConfigError(f"{CONFIG_FILE}: [server] rules must be {' or '.join(SERVER_RULES)}")
-    named, required = _checks(checks), _required(checks)
+    named, required, ci = _checks(checks), _required(checks), data.get("ci", {})
     setup = _text(checks["setup"], "[checks] setup") if "setup" in checks else ""
     if setup and "setup" in required:                 # Akasha 1.0.0 ran setup as a check when required named it
         named["setup"] = Check(setup)
@@ -313,6 +347,8 @@ def _team(data: dict, flows: dict[str, Workflow]) -> Team:
         defined=dict(flows),
         server_rules=rules,
         map_dir=_folder(data.get("context", {}).get("map", MAP_DIR.as_posix()), "[context] map"),
+        runs_on=_runs_on(ci.get("runs-on", list(RUNS_ON))),
+        python=_python(ci.get("python", PYTHON)),
     )
 
 

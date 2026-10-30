@@ -522,6 +522,13 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(len(report), 1)
         self.assertIn("ready", report[0])
         self.assertFalse((root / "AGENTS.md").exists())             # it writes nothing
+        warned = ["the required check runs on a runner of the team"]
+        with patch("akasha.infra.github.status", return_value=[]), \
+                patch("akasha.infra.github.warnings", return_value=warned), \
+                patch("akasha.__main__.main_root", return_value=root), redirect_stdout(io.StringIO()) as shown:
+            self.assertEqual(setup.run(root, "")[1:], [f"GitHub warning: {warned[0]}"])
+            self.assertEqual(command_line.run(["infra"]), 0)        # a warning does not stop a handover
+        self.assertIn(f"Warning: {warned[0]}", shown.getvalue())
 
 
 class ProductMapTests(unittest.TestCase):

@@ -8,14 +8,17 @@ permissions:
   contents: read
 jobs:
   akasha:
-    runs-on: ubuntu-latest
+    runs-on: @@AKASHA_RUNS_ON@@        # [ci] runs-on in akasha.toml
+    defaults:
+      run:
+        shell: bash               # also on a Windows runner: it needs Git Bash
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "@@AKASHA_PYTHON@@"
       - name: Install Akasha
         env:
           AKASHA_SOURCE: ${{ vars.AKASHA_SOURCE }}      # a repository variable can name a mirror or a fork

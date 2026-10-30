@@ -255,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "infra":
         problems = github.apply(root, args.by) if args.apply else github.status(root)
         print("\n".join(f"- {item}" for item in problems) or "The GitHub settings agree with akasha.toml.")
+        for item in [] if args.apply else github.warnings(root):        # a warning does not stop a handover
+            print(f"Warning: {item}")
         print(setup.RULES_TEXT[config.load(root).server_rules])
         return 1 if problems else 0
     return 2

@@ -19,6 +19,7 @@ SERVER_STATE = config.STATE_DIR / "server.json"      # the last examination of t
 RECORD_AGE = 3600                                      # one hour, in seconds
 ANSWER_SECONDS = 10                                    # git waits this long for the server to tell its default branch
 _NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no branch protection for private repositories
+UPDATE = "/plugin update akasha@akasha in Claude Code, or pip install again for Codex"
 _HEAD = re.compile(r"^ref: refs/heads/(\S+)\tHEAD$", re.M)        # the answer of git ls-remote --symref origin HEAD
 
 
@@ -94,10 +95,27 @@ def _server_team(root: Path, branch: str) -> config.Team:
     return config.shared(root, f"origin/{branch}")
 
 
+def _workflow_problems(root: Path, branch: str, team: config.Team) -> list[str]:
+    """The server workflow files on the default branch that are not as this Akasha makes them from the team config
+    there. A fix of Akasha keeps the version 1.0.0, so two computers can make different files: the update of Akasha
+    comes first."""
+    problems = []
+    for target, text in desired.workflows(team).items():
+        found = _server_file(root, branch, target)
+        if found is None:
+            problems.append(f"{target} is missing on {branch}")
+        elif found != text:
+            problems.append(f"{target} on {branch} is different from the file that the Akasha on this computer makes "
+                            f"from the team config — update Akasha ({UPDATE}). When Akasha is up to date, an "
+                            "administrator sets up Akasha again")
+    return problems
+
+
 def status(root: Path) -> list[str]:
     """The problems of the repository settings. An empty list means that the settings are correct.
 
-    Each examination also updates the record that the session start notice reads."""
+    The server files must agree with the team config on the default branch, as CODEOWNERS does. Each examination
+    also updates the record that the session start notice reads, with the warnings that do not stop a handover."""
     found = repository(root)
     if found is None:
         problems = ["Akasha cannot read the GitHub repository — make sure that gh is installed and logged in"]
@@ -111,14 +129,24 @@ def status(root: Path) -> list[str]:
         problems = desired.settings_drift(current, ("allow_squash_merge",))
     else:
         problems = desired.drift(protection(root, slug, branch)) + desired.settings_drift(current)
-    problems += [f"{target} on {branch} is missing or different" for target, text in desired.workflows().items()
-                 if _server_file(root, branch, target) != text]
+    problems += _workflow_problems(root, branch, team)
     owners = next((text for path in desired.CODEOWNERS_FILES
                    if (text := _server_file(root, branch, path)) is not None), "")
     if desired.block(owners) != desired.codeowners(team):
         problems.append(f"the Akasha block of CODEOWNERS on {branch} is missing or different from akasha.toml")
-    _remember(root, problems, bool((current.get("permissions") or {}).get("admin")), team.server_rules, branch)
+    _remember(root, problems, bool((current.get("permissions") or {}).get("admin")), team.server_rules, branch,
+              desired.warnings(team, current))
     return problems
+
+
+def warnings(root: Path) -> list[str]:
+    """The warnings of the last examination of the server rules, for example a runner of the team in a public
+    repository. They do not stop a handover."""
+    try:
+        found = json.loads((root / SERVER_STATE).read_text(encoding="utf-8")).get("warnings")
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [item for item in found if isinstance(item, str)] if isinstance(found, list) else []
 
 
 @functools.cache
@@ -138,11 +166,12 @@ def _marks(root: Path, branch: str) -> dict:
     return {"commit": commit, "me": repo.me(root) if repo.origin(root) else "", "installed": _installed()}
 
 
-def _remember(root: Path, problems: list[str], admin: bool, rules: str = "github", branch: str = "") -> None:
+def _remember(root: Path, problems: list[str], admin: bool, rules: str = "github", branch: str = "",
+              warned: list[str] | None = None) -> None:
     path = root / SERVER_STATE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"checked": time.time(), "problems": problems, "admin": admin, "rules": rules,
-                                "branch": branch, **_marks(root, branch)}), encoding="utf-8")
+                                "branch": branch, "warnings": warned or [], **_marks(root, branch)}), encoding="utf-8")
 
 
 def readiness(root: Path, max_age: float = RECORD_AGE) -> dict:
@@ -197,10 +226,11 @@ def apply(root: Path, approved_by: str = "") -> list[str]:
 
     Akasha turns on the branch protection and the auto-merge of GitHub. When the plan of the repository has none,
     Akasha records `[server] rules = "akasha"`, and its merge and watch workflows enforce the rules. Akasha keeps the
-    CODEOWNERS lines and the pull request template that the team already has."""
+    CODEOWNERS lines and the pull request template that the team already has. The server files get the values of
+    the team config in this checkout: the administrator commits them with the team config in one pull request."""
     team = config.load(root)
     _examine_administrator(root, team, approved_by)
-    for target, text in desired.workflows().items():
+    for target, text in desired.workflows(team).items():
         path = root / target
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")

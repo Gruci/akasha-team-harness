@@ -118,6 +118,24 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.load(self.repo('[context]\nfolder = "docs"\n'))
 
+    def test_the_machine_and_the_python_of_the_server_check(self):
+        team = config.load(self.repo())
+        self.assertEqual((team.runs_on, team.python), (("ubuntu-latest",), "3.12"))
+        one = config.load(self.repo('[ci]\nruns-on = " windows-latest "\npython = "3.11"\n'))
+        self.assertEqual((one.runs_on, one.python), (("windows-latest",), "3.11"))
+        own = config.load(self.repo('[ci]\nruns-on = ["self-hosted", "windows", "x64"]\npython = "3.13.1"\n'))
+        self.assertEqual((own.runs_on, own.python), (("self-hosted", "windows", "x64"), "3.13.1"))
+        for text in ('[ci]\npython = "3.10"\n', '[ci]\npython = "3.9"\n', '[ci]\npython = 3.12\n',
+                     '[ci]\npython = "3.x"\n', '[ci]\npython = "latest"\n', '[ci]\nruns-on = ""\n',
+                     '[ci]\nruns-on = []\n', '[ci]\nruns-on = ["linux", ""]\n', '[ci]\nruns-on = 1\n',
+                     '[ci]\nruns-on = "linux # x"\n', '[ci]\nruns-on = ["linux\\nsteps: []"]\n',
+                     '[ci]\nmachine = "linux"\n'):
+            with self.subTest(text=text), self.assertRaises(config.ConfigError):
+                config.load(self.repo(text))
+        with self.assertRaises(config.ConfigError) as refused:
+            config.load(self.repo('[ci]\npython = "3.10"\n'))
+        self.assertIn("3.11 or higher", str(refused.exception))
+
     def test_the_setup_records_who_enforces_the_server_rules(self):
         root = self.repo('[roles]\nadministrators = ["admin"]\n')
         self.assertEqual(config.load(root).server_rules, "github")
