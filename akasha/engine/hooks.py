@@ -50,12 +50,12 @@ def session_start(root: Path) -> int:
     if not (root / config.CONFIG_FILE).is_file():
         print(f"[AKASHA] {SETUP_HINT}\n{notice}")
         return 0
-    open_tasks = [task for task in tasks.all_tasks(root) if task.status == "open"]
     lines = ["[AKASHA] Do each change as an Akasha task. The akasha-request skill gives the procedure.", notice]
     context = sorted(path.relative_to(root).as_posix() for path in (root / config.TEAM_CONTEXT).glob("*.md"))
     if context:
         lines.append(f"[AKASHA] Read the team context before you write a specification: {', '.join(context)}")
-    lines += [f"[AKASHA] Open task {task.id}: stage {task.stage}, risk {task.risk}, {task.title}" for task in open_tasks]
+    lines += [f"[AKASHA] Task {task.id}: {task.status}, stage {task.stage}, risk {task.risk}, {task.title}"
+              for task in tasks.all_tasks(root) if tasks.active(task)]
     print("\n".join(lines))
     return 0
 
@@ -64,8 +64,8 @@ def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict) -> int:
     if tool in SHELL_TOOLS:
         reason = guard.check_command(str(tool_input.get("command") or ""), cwd, root)
     elif tool in EDIT_TOOLS:
-        open_tasks = tasks.all_tasks(root)
-        reasons = [guard.check_edit(path, root, open_tasks) for path in _edited(tool, tool_input, cwd)]
+        known = tasks.all_tasks(root)
+        reasons = [guard.check_edit(path, root, known) for path in _edited(tool, tool_input, cwd)]
         reason = next((item for item in reasons if item), None)
     else:
         reason = None

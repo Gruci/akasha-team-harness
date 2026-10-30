@@ -17,6 +17,8 @@ The session start notice gives the Akasha command. This skill writes it as `akas
 
 Do not ask the requester technical questions.
 
+If the requester withdraws the request, run `akasha cancel <task> --by <requester>`.
+
 ## Stage 1 — Request
 
 1. Select the workflow:

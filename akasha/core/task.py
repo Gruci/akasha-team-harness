@@ -10,7 +10,7 @@ from pathlib import Path
 
 from akasha.config import STATE_DIR
 
-STATUSES = ("open", "stopped", "done")
+STATUSES = ("open", "stopped", "done", "cancelled")
 
 
 @dataclass
@@ -38,6 +38,11 @@ class Task:
     board: str = ""                                            # the issue of the task on the shared task board
     pull_request: str = ""
     notes: list[str] = field(default_factory=list)
+
+
+def active(task: Task) -> bool:
+    """An active task holds its scope: it is open, or it is stopped and waits for a developer."""
+    return task.status in ("open", "stopped")
 
 
 def _folder(root: Path) -> Path:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from akasha.core.task import Task
+from akasha.core.task import Task, active
 
 ACTIONS = {
     "join": "Both tasks make the same feature. Join the two tasks into one.",
@@ -44,7 +44,7 @@ def _scopes_touch(first: Iterable[str], second: Iterable[str]) -> list[str]:
 def find(task: Task, others: Iterable[Task]) -> list[Overlap]:
     overlaps = []
     for other in others:
-        if other.id == task.id or other.status != "open":
+        if other.id == task.id or not active(other):
             continue
         if task.feature and task.feature == other.feature:
             overlaps.append(Overlap("join", other.id, f"the same feature {task.feature}"))

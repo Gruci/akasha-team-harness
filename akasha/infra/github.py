@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from akasha.core.workcopy import git
 from akasha.infra import desired
 from akasha.repo import gh
 
@@ -30,10 +31,11 @@ def status(root: Path) -> list[str]:
         return ["Akasha cannot read the GitHub repository — make sure that gh is installed and logged in"]
     slug, branch = found
     problems = desired.drift(protection(root, slug, branch))
-    for target, text in desired.files(_team(root)).items():
-        path = root / target
-        if not path.is_file() or path.read_text(encoding="utf-8") != text:
-            problems.append(f"{target} is missing or different from akasha.toml")
+    git(root, "fetch", "-q", "origin", branch)
+    for target, text in desired.files(_team(root)).items():          # the server uses the default branch
+        shown = git(root, "show", f"origin/{branch}:{target}")
+        if shown.returncode or shown.stdout.replace("\r\n", "\n") != text:
+            problems.append(f"{target} on {branch} is missing or different from akasha.toml")
     return problems
 
 

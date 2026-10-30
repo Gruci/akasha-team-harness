@@ -10,7 +10,7 @@ import json
 import re
 from pathlib import Path
 
-from akasha.core.task import Task, all_tasks
+from akasha.core.task import Task, active, all_tasks
 from akasha.repo import gh
 
 LABEL = "akasha"
@@ -35,24 +35,38 @@ def parse(text: str) -> Task | None:
         return None
 
 
-def open_tasks(root: Path) -> tuple[list[Task], str]:
-    """The open tasks of all requesters and where Akasha read them: "github" or "local"."""
-    listed = gh(root, "issue", "list", "--label", LABEL, "--state", "open", "--limit", "200", "--json", "body")
-    if listed.returncode == 0:
-        tasks = [parse(item.get("body", "")) for item in json.loads(listed.stdout or "[]")]
-        remote = [task for task in tasks if task is not None]
-        local = [task for task in all_tasks(root) if task.status == "open"]
-        known = {task.id for task in remote}
-        return remote + [task for task in local if task.id not in known], "github"
-    return [task for task in all_tasks(root) if task.status == "open"], "local"
+def read(root: Path) -> tuple[list[Task], str]:
+    """The tasks on the board and where Akasha read them: "github" or "local".
+
+    An issue stays open until the pull request of its task merges, so the board also shows the tasks that wait
+    for a merge. Without GitHub, the board holds the active tasks on this computer."""
+    local = [task for task in all_tasks(root) if active(task)]
+    listed = gh(root, "issue", "list", "--label", LABEL, "--state", "open", "--limit", "200", "--json", "body,url")
+    if listed.returncode:
+        return local, "local"
+    remote = []
+    for item in json.loads(listed.stdout or "[]"):
+        task = parse(item.get("body", ""))
+        if task is not None:
+            task.board = item.get("url", "")
+            remote.append(task)
+    known = {task.id for task in remote}
+    return remote + [task for task in local if task.id not in known], "github"
+
+
+def comment(root: Path, address: str, text: str) -> None:
+    """Write on the issue of a task. GitHub tells the people who follow the issue."""
+    gh(root, "issue", "comment", address, "--body", text)
 
 
 def publish(root: Path, task: Task) -> str:
-    """Put the task on the shared board, or update its issue. Return the issue address, or "" without GitHub."""
+    """Put the task on the shared board, or update its issue. Return the issue address, or "" without GitHub.
+
+    The pull request closes the issue when it merges. Akasha closes the issue only when the task is cancelled."""
     title = f"[akasha] {task.title}"
     if task.board:
         gh(root, "issue", "edit", task.board, "--title", title, "--body", body(task))
-        if task.status != "open":
+        if task.status == "cancelled":
             gh(root, "issue", "close", task.board)
         return task.board
     gh(root, "label", "create", LABEL, "--color", "6d28d9", "--description", "Akasha task", "--force")

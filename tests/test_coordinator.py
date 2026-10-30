@@ -15,9 +15,10 @@ class OverlapTests(unittest.TestCase):
                   task("c", scope=["src/search/date.py"]),
                   task("d", contracts=["customers-api"]),
                   task("e", scope=["src/billing/**"], feature="invoices"),
-                  task("f", feature="customer-search-filter", status="done")]
+                  task("f", feature="customer-search-filter", status="done"),
+                  task("g", scope=["src/search/**"], status="stopped")]
         kinds = {(item.kind, item.other) for item in overlap.find(mine, others)}
-        self.assertEqual(kinds, {("join", "b"), ("order", "c"), ("notify", "d")})
+        self.assertEqual(kinds, {("join", "b"), ("order", "c"), ("notify", "d"), ("order", "g")})
 
     def test_messages_tell_the_action(self):
         found = overlap.find(task("a", scope=["src/**"]), [task("b", scope=["src/app.py"])])

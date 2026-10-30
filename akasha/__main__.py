@@ -51,6 +51,9 @@ def _parser() -> argparse.ArgumentParser:
     resume = commands.add_parser("resume", help="open a stopped task again after a developer examined it")
     resume.add_argument("task")
     resume.add_argument("--by", required=True, help="the developer who examined the problem")
+    cancel = commands.add_parser("cancel", help="stop a task for good, for example a withdrawn request")
+    cancel.add_argument("task")
+    cancel.add_argument("--by", required=True, help="the person who withdrew the request")
     for name, text in (("advance", "move the task to its next stage"), ("show", "show one task"),
                        ("handover", "open the pull request with the handover document")):
         commands.add_parser(name, help=text).add_argument("task")
@@ -63,7 +66,7 @@ def _parser() -> argparse.ArgumentParser:
     accept.add_argument("task")
     accept.add_argument("--condition")
     accept.add_argument("--result", choices=("yes", "no"), required=True)
-    commands.add_parser("board", help="show the open tasks of all requesters")
+    commands.add_parser("board", help="show the tasks of all requesters on the shared task board")
     infra = commands.add_parser("infra", help="show or correct the GitHub settings")
     infra.add_argument("--apply", action="store_true")
     infra.add_argument("--by", default="", help="the administrator who approves the change")
@@ -107,6 +110,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "resume":
         _show(flow.resume(root, args.task, args.by))
         return 0
+    if args.command == "cancel":
+        _show(flow.cancel(root, args.task, args.by))
+        return 0
     if args.command == "advance":
         blocked = flow.advance(root, args.task)
         _show(tasks.load(root, args.task))
@@ -148,10 +154,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  blocked — {reason}")
         return 1 if blocked else 0
     if args.command == "board":
-        open_tasks, source = board.open_tasks(root)
-        print(f"Shared task board ({source}): {len(open_tasks)} open task(s)")
-        for task in open_tasks:
-            print(f"- {task.id} · {task.stage} · risk {task.risk} · {task.requester or 'unknown'} · {task.title}")
+        listed, source = board.read(root)
+        print(f"Shared task board ({source}): {len(listed)} task(s)")
+        for task in listed:
+            print(f"- {task.id} · {task.status} · {task.stage} · risk {task.risk} · {task.requester or 'unknown'} · "
+                  f"{task.title}")
         return 0
     if args.command == "infra":
         problems = github.apply(root, args.by) if args.apply else github.status(root)

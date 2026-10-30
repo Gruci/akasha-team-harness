@@ -121,6 +121,8 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(found, [])
         _task, found = flow.specify(root, second.id, [], [], False, ["src/search/date.py"])
         self.assertEqual([(item.kind, item.other) for item in found], [("order", first.id)])
+        flow.cancel(root, first.id, "ops-a")
+        self.assertEqual(flow.specify(root, second.id, [], [], False, ["src/search/more.py"])[1], [])
 
     def test_a_developer_approval_needs_a_developer_from_the_team_config(self):
         root = make_repo(PASS)

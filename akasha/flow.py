@@ -21,6 +21,19 @@ def _publish(root: Path, task: Task) -> None:
         tasks.save(root, task)
 
 
+def _compare(root: Path, task: Task) -> list[overlap.Overlap]:
+    """Compare the task with the tasks of all requesters. Write each overlap also on the issue of the other task."""
+    others, _source = board.read(root)
+    found = overlap.find(task, others)
+    addresses = {other.id: other.board for other in others if other.board}
+    for item in found:
+        if item.other in addresses:
+            board.comment(root, addresses[item.other], f"Akasha found an overlap with the task {task.id} "
+                          f"({task.title}, requester {task.requester or 'unknown'}): {item.detail}. "
+                          f"{overlap.ACTIONS[item.kind]}")
+    return found
+
+
 def _examine_role(team: Team, role: str, person: str) -> None:
     """A developer or an administrator must be a person that akasha.toml names for that role."""
     names = {"developer": team.developers, "administrator": team.administrators}.get(role, ())
@@ -74,8 +87,7 @@ def start(root: Path, title: str, requester: str, workflow: str = "feature", fea
     task = Task(id=tasks.new_id(title), title=title, workflow=workflow, stage=flow.stages[0].id,
                 requester=requester, feature=feature, scope=list(scope or []), contracts=list(contracts or []))
     _raise_risk(task, task.scope, team)
-    others, _source = board.open_tasks(root)
-    found = overlap.find(task, others)
+    found = _compare(root, task)
     if task.stage == "build":
         _open_workcopy(root, team, task)
     _publish(root, task)
@@ -118,7 +130,7 @@ def specify(root: Path, task_id: str, conditions: list[str], questions: list[str
     if added:
         task.scope += added
         _raise_risk(task, added, config.load(root))
-        found = overlap.find(task, board.open_tasks(root)[0])
+        found = _compare(root, task)
     _publish(root, task)
     return task, found
 
@@ -141,6 +153,17 @@ def resume(root: Path, task_id: str, developer: str) -> Task:
         raise ValueError(f"the task is {task.status}, not stopped")
     task.status, task.failures = "open", 0
     task.notes.append(f"{developer} examined the problem and opened the task again")
+    _publish(root, task)
+    return task
+
+
+def cancel(root: Path, task_id: str, person: str) -> Task:
+    """Stop a task for good, for example when the requester withdraws the request. The work copy stays."""
+    task = tasks.load(root, task_id)
+    if not tasks.active(task):
+        raise ValueError(f"the task is {task.status}")
+    task.status = "cancelled"
+    task.notes.append(f"{person} cancelled the task")
     _publish(root, task)
     return task
 
@@ -220,8 +243,8 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
         raise RuntimeError(f"git push failed: {pushed.stderr.strip()[:300]}")
     if not task.pull_request:                     # a second handover only pushes the new commits
         body = handover_document.render(task, workcopy.changed_files(task))
-        if task.board:
-            body += f"\nCloses {task.board}\n"
+        if task.board:                            # the merge closes the issue of the task on the board
+            body += f"\nCloses #{task.board.rstrip('/').rsplit('/', 1)[-1]}\n"
         created = gh(root, "pr", "create", "--base", branch, "--head", task.branch, "--title", task.title,
                      "--body", body)
         if created.returncode:
