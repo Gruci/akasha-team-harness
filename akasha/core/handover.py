@@ -1,26 +1,30 @@
-"""The handover document: the pull request text that gives a developer the evidence for a review."""
+"""The pull request text: the briefing of the agent engine, and the Verification section from the real results."""
 
 from __future__ import annotations
 
 from akasha.core.task import Task
 
 
-def render(task: Task, changed: list[str]) -> str:
-    """Markdown for the pull request body. It also tells what Akasha did not verify."""
-    def lines(items: list[str], empty: str) -> list[str]:
-        return [f"- {item}" for item in items] or [f"- {empty}"]
+def verification(task: Task, branch: str, commands: dict[str, str]) -> str:
+    """Akasha writes this section itself from the recorded checks and inspection, so that each claim is true."""
+    names = [f"{name} (`{commands[name]}`)" if name in commands else name for name in sorted(task.checks)]
+    lines = [f"- The required checks passed on the latest {branch}: {', '.join(names) or 'none'}."]
+    if task.accepted:
+        accepted = sum(1 for condition in task.conditions if task.accepted.get(condition))
+        lines.append(f"- The requester accepted {accepted} of {len(task.conditions)} completion conditions "
+                     "in a preview.")
+    else:
+        lines.append("- The workflow of this task has no inspection by the requester.")
+    return "## Verification\n\n" + "\n".join(lines)
 
-    acceptance = [f"- [{'x' if task.accepted.get(condition) else ' '}] {condition}" for condition in task.conditions]
-    checks = [f"- {name}: {result}" for name, result in sorted(task.checks.items())]
-    unverified = [name for name, result in task.checks.items() if result == "SKIP"]
-    unverified += [condition for condition in task.conditions if not task.accepted.get(condition)]
-    sections = [
-        f"## Request\n\n{task.title}" + (f"\n\nRequester: {task.requester}" if task.requester else ""),
-        "## Completion conditions and inspection\n\n" + "\n".join(acceptance or ["- No completion conditions"]),
-        f"## Risk level: {task.risk}\n\n" + "\n".join(lines(list(task.risk_reasons), "No risk rule matched")),
-        "## Checks\n\n" + "\n".join(checks or ["- No checks ran"]),
-        "## Changed files\n\n" + "\n".join(lines(changed, "No files changed")),
-        "## Not verified\n\n" + "\n".join(lines(unverified, "Akasha verified all checks and conditions above")),
-        "## Remaining risks\n\n" + "\n".join(lines(task.notes, "None recorded")),
-    ]
-    return "\n\n".join(sections) + "\n\n<!-- akasha-task: " + task.id + " -->\n"
+
+def commit_body(task: Task, branch: str, commands: dict[str, str]) -> str:
+    """The body of the squash commit: the briefing, then Verification."""
+    return task.briefing.strip() + "\n\n" + verification(task, branch, commands) + "\n"
+
+
+def pull_request_body(task: Task, branch: str, commands: dict[str, str]) -> str:
+    body = commit_body(task, branch, commands)
+    if task.board:                                    # the merge closes the issue of the task on the board
+        body += f"\nCloses #{task.board.rstrip('/').rsplit('/', 1)[-1]}\n"
+    return body + f"\n<!-- akasha-task: {task.id} -->\n"

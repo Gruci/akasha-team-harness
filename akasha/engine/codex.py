@@ -10,18 +10,26 @@ RULES = f"""{START}
 ## Akasha
 
 This repository uses Akasha. Do each change as an Akasha task. The Akasha command is `python -m akasha`.
+Ask people only what to make, how it looks, and how they use it. Make the technical decisions yourself and record them.
 
-1. Record the task: `python -m akasha request "<title>" --requester <name> --feature <feature key>`.
+1. Record the task: `python -m akasha request "<title>" --requester <GitHub name> --feature <feature key>`.
+   If an earlier task makes the same feature, add `--builds-on <earlier task>`.
 2. Ask the requester questions until the completion conditions are clear. Record each condition:
    `python -m akasha specify <task> --condition "<condition>"`.
-3. Write a short specification in simple words. Record the files that the change needs:
-   `python -m akasha specify <task> --scope <file patterns>`.
-4. Record each approval that a person gives: `python -m akasha approve <task> --role <role> --by <name>`.
-5. Make the change only in the work copy of the task.
-6. Run `python -m akasha check <task>`. Repair each failure.
-7. Show the result to the requester. Record each answer:
+3. Read `.akasha/context/product-map.md`. Find the files, data, and APIs that the change touches.
+   Record the scope: `python -m akasha specify <task> --scope <file patterns>`.
+4. Record the impact analysis: `python -m akasha impact <task> --features "<text>" --data "<text>"
+   --contracts "<text>" --tasks "<text>" --rollback "<text>"`.
+5. Tell the requester the specification in simple words. Record the approval:
+   `python -m akasha approve <task> --role requester --by <name>`.
+6. Make the change only in the work copy of the task. Write an automated test for each completion condition.
+7. Run `python -m akasha check <task>`. Repair each failure.
+8. Show the result to the requester. Record each answer:
    `python -m akasha accept <task> --condition "<condition>" --result yes`.
-8. Open the pull request: `python -m akasha handover <task>`.
+9. Update the product map in the work copy, or record why it does not change:
+   `python -m akasha impact <task> --map-unchanged "<reason>"`.
+10. Write the briefing with the sections Why, What changed, Scope, Tradeoffs, and Blast Radius. Record it:
+    `python -m akasha brief <task> --file <path>`. Then run `python -m akasha handover <task>`.
 
 After each step, run `python -m akasha advance <task>`. If Akasha shows a blocker, do the step that removes it.
 
@@ -33,8 +41,10 @@ Do not use a command that you cannot undo, for example a force push.
 
 
 def _hook(event: str, matcher: str | None) -> dict:
-    command = f"python -X utf8 -m akasha hook --agent codex --event {event}"
-    entry = {"hooks": [{"type": "command", "command": command, "commandWindows": command, "timeout": 120}]}
+    arguments = f"-X utf8 -m akasha hook --agent codex --event {event}"
+    # The file is shared in git, so it names no path of one computer. macOS and Linux have python3; Windows has python.
+    entry = {"hooks": [{"type": "command", "command": f"python3 {arguments}", "commandWindows": f"python {arguments}",
+                        "timeout": 120}]}
     return {**({"matcher": matcher} if matcher else {}), **entry}
 
 

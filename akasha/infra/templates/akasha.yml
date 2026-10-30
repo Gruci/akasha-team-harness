@@ -18,7 +18,16 @@ jobs:
           python-version: "3.12"
       - name: Install Akasha
         run: pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"
+      - name: Find the base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}
+        run: echo "BASE=${BASE_REF#refs/heads/}" >> "$GITHUB_ENV"
       - name: Take the team config from the default branch
-        run: git show "origin/${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}:akasha.toml" > "$RUNNER_TEMP/akasha.toml" || cp akasha.toml "$RUNNER_TEMP/akasha.toml"
+        run: |
+          if git cat-file -e "origin/$BASE:akasha.toml" 2>/dev/null; then
+            git show "origin/$BASE:akasha.toml" > "$RUNNER_TEMP/akasha.toml"
+          else
+            cp akasha.toml "$RUNNER_TEMP/akasha.toml"
+          fi
       - name: Required checks
-        run: python -m akasha check --ci --config "$RUNNER_TEMP/akasha.toml" --base "origin/${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}"
+        run: python -m akasha check --ci --config "$RUNNER_TEMP/akasha.toml" --base "origin/$BASE"

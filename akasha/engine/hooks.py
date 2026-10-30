@@ -40,9 +40,12 @@ def _edited(tool: str, tool_input: dict, cwd: Path) -> list[Path]:
 
 
 def command() -> str:
-    """How to run Akasha here: the plugin launcher when it exists, else the installed package."""
+    """How to run Akasha here: this Python with the plugin launcher when it exists, else with the installed package.
+
+    Some computers have only `python3` and no `python`, so the command names the Python that runs this hook."""
+    python = Path(sys.executable).as_posix()
     launcher = Path(__file__).resolve().parents[2] / "akasha_run.py"
-    return f'python -X utf8 "{launcher.as_posix()}"' if launcher.is_file() else "python -X utf8 -m akasha"
+    return f'"{python}" -X utf8 "{launcher.as_posix()}"' if launcher.is_file() else f'"{python}" -X utf8 -m akasha'
 
 
 def session_start(root: Path) -> int:

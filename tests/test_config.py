@@ -18,7 +18,7 @@ class ConfigTests(unittest.TestCase):
     def test_defaults_without_a_config_file(self):
         team = config.load(self.repo())
         self.assertEqual(set(team.workflows), {"feature", "fix", "small"})
-        self.assertEqual(team.approval, {"high": ("developer",)})
+        self.assertEqual(team.approval, {})                 # the agent engine decides; a person gate is a choice
         self.assertEqual(team.required_checks, ("secrets",))
 
     def test_full_config(self):

@@ -25,11 +25,15 @@ class StageTests(unittest.TestCase):
         self.assertEqual(stages.advance(self.task, self.flow, stages.Context()), [])
         self.assertEqual(self.task.stage, "specification")
 
-    def test_high_risk_needs_the_approval_roles(self):
+    def test_the_specification_needs_the_impact_analysis_and_the_gate_roles(self):
         self.task.stage, self.task.risk = "specification", "high"
         self.task.approvals = {"requester": "ops-member"}
         context = stages.Context(approval_roles=("developer",))
-        self.assertEqual(stages.advance(self.task, self.flow, context), ["risk_approvals"])
+        self.assertEqual(stages.advance(self.task, self.flow, context), ["impact_assessed", "risk_approvals"])
+        self.task.impact = {key: "none" for key in stages.IMPACT_KEYS}
+        self.task.impact["rollback"] = " "
+        self.assertEqual(stages.advance(self.task, self.flow, context), ["impact_assessed", "risk_approvals"])
+        self.task.impact["rollback"] = "Revert the commit. The change has no data."
         self.task.approvals["developer"] = "dev-lead"
         self.assertEqual(stages.advance(self.task, self.flow, context), [])
 
@@ -44,10 +48,18 @@ class StageTests(unittest.TestCase):
         self.task.checks["secrets"] = "PASS"
         self.assertEqual(stages.advance(self.task, self.flow, context), [])
 
-    def test_the_last_stage_finishes_the_task(self):
-        self.task.stage, self.task.pull_request = "handover", "https://example/pull/1"
-        self.assertEqual(stages.advance(self.task, self.flow, stages.Context()), ["infra_ready"])
+    def test_the_inspection_needs_the_product_map_and_the_server_rules(self):
+        self.task.stage, self.task.conditions = "inspection", ["Filter by the transaction date"]
+        self.task.accepted = {"Filter by the transaction date": True}
+        self.assertEqual(stages.advance(self.task, self.flow, stages.Context()), ["map_current", "infra_ready"])
+        self.task.map_note = "The change adds no feature, screen, table, or API."
         self.assertEqual(stages.advance(self.task, self.flow, stages.Context(infra_ready=True)), [])
+        self.assertEqual(self.task.stage, "handover")
+
+    def test_the_task_is_done_when_the_pull_request_merged(self):
+        self.task.stage, self.task.pull_request = "handover", "https://example/pull/1"
+        self.assertEqual(stages.advance(self.task, self.flow, stages.Context()), ["merged"])
+        self.assertEqual(stages.advance(self.task, self.flow, stages.Context(merged=True)), [])
         self.assertEqual(self.task.status, "done")
         self.assertEqual(stages.blockers(self.task, self.flow, stages.Context()), ["the task is done"])
 
@@ -68,6 +80,8 @@ class StageTests(unittest.TestCase):
             self.assertEqual([item.id for item in all_tasks(root)], [task.id])
             with self.assertRaises(LookupError):
                 load(root, "missing")
+            (root / ".akasha" / "state" / "tasks" / "damaged.json").write_text("", encoding="utf-8")
+            self.assertEqual([item.id for item in all_tasks(root)], [task.id])     # one damaged file stops nothing
 
 
 if __name__ == "__main__":

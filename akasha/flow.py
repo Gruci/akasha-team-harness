@@ -12,13 +12,23 @@ from akasha.core import task as tasks
 from akasha.core.task import Task
 from akasha.infra import github
 from akasha.repo import gh
-from akasha.validators import runner
+from akasha.validators import briefing as briefing_rules, runner
+
+CONTEXT_PREFIX = config.TEAM_CONTEXT.as_posix() + "/"
 
 
 def _publish(root: Path, task: Task) -> None:
     tasks.save(root, task)
     if board.publish(root, task):
         tasks.save(root, task)
+
+
+def _find(root: Path, task_id: str) -> Task | None:
+    """A task on this computer, else on the shared task board."""
+    try:
+        return tasks.load(root, task_id)
+    except LookupError:
+        return board.find(root, task_id)
 
 
 def _compare(root: Path, task: Task) -> list[overlap.Overlap]:
@@ -42,12 +52,12 @@ def _examine_role(team: Team, role: str, person: str) -> None:
 
 
 def _tidy(root: Path) -> None:
-    """Remove the work copies of finished tasks after their pull request merges."""
+    """Finish the tasks whose pull request merged, and remove the work copies of finished tasks."""
     for task in tasks.all_tasks(root):
-        if task.status == "done" and task.workcopy and task.pull_request:
-            state = gh(root, "pr", "view", task.pull_request, "--json", "state", "--jq", ".state")
-            if state.returncode or state.stdout.strip() != "MERGED":
-                continue
+        if task.status == "open" and task.stage == "handover" and task.pull_request:
+            advance(root, task.id)                    # the task is done when GitHub merged the pull request
+            task = tasks.load(root, task.id)
+        if task.status == "done" and task.workcopy:
             try:
                 workcopy.remove(root, task)
             except RuntimeError:
@@ -55,18 +65,40 @@ def _tidy(root: Path) -> None:
             tasks.save(root, task)
 
 
+def _start_ref(root: Path, task: Task) -> str:
+    """Where the work copy starts: the branch of the earlier task when this task builds on one, else the latest
+    default branch from the server. Without a server, the current commit."""
+    if task.builds_on:
+        branch = f"akasha/{task.builds_on}"
+        workcopy.git(root, "fetch", "-q", "origin", branch)
+        for ref in (branch, f"origin/{branch}"):              # this computer first, then the server
+            if workcopy.git(root, "rev-parse", "--verify", "-q", ref).returncode == 0:
+                return ref
+        raise RuntimeError(f"the branch of {task.builds_on} is not on this computer or on the server yet — "
+                           "it appears when all checks of that task pass")
+    found = workcopy.git(root, "rev-parse", "--abbrev-ref", "origin/HEAD")      # for example origin/main
+    default = found.stdout.strip() if found.returncode == 0 else ""
+    if default.startswith("origin/") and default != "origin/HEAD":
+        workcopy.git(root, "fetch", "-q", "origin", default.removeprefix("origin/"))
+        return default
+    return "HEAD"
+
+
 def _open_workcopy(root: Path, team: Team, task: Task) -> None:
     """Make the work copy and run the setup command of the team in it. A failed setup becomes a note."""
-    workcopy.create(root, task)
+    workcopy.create(root, task, _start_ref(root, task))
+    tasks.save(root, task)                            # a stop during the setup command must not lose the work copy
     status, detail = runner.prepare(team, Path(task.workcopy))
     if status != "PASS":
         task.notes.append(f"the setup command failed in the work copy: {detail[-300:]}")
 
 
 def outside_scope(task: Task, changed: list[str]) -> tuple[str, ...]:
-    """The changed files that the task scope does not permit. A task without a scope permits all files."""
-    return tuple(path for path in changed
-                 if task.scope and not any(risk.matches(path, pattern) for pattern in task.scope))
+    """The changed files that the task scope does not permit. A task without a scope permits all files.
+
+    The team context, for example the product map, is outside each scope, so that each task can update it."""
+    return tuple(path for path in changed if task.scope and not path.startswith(CONTEXT_PREFIX)
+                 and not any(risk.matches(path, pattern) for pattern in task.scope))
 
 
 def _raise_risk(task: Task, paths: list[str], team: Team) -> None:
@@ -77,15 +109,19 @@ def _raise_risk(task: Task, paths: list[str], team: Team) -> None:
 
 
 def start(root: Path, title: str, requester: str, workflow: str = "feature", feature: str = "",
-          scope: list[str] | None = None, contracts: list[str] | None = None) -> tuple[Task, list[overlap.Overlap]]:
-    """Record a new task, compare it with the open tasks of all requesters, and put it on the shared board."""
+          scope: list[str] | None = None, contracts: list[str] | None = None,
+          builds_on: str = "") -> tuple[Task, list[overlap.Overlap]]:
+    """Record a new task, compare it with the active tasks of all requesters, and put it on the shared board."""
     team = config.load(root)
     _tidy(root)
     if workflow not in team.workflows:
         raise ValueError(f"the workflow {workflow} is not enabled — use {', '.join(team.workflows)}")
+    if builds_on and _find(root, builds_on) is None:
+        raise ValueError(f"no task {builds_on} on this computer or on the shared task board")
     flow = team.workflows[workflow]
     task = Task(id=tasks.new_id(title), title=title, workflow=workflow, stage=flow.stages[0].id,
-                requester=requester, feature=feature, scope=list(scope or []), contracts=list(contracts or []))
+                requester=requester, feature=feature, scope=list(scope or []), contracts=list(contracts or []),
+                builds_on=builds_on)
     _raise_risk(task, task.scope, team)
     found = _compare(root, task)
     if task.stage == "build":
@@ -95,25 +131,38 @@ def start(root: Path, title: str, requester: str, workflow: str = "feature", fea
 
 
 def context(root: Path, team: Team, task: Task) -> stages.Context:
-    """Measure the facts for the exit conditions. The risk level can only go up when the real changes are known."""
+    """Measure the facts for the exit conditions. The risk level can only go up when the real changes are known.
+
+    Akasha asks GitHub only for the facts that the exit conditions of the current stage need."""
+    exits = set(team.workflows[task.workflow].stage(task.stage).exit)
     changed = workcopy.changed_files(task) if task.workcopy else []
     if changed:
         _raise_risk(task, changed, team)
-    ready = task.stage == "handover" and not github.status(root)
-    return stages.Context(approval_roles=team.approval.get(task.risk, ()), required_checks=team.required_checks,
-                          outside_scope=outside_scope(task, changed), infra_ready=ready)
+    return stages.Context(
+        approval_roles=team.approval.get(task.risk, ()), required_checks=team.required_checks,
+        outside_scope=outside_scope(task, changed), map_changed=config.PRODUCT_MAP.as_posix() in changed,
+        infra_ready="infra_ready" in exits and not github.status(root),
+        merged="merged" in exits and bool(task.pull_request) and github.merged(root, task.pull_request))
 
 
 def advance(root: Path, task_id: str) -> list[str]:
     """Move the task to its next stage. Return the reasons that block it, in simple words."""
     team, task = config.load(root), tasks.load(root, task_id)
     measured = context(root, team, task)
-    blocked = stages.advance(task, team.workflows[task.workflow], measured)
+    gate = [role for role in measured.approval_roles if role not in task.approvals]
+    if gate and task.workcopy and task.status == "open":      # the real changes raised the risk after the specification
+        blocked = ["risk_approvals"]
+    else:
+        blocked = stages.advance(task, team.workflows[task.workflow], measured)
     if not blocked and task.stage == "build" and not task.workcopy:
         _open_workcopy(root, team, task)
+    if task.status == "done" and task.workcopy:
+        try:
+            workcopy.remove(root, task)
+        except RuntimeError:
+            pass                                      # the next request tries again
     _publish(root, task)
-    missing = " and a ".join(role for role in measured.approval_roles if role not in task.approvals)
-    return [f"a {missing} must approve the {task.risk} risk level" if name == "risk_approvals"
+    return [f"a {' and a '.join(gate)} must approve the {task.risk} risk level" if name == "risk_approvals"
             else stages.EXPLAIN.get(name, name) for name in blocked]
 
 
@@ -133,6 +182,42 @@ def specify(root: Path, task_id: str, conditions: list[str], questions: list[str
         found = _compare(root, task)
     _publish(root, task)
     return task, found
+
+
+def impact(root: Path, task_id: str, values: dict[str, str], map_note: str = "",
+           changes: tuple[str, str] | None = None) -> tuple[Task, str]:
+    """Record the impact analysis of the agent engine.
+
+    `changes` names an earlier task whose accepted behavior this task changes. Akasha tells its requester on its
+    issue. Nobody waits for an answer: the requester reacts with a new request when necessary."""
+    task = tasks.load(root, task_id)
+    task.impact.update({key: text.strip() for key, text in values.items() if text and text.strip()})
+    task.map_note = map_note.strip() or task.map_note
+    told = ""
+    if changes:
+        other_id, what = changes
+        other = _find(root, other_id)
+        if other is None or not other.board:
+            told = f"Akasha cannot find the task {other_id} on the shared task board. Tell its requester yourself."
+        else:
+            person = f"@{other.requester.lstrip('@')} " if other.requester else ""
+            board.comment(root, other.board, f"{person}Akasha: the task {task.id} ({task.title}) of "
+                          f"{task.requester or 'another requester'} changes behavior that you accepted: {what}")
+            task.notes.append(f"told {other.requester or 'the requester'} of {other_id} about a change of "
+                              f"accepted behavior: {what}")
+            told = f"Akasha told {other.requester or 'the requester'} on {other.board}."
+    _publish(root, task)
+    return task, told
+
+
+def brief(root: Path, task_id: str, text: str) -> list[str]:
+    """Examine and record the briefing that the agent engine wrote. Return the problems; no problem means saved."""
+    problems = briefing_rules.examine(text)
+    if not problems:
+        task = tasks.load(root, task_id)
+        task.briefing = text.strip()
+        _publish(root, task)
+    return problems
 
 
 def approve(root: Path, task_id: str, role: str, person: str) -> Task:
@@ -180,7 +265,10 @@ def accept(root: Path, task_id: str, condition: str | None, result: bool) -> Tas
 
 
 def check(root: Path, task_id: str) -> runner.Result:
-    """Run the required checks in the work copy. Each failure counts as one failed repair."""
+    """Run the required checks in the work copy. Each failure counts as one failed repair.
+
+    When all checks pass, Akasha saves the work as a commit and pushes the task branch. Thus the task branch on the
+    server always passed the checks, and other tasks can build on it."""
     team, task = config.load(root), tasks.load(root, task_id)
     if not task.workcopy:
         raise ValueError("the task has no work copy — advance it to the build stage first")
@@ -189,6 +277,10 @@ def check(root: Path, task_id: str) -> runner.Result:
     failed = [name for name, status in result.status.items() if status == "FAIL"]
     if failed:
         stages.record_failure(task, "the check " + ", ".join(failed) + " failed")
+    elif result.status and all(status == "PASS" for status in result.status.values()):
+        tree = Path(task.workcopy)
+        _commit(tree, task.title)
+        workcopy.git(tree, "push", "-q", "-u", "origin", task.branch)      # without a server, the push fails quietly
     _publish(root, task)
     return result
 
@@ -196,13 +288,11 @@ def check(root: Path, task_id: str) -> runner.Result:
 def ci_check(root: Path, config_path: Path | None, base: str) -> runner.Result:
     """The server check: the rules come from config_path, which CI takes from the default branch."""
     team = config.load(root, config_path)
-    diff = workcopy.git(root, "diff", "--name-only", f"{base}...HEAD")
-    if diff.returncode:
-        raise RuntimeError(f"git diff against {base} failed: {diff.stderr.strip()[:300]}")
+    changed = workcopy.names(root, "diff", "--name-only", "--no-renames", f"{base}...HEAD")
     status, detail = runner.prepare(team, root)
     if status != "PASS":
         return runner.Result({"setup": status}, {"setup": detail})
-    return runner.run(team, root, [line for line in diff.stdout.splitlines() if line.strip()])
+    return runner.run(team, root, changed)
 
 
 def _commit(tree: Path, title: str) -> None:
@@ -213,17 +303,44 @@ def _commit(tree: Path, title: str) -> None:
             raise RuntimeError(f"git commit failed: {done.stderr.strip()[:300]}")
 
 
-def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
-    """Check the change again on the latest default branch, then open the pull request with the handover document.
+def _examine_base(root: Path, task: Task) -> None:
+    """A task that builds on an earlier task hands over only after the earlier task merged.
 
-    Return the pull request address and the reasons that keep the task at the handover stage."""
+    Else its pull request also carries the changes of the earlier task before the requester of that task accepted
+    them."""
+    if not task.builds_on:
+        return
+    listed = gh(root, "pr", "list", "--head", f"akasha/{task.builds_on}", "--state", "merged",
+                "--json", "number", "--jq", "length")
+    if listed.returncode or listed.stdout.strip() in ("", "0"):
+        raise RuntimeError(f"the task builds on {task.builds_on}, which did not merge yet. Hand over after it merges")
+
+
+def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
+    """Check the change again on the latest default branch, open the pull request, and turn on auto-merge.
+
+    GitHub merges the pull request as one squash commit when the required check passes. The commit body is the
+    briefing, so a person who must revert the change later finds it fast. Return the pull request address and the
+    reasons that keep the task at the handover stage."""
     task = tasks.load(root, task_id)
-    if task.stage != "handover":
-        raise ValueError(f"the task is at the {task.stage} stage, not at the handover stage")
+    if task.stage != "handover" or task.status != "open":
+        raise ValueError(f"the task is {task.status} at the {task.stage} stage — the handover needs an open task "
+                         "at the handover stage")
+    if not task.briefing:
+        raise ValueError("the task has no briefing — write it, then record it with brief")
+    _examine_base(root, task)
     found = github.repository(root)
     if found is None:
         raise RuntimeError("the handover needs a GitHub repository — make sure that gh is installed and logged in")
     _slug, branch = found
+    known = github.pull_request(root, task.pull_request or task.branch)     # also one that an earlier run did not record
+    if known.get("state") == "MERGED":
+        task.pull_request = known["url"]
+        _publish(root, task)
+        advance(root, task_id)
+        raise ValueError("the pull request of this task merged — make a new request for more changes")
+    task.pull_request = known["url"] if known.get("state") == "OPEN" else ""
+    tasks.save(root, task)
     tree = Path(task.workcopy)
     _commit(tree, task.title)
     fetched = workcopy.git(tree, "fetch", "origin", branch)
@@ -234,6 +351,9 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
         workcopy.git(tree, "merge", "--abort")
         raise RuntimeError(f"the change conflicts with the latest {branch}. In {tree}, run git merge origin/{branch}, "
                            "repair the conflict, and commit. Then do the handover again")
+    task = tasks.load(root, task_id)
+    task.base = workcopy.git(tree, "rev-parse", f"origin/{branch}").stdout.strip() or task.base
+    tasks.save(root, task)                            # from now on, the changed files are the changes of this task
     result = check(root, task_id)
     if any(status != "PASS" for status in result.status.values()):
         raise RuntimeError("a required check did not pass on the latest default branch: " + str(result.status))
@@ -241,14 +361,19 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     pushed = workcopy.git(tree, "push", "-u", "origin", task.branch)
     if pushed.returncode:
         raise RuntimeError(f"git push failed: {pushed.stderr.strip()[:300]}")
-    if not task.pull_request:                     # a second handover only pushes the new commits
-        body = handover_document.render(task, workcopy.changed_files(task))
-        if task.board:                            # the merge closes the issue of the task on the board
-            body += f"\nCloses #{task.board.rstrip('/').rsplit('/', 1)[-1]}\n"
+    team = config.load(root)
+    if not task.pull_request:                         # a second handover only pushes the new commits
         created = gh(root, "pr", "create", "--base", branch, "--head", task.branch, "--title", task.title,
-                     "--body", body)
+                     "--body", handover_document.pull_request_body(task, branch, team.commands))
         if created.returncode:
             raise RuntimeError(f"gh pr create failed: {created.stderr.strip()[:300]}")
         task.pull_request = created.stdout.strip().splitlines()[-1]
         _publish(root, task)
-    return task.pull_request, advance(root, task_id) if task.status == "open" else []
+    if not known.get("autoMergeRequest"):
+        number = task.pull_request.rstrip("/").rsplit("/", 1)[-1]
+        queued = github.auto_merge(root, task.pull_request, f"{task.title} (#{number})",
+                                   handover_document.commit_body(task, branch, team.commands))
+        if queued.returncode:
+            raise RuntimeError(f"the pull request is open, but GitHub did not turn on auto-merge: "
+                               f"{queued.stderr.strip()[:300]}. An administrator must correct the GitHub settings")
+    return task.pull_request, advance(root, task_id)

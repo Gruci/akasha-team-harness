@@ -18,7 +18,14 @@ class OverlapTests(unittest.TestCase):
                   task("f", feature="customer-search-filter", status="done"),
                   task("g", scope=["src/search/**"], status="stopped")]
         kinds = {(item.kind, item.other) for item in overlap.find(mine, others)}
-        self.assertEqual(kinds, {("join", "b"), ("order", "c"), ("notify", "d"), ("order", "g")})
+        self.assertEqual(kinds, {("stack", "b"), ("order", "c"), ("notify", "d"), ("order", "g")})
+
+    def test_a_task_and_the_task_that_it_builds_on_do_not_overlap(self):
+        earlier = task("a", feature="search-filter", scope=["src/search/**"])
+        later = task("b", feature="search-filter", scope=["src/search/**"], builds_on="a")
+        self.assertEqual(overlap.find(later, [earlier]), [])
+        self.assertEqual(overlap.find(earlier, [later]), [])
+        self.assertIn("Build the new task on the earlier task", overlap.ACTIONS["stack"])
 
     def test_messages_tell_the_action(self):
         found = overlap.find(task("a", scope=["src/**"]), [task("b", scope=["src/app.py"])])

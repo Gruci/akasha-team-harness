@@ -38,12 +38,23 @@ def _parser() -> argparse.ArgumentParser:
     request.add_argument("--feature", default="")
     request.add_argument("--scope", nargs="*", default=[])
     request.add_argument("--contract", nargs="*", default=[])
+    request.add_argument("--builds-on", default="", metavar="TASK", help="build on an earlier task of the same feature")
     specify = commands.add_parser("specify", help="add completion conditions, open questions, or scope patterns")
     specify.add_argument("task")
     specify.add_argument("--condition", nargs="*", default=[])
     specify.add_argument("--question", nargs="*", default=[])
     specify.add_argument("--clear-questions", action="store_true")
     specify.add_argument("--scope", nargs="*", default=[])
+    impact = commands.add_parser("impact", help="record the impact analysis of the agent engine")
+    impact.add_argument("task")
+    for name in ("features", "data", "contracts", "tasks", "rollback"):
+        impact.add_argument(f"--{name}", default="")
+    impact.add_argument("--map-unchanged", default="", metavar="REASON", help="why the product map does not change")
+    impact.add_argument("--changes-task", nargs=2, metavar=("TASK", "WHAT"),
+                        help="tell the requester of an earlier task that this task changes behavior that they accepted")
+    brief = commands.add_parser("brief", help="examine and record the pull request briefing")
+    brief.add_argument("task")
+    brief.add_argument("--file", type=Path, required=True)
     approve = commands.add_parser("approve", help="record an approval")
     approve.add_argument("task")
     approve.add_argument("--role", required=True, choices=config.ROLES)
@@ -55,7 +66,7 @@ def _parser() -> argparse.ArgumentParser:
     cancel.add_argument("task")
     cancel.add_argument("--by", required=True, help="the person who withdrew the request")
     for name, text in (("advance", "move the task to its next stage"), ("show", "show one task"),
-                       ("handover", "open the pull request with the handover document")):
+                       ("handover", "open the pull request and turn on auto-merge")):
         commands.add_parser(name, help=text).add_argument("task")
     check = commands.add_parser("check", help="run the required checks")
     check.add_argument("task", nargs="?")
@@ -80,7 +91,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "hook":
         from akasha.engine import hooks
-        return hooks.main(args.agent, args.event)
+        try:
+            return hooks.main(args.agent, args.event)
+        except Exception as error:     # noqa: BLE001 — a defect in Akasha must never stop the work of the agent
+            print(f"Akasha hook problem: {error}", file=sys.stderr)
+            return 0
     if args.command == "check" and args.ci:
         result = flow.ci_check(Path.cwd(), args.config, args.base)
         for name, status in result.status.items():
@@ -93,11 +108,23 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "request":
         task, found = flow.start(root, args.title, args.requester, args.workflow, args.feature, args.scope,
-                                 args.contract)
+                                 args.contract, args.builds_on)
         _show(task)
         for item in found:
             print(f"  overlap — {item.message()}")
         return 0
+    if args.command == "impact":
+        values = {name: getattr(args, name) for name in ("features", "data", "contracts", "tasks", "rollback")}
+        task, told = flow.impact(root, args.task, values, args.map_unchanged,
+                                 tuple(args.changes_task) if args.changes_task else None)
+        _show(task)
+        if told:
+            print(f"  {told}")
+        return 0
+    if args.command == "brief":
+        problems = flow.brief(root, args.task, args.file.read_text(encoding="utf-8"))
+        print("\n".join(f"- {item}" for item in problems) or "Akasha recorded the briefing.")
+        return 1 if problems else 0
     if args.command == "specify":
         task, found = flow.specify(root, args.task, args.condition, args.question, args.clear_questions, args.scope)
         _show(task)
@@ -126,9 +153,16 @@ def main(argv: list[str] | None = None) -> int:
         for name, template in preview.items():
             if template:
                 print(f"  preview {name}: {resources.fill(template, task.id)}")
+        if task.builds_on:
+            print(f"  builds on: {task.builds_on}")
         for name in ("scope", "risk_reasons", "conditions", "open_questions", "notes"):
             for item in getattr(task, name):
                 print(f"  {name.replace('_', ' ').rstrip('s')}: {item}")
+        for key, text in task.impact.items():
+            print(f"  impact {key}: {text}")
+        if task.map_note:
+            print(f"  product map unchanged: {task.map_note}")
+        print(f"  briefing: {'recorded' if task.briefing else 'not recorded'}")
         for role, person in task.approvals.items():
             print(f"  approval: {role} {person}")
         for condition, result in task.accepted.items():
@@ -149,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "handover":
         address, blocked = flow.handover(root, args.task)
-        print(f"Pull request: {address}")
+        print(f"Pull request: {address} — auto-merge is on")
         for reason in blocked:
             print(f"  blocked — {reason}")
         return 1 if blocked else 0

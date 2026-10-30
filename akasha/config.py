@@ -10,13 +10,14 @@ CONFIG_FILE = "akasha.toml"
 STATE_DIR = Path(".akasha") / "state"
 TEAM_WORKFLOWS = Path(".akasha") / "workflows"
 TEAM_CONTEXT = Path(".akasha") / "context"           # the decisions and lessons of the team, as Markdown files
+PRODUCT_MAP = TEAM_CONTEXT / "product-map.md"        # how features, screens, data, and APIs connect
 BUILT_IN_WORKFLOWS = Path(__file__).parent / "workflows"
 
 RISK_LEVELS = ("low", "medium", "high")
 ROLES = ("requester", "developer", "administrator")
 # The names that a workflow can use as an exit condition. akasha/core/stages.py has one test for each name.
-EXIT_CONDITIONS = ("conditions_clear", "requester_approved", "risk_approvals", "scope_respected",
-                   "checks_pass", "accepted", "infra_ready", "pull_request_open")
+EXIT_CONDITIONS = ("conditions_clear", "requester_approved", "impact_assessed", "risk_approvals", "scope_respected",
+                   "checks_pass", "accepted", "map_current", "infra_ready", "pull_request_open", "merged")
 
 _KEYS: dict[str, set[str] | None] = {
     "roles": {"developers", "administrators"},
@@ -61,7 +62,7 @@ class Team:
     developers: tuple[str, ...] = ()
     administrators: tuple[str, ...] = ()
     risk: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    approval: dict[str, tuple[str, ...]] = field(default_factory=lambda: {"high": ("developer",)})
+    approval: dict[str, tuple[str, ...]] = field(default_factory=dict)     # no person gate unless the team sets one
     required_checks: tuple[str, ...] = ("secrets",)
     commands: dict[str, str] = field(default_factory=dict)
     preview: dict[str, str] = field(default_factory=dict)
@@ -152,8 +153,7 @@ def load(root: Path, path: Path | None = None) -> Team:
         developers=_strings(roles.get("developers", []), "[roles] developers"),
         administrators=_strings(roles.get("administrators", []), "[roles] administrators"),
         risk={level: _strings(globs, f"[risk] {level}") for level, globs in risk.items()},
-        approval={level: _strings(holders, f"[approval] {level}") for level, holders in approval.items()}
-        if approval else {"high": ("developer",)},
+        approval={level: _strings(holders, f"[approval] {level}") for level, holders in approval.items()},
         required_checks=_strings(checks.get("required", ["secrets"]), "[checks] required"),
         commands={name: _text(checks[name], f"[checks] {name}") for name in ("setup", "tests", "lint")
                   if name in checks},

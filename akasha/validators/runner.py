@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import locale
+import os
+import signal
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,6 +13,8 @@ from akasha.config import Team
 from akasha.validators import secrets
 
 TIMEOUT_SECONDS = 1800
+# A new process group, so that a timeout stops the command and all the processes that it started
+_GROUP = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
 
 
 @dataclass
@@ -31,14 +36,36 @@ def _secrets(workcopy: Path, changed: list[str]) -> tuple[str, str]:
     return ("FAIL", "\n".join(hits)) if hits else ("PASS", "")
 
 
-def _command(command: str, workcopy: Path) -> tuple[str, str]:
+def _decode(raw: bytes) -> str:
+    """Most tools write UTF-8. Windows tools can write the code page of the computer, for example Korean."""
     try:
-        done = subprocess.run(command, shell=True, cwd=workcopy, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=TIMEOUT_SECONDS)
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode(locale.getpreferredencoding(False), errors="replace")
+
+
+def _stop(process: subprocess.Popen) -> None:
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
+    else:
+        os.killpg(process.pid, signal.SIGKILL)
+
+
+def _command(command: str, workcopy: Path) -> tuple[str, str]:
+    if os.name == "nt" and command.startswith("./"):
+        command = ".\\" + command[2:]                 # cmd.exe runs .\gradlew, not ./gradlew
+    process = subprocess.Popen(command, shell=True, cwd=workcopy, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               **_GROUP)
+    try:
+        output, _ = process.communicate(timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
+        _stop(process)
+        try:
+            process.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass                                      # a process that ignores the stop keeps its output to itself
         return "FAIL", f"the command did not stop in {TIMEOUT_SECONDS} seconds: {command}"
-    output = (done.stdout + done.stderr).strip()
-    return ("PASS" if done.returncode == 0 else "FAIL"), output[-3000:]
+    return ("PASS" if process.returncode == 0 else "FAIL"), _decode(output).strip()[-3000:]
 
 
 def prepare(team: Team, folder: Path) -> tuple[str, str]:

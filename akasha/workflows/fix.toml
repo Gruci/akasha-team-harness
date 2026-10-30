@@ -7,7 +7,7 @@ exit = ["conditions_clear"]
 
 [[stages]]
 id = "build"
-exit = ["scope_respected"]
+exit = ["impact_assessed", "scope_respected"]
 
 [[stages]]
 id = "checks"
@@ -15,8 +15,8 @@ exit = ["checks_pass"]
 
 [[stages]]
 id = "inspection"
-exit = ["accepted"]
+exit = ["accepted", "map_current", "infra_ready"]
 
 [[stages]]
 id = "handover"
-exit = ["infra_ready", "pull_request_open"]
+exit = ["merged"]

@@ -1,8 +1,10 @@
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from akasha.config import Team
 from akasha.core.task import Task
@@ -23,13 +25,17 @@ class GuardTests(unittest.TestCase):
         for line in ("git push --force origin main", "git push -f", "git push origin +main",
                      "git push --force-with-lease", "git push origin --delete main", "git push origin :master",
                      "git branch -D main", "rm -rf /", "rm -rf ..", "rm -rf ~", f"rm -rf {self.root}",
-                     "Remove-Item -Recurse -Force C:\\Windows", "git status && git push -f"):
+                     "Remove-Item -Recurse -Force C:\\Windows", "git status && git push -f",
+                     'rm -rf "$HOME/Documents"', "rm -rf $HOME", 'Remove-Item -Recurse "$env:USERPROFILE\\Documents"',
+                     "rd /s /q %USERPROFILE%", "cd .. && rm -rf project", "git push -fu origin main",
+                     "git push origin -d main", "git push \\\n--force origin main", "sleep 1 & rm -rf ~"):
             with self.subTest(line=line):
                 self.assertIsNotNone(self.stop(line))
 
     def test_usual_commands_pass(self):
         for line in ("git push origin akasha/date-filter", "git status", "rm -rf src/build", "rm file.txt",
-                     "python -m pytest -q", "git branch -D akasha/old-task", "echo push --force"):
+                     "python -m pytest -q", "git branch -D akasha/old-task", "echo push --force",
+                     "git push -u origin akasha/date-filter", "cd src && ls", "npm test 2>&1"):
             with self.subTest(line=line):
                 self.assertIsNone(self.stop(line))
 
@@ -60,6 +66,16 @@ class CheckTests(unittest.TestCase):
             self.assertIn("config.py:1 GitHub token", result.details["secrets"])
             failing = Team(required_checks=("tests",), commands={"tests": f'"{sys.executable}" -c "raise SystemExit(3)"'})
             self.assertEqual(runner.run(failing, work, []).status, {"tests": "FAIL"})
+
+    def test_a_timeout_stops_the_command_and_its_children(self):
+        child = "import subprocess, sys; subprocess.run([sys.executable, '-c', 'import time; time.sleep(60)'])"
+        hung = Team(required_checks=("tests",), commands={"tests": f'"{sys.executable}" -c "{child}"'})
+        with tempfile.TemporaryDirectory() as folder, patch.object(runner, "TIMEOUT_SECONDS", 2):
+            started = time.monotonic()
+            result = runner.run(hung, Path(folder), [])
+        self.assertEqual(result.status, {"tests": "FAIL"})
+        self.assertIn("did not stop", result.details["tests"])
+        self.assertLess(time.monotonic() - started, 20)
 
     def test_language_detection(self):
         self.assertEqual({pack.name for pack in langs.packs()}, {"python", "typescript", "go", "java"})

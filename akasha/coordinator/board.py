@@ -15,7 +15,8 @@ from akasha.repo import gh
 
 LABEL = "akasha"
 _BLOCK = re.compile(r"```akasha-scope\n(.*?)\n```", re.S)
-_FIELDS = ("id", "title", "workflow", "stage", "status", "requester", "feature", "scope", "contracts", "risk")
+_FIELDS = ("id", "title", "workflow", "stage", "status", "requester", "feature", "scope", "contracts", "risk",
+           "conditions", "accepted", "builds_on", "pull_request")
 
 
 def body(task: Task, summary: str = "") -> str:
@@ -35,23 +36,36 @@ def parse(text: str) -> Task | None:
         return None
 
 
+def _listed(root: Path, state: str) -> list[Task] | None:
+    """The tasks in the issues with the label akasha, or None without GitHub."""
+    listed = gh(root, "issue", "list", "--label", LABEL, "--state", state, "--limit", "500", "--json", "body,url")
+    if listed.returncode:
+        return None
+    found = []
+    for item in json.loads(listed.stdout or "[]"):
+        task = parse(item.get("body", ""))
+        if task is not None:
+            task.board = item.get("url", "")
+            found.append(task)
+    return found
+
+
 def read(root: Path) -> tuple[list[Task], str]:
     """The tasks on the board and where Akasha read them: "github" or "local".
 
     An issue stays open until the pull request of its task merges, so the board also shows the tasks that wait
     for a merge. Without GitHub, the board holds the active tasks on this computer."""
     local = [task for task in all_tasks(root) if active(task)]
-    listed = gh(root, "issue", "list", "--label", LABEL, "--state", "open", "--limit", "200", "--json", "body,url")
-    if listed.returncode:
+    remote = _listed(root, "open")
+    if remote is None:
         return local, "local"
-    remote = []
-    for item in json.loads(listed.stdout or "[]"):
-        task = parse(item.get("body", ""))
-        if task is not None:
-            task.board = item.get("url", "")
-            remote.append(task)
     known = {task.id for task in remote}
     return remote + [task for task in local if task.id not in known], "github"
+
+
+def find(root: Path, task_id: str) -> Task | None:
+    """The task with this id on the board, also when its issue is closed."""
+    return next((task for task in _listed(root, "all") or [] if task.id == task_id), None)
 
 
 def comment(root: Path, address: str, text: str) -> None:

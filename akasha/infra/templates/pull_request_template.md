@@ -1,13 +1,13 @@
-## Request
+<!-- A one-minute briefing for a reviewer who has the diff. Use short, simple sentences. Remove a section with nothing to say, but keep Scope. -->
 
-## Completion conditions and inspection
+## Why
 
-## Risk level
+## What changed
 
-## Checks
+## Scope
 
-## Changed files
+## Tradeoffs
 
-## Not verified
+## Blast Radius
 
-## Remaining risks
+## Verification

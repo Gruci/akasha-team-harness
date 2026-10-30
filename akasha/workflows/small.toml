@@ -3,12 +3,12 @@ name = "small"
 
 [[stages]]
 id = "build"
-exit = ["scope_respected"]
+exit = ["impact_assessed", "scope_respected"]
 
 [[stages]]
 id = "checks"
-exit = ["checks_pass"]
+exit = ["checks_pass", "map_current", "infra_ready"]
 
 [[stages]]
 id = "handover"
-exit = ["infra_ready", "pull_request_open"]
+exit = ["merged"]

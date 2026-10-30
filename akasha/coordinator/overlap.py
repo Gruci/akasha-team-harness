@@ -8,15 +8,15 @@ from dataclasses import dataclass
 from akasha.core.task import Task, active
 
 ACTIONS = {
-    "join": "Both tasks make the same feature. Join the two tasks into one.",
+    "stack": "Both tasks make the same feature. Build the new task on the earlier task, so that nobody waits.",
     "order": "Both tasks change the same files. Akasha sets the sequence: the earlier task merges first.",
-    "notify": "Both tasks change the same public contract. Akasha tells the owners of the contract.",
+    "notify": "Both tasks change the same public contract. Akasha tells the requester of the other task.",
 }
 
 
 @dataclass(frozen=True)
 class Overlap:
-    kind: str           # join, order, or notify
+    kind: str           # stack, order, or notify
     other: str          # the id of the other task
     detail: str
 
@@ -42,12 +42,14 @@ def _scopes_touch(first: Iterable[str], second: Iterable[str]) -> list[str]:
 
 
 def find(task: Task, others: Iterable[Task]) -> list[Overlap]:
+    """The overlaps with the active tasks. A task and the task that it builds on are one line of work, not an
+    overlap."""
     overlaps = []
     for other in others:
-        if other.id == task.id or not active(other):
+        if other.id == task.id or not active(other) or task.id in (other.builds_on,) or other.id == task.builds_on:
             continue
         if task.feature and task.feature == other.feature:
-            overlaps.append(Overlap("join", other.id, f"the same feature {task.feature}"))
+            overlaps.append(Overlap("stack", other.id, f"the same feature {task.feature}"))
         touched = _scopes_touch(task.scope, other.scope)
         if touched:
             overlaps.append(Overlap("order", other.id, f"the same files ({touched[0]})"))

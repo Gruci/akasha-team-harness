@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import tempfile
 from pathlib import Path
 
+from akasha import config
 from akasha.core.workcopy import git
 from akasha.infra import desired
 from akasha.repo import gh
@@ -20,8 +23,41 @@ def repository(root: Path) -> tuple[str, str] | None:
 
 
 def protection(root: Path, slug: str, branch: str) -> dict | None:
-    read = gh(root, "api", f"repos/{slug}/branches/{branch}/protection")
-    return json.loads(read.stdout) if read.returncode == 0 else None
+    """The branch protection. Only administrators can read all of it. For other people, Akasha reads the required
+    checks from the branch and marks the result as partial."""
+    full = gh(root, "api", f"repos/{slug}/branches/{branch}/protection")
+    if full.returncode == 0:
+        return json.loads(full.stdout)
+    seen = gh(root, "api", f"repos/{slug}/branches/{branch}")
+    if seen.returncode:
+        return None
+    data = json.loads(seen.stdout)
+    if not data.get("protected"):
+        return None
+    return {"required_status_checks": (data.get("protection") or {}).get("required_status_checks") or {},
+            "partial": True}
+
+
+def settings(root: Path, slug: str) -> dict:
+    read = gh(root, "api", f"repos/{slug}")
+    return json.loads(read.stdout) if read.returncode == 0 else {}
+
+
+def _server_file(root: Path, branch: str, path: str) -> str | None:
+    shown = git(root, "show", f"origin/{branch}:{path}")
+    return shown.stdout.replace("\r\n", "\n") if shown.returncode == 0 else None
+
+
+def _server_team(root: Path, branch: str) -> config.Team:
+    """The team config on the default branch. The server files must agree with it, not with a local copy that is
+    not up to date."""
+    text = _server_file(root, branch, config.CONFIG_FILE)
+    if text is None:
+        return config.load(root)
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / config.CONFIG_FILE
+        path.write_text(text, encoding="utf-8")
+        return config.load(root, path)
 
 
 def status(root: Path) -> list[str]:
@@ -30,36 +66,62 @@ def status(root: Path) -> list[str]:
     if found is None:
         return ["Akasha cannot read the GitHub repository — make sure that gh is installed and logged in"]
     slug, branch = found
-    problems = desired.drift(protection(root, slug, branch))
-    git(root, "fetch", "-q", "origin", branch)
-    for target, text in desired.files(_team(root)).items():          # the server uses the default branch
-        shown = git(root, "show", f"origin/{branch}:{target}")
-        if shown.returncode or shown.stdout.replace("\r\n", "\n") != text:
-            problems.append(f"{target} on {branch} is missing or different from akasha.toml")
+    problems = desired.drift(protection(root, slug, branch)) + desired.settings_drift(settings(root, slug))
+    git(root, "fetch", "-q", "origin", branch)                        # the server uses the default branch
+    if _server_file(root, branch, desired.WORKFLOW_FILE) != desired.workflow():
+        problems.append(f"{desired.WORKFLOW_FILE} on {branch} is missing or different")
+    owners = next((text for path in desired.CODEOWNERS_FILES
+                   if (text := _server_file(root, branch, path)) is not None), "")
+    if desired.block(owners) != desired.codeowners(_server_team(root, branch)):
+        problems.append(f"the Akasha block of CODEOWNERS on {branch} is missing or different from akasha.toml")
     return problems
 
 
 def apply(root: Path, approved_by: str) -> list[str]:
-    """Write the repository files and set branch protection. An administrator must approve first."""
-    team = _team(root)
+    """Write the repository files and change the GitHub settings. An administrator must approve first.
+
+    Akasha keeps the CODEOWNERS lines and the pull request template that the team already has."""
+    team = config.load(root)
     named = {person.lstrip("@") for person in team.administrators}
     if not approved_by or (named and approved_by.lstrip("@") not in named):
         raise PermissionError("an administrator that akasha.toml names must approve a change to the repository settings")
-    for target, text in desired.files(team).items():
-        path = root / target
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+    workflow = root / desired.WORKFLOW_FILE
+    workflow.parent.mkdir(parents=True, exist_ok=True)
+    workflow.write_text(desired.workflow(), encoding="utf-8")
+    owners = next((root / path for path in desired.CODEOWNERS_FILES if (root / path).is_file()),
+                  root / desired.CODEOWNERS_FILES[0])
+    owners.write_text(desired.merge(owners.read_text(encoding="utf-8") if owners.is_file() else "",
+                                    desired.codeowners(team)), encoding="utf-8")
+    template = root / desired.TEMPLATE_FILE
+    if not template.is_file():
+        template.write_text(desired.template(), encoding="utf-8")
     found = repository(root)
     if found is None:
-        return ["Akasha wrote the files, but cannot reach GitHub to set branch protection"]
+        return ["Akasha wrote the files, but cannot reach GitHub to change the settings"]
     slug, branch = found
+    problems = []
     done = gh(root, "api", "--method", "PUT", f"repos/{slug}/branches/{branch}/protection", "--input", "-",
               payload=desired.protection())
     if done.returncode:
-        return [f"GitHub refused the branch protection: {done.stderr.strip()[:300]}"]
-    return []
+        problems.append(f"GitHub refused the branch protection: {done.stderr.strip()[:300]}")
+    changed = gh(root, "api", "--method", "PATCH", f"repos/{slug}", "--input", "-", payload=desired.SETTINGS)
+    if changed.returncode:
+        problems.append(f"GitHub refused the repository settings: {changed.stderr.strip()[:300]}")
+    return problems
 
 
-def _team(root: Path):
-    from akasha import config
-    return config.load(root)
+def pull_request(root: Path, address_or_branch: str) -> dict:
+    """The pull request of a task: url, state (OPEN, MERGED, or CLOSED), and autoMergeRequest. Empty when none."""
+    if not address_or_branch:
+        return {}
+    viewed = gh(root, "pr", "view", address_or_branch, "--json", "url,state,autoMergeRequest")
+    return json.loads(viewed.stdout) if viewed.returncode == 0 else {}
+
+
+def merged(root: Path, address: str) -> bool:
+    return pull_request(root, address).get("state") == "MERGED"
+
+
+def auto_merge(root: Path, address: str, subject: str, body: str) -> subprocess.CompletedProcess:
+    """Turn on auto-merge: GitHub merges the pull request as one squash commit when the required check passes."""
+    return gh(root, "pr", "merge", address, "--auto", "--squash", "--subject", subject, "--body", body)
