@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="392" viewBox="0 0 1000 392" role="img" aria-label="여섯 단계와 단계 사이의 Akasha 관문. 1 요청: 완료 조건이 분명하다, 요청자가 답한다. 2 명세: 영향도 기록, 요청자 승인. 3 구현: 범위 안의 파일만 바뀌었다. 4 검사: 필수 검사를 모두 통과한다, 세 번 실패하면 개발자가 본다. 5 검수: 요청자가 미리보기에서 수용하고 제품 지도에 반영됐다. 6 인계: 서버 검사를 통과하고 GitHub 가 커밋 하나로 병합한다. 모든 단계의 일은 AI(Claude Code 나 Codex)가 한다.">
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;fill:#e6edf3}
+.title{font-size:22px;font-weight:700}
+.sub{font-size:14px;fill:#8b949e}
+.label{font-size:12px;font-weight:600;letter-spacing:.06em;fill:#8b949e}
+.akasha{font-size:12px;font-weight:700;letter-spacing:.06em;fill:#c4b5fd}
+.name{font-size:15px;font-weight:700}
+.small{font-size:12.5px;fill:#8b949e}
+.msg{font-size:13px;paint-order:stroke;stroke:#0d1117;stroke-width:5px;stroke-linejoin:round}
+.row{font-size:13px;font-weight:600}
+.how{font-size:12.5px;fill:#8b949e}
+.gate{font-size:12.5px;fill:#c4b5fd}
+.who{font-size:12px;fill:#f0b072}
+.gh{font-size:12px;fill:#7ee787}
+.ai{font-size:13px;fill:#79c0ff}
+.foot{font-size:14px;fill:#8b949e}
+.code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+@media (prefers-reduced-motion:reduce){.dot{display:none}}
+</style>
+<defs>
+<marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3d444d"/></marker>
+</defs>
+<rect width="1000" height="392" rx="14" fill="#0d1117"/>
+<text x="24" y="42" class="title">여섯 단계, 단계 사이마다 관문</text>
+<text x="24" y="66" class="sub">단계마다 일은 AI 가 합니다. Akasha 는 통과 조건을 채워야 다음 단계를 엽니다.</text>
+<rect x="17" y="92" width="146" height="132" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="31" y="116" class="label">1단계</text>
+<text x="31" y="140" class="name">요청</text>
+<path d="M31,154 L149,154" stroke="#30363d"/>
+<text x="31" y="178" class="how">완료 조건이</text>
+<text x="31" y="197" class="how">분명하다</text>
+<rect x="17" y="284" width="146" height="28" rx="8" fill="#271a0e" stroke="#8a5a1c"/><circle cx="31" cy="298.0" r="3.5" fill="#f0883e"/><text x="43" y="302.5" class="who">요청자가 답함</text>
+<rect x="181" y="92" width="146" height="132" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="195" y="116" class="label">2단계</text>
+<text x="195" y="140" class="name">명세</text>
+<path d="M195,154 L313,154" stroke="#30363d"/>
+<text x="195" y="178" class="how">영향도 기록,</text>
+<text x="195" y="197" class="how">요청자 승인</text>
+<rect x="181" y="284" width="146" height="28" rx="8" fill="#271a0e" stroke="#8a5a1c"/><circle cx="195" cy="298.0" r="3.5" fill="#f0883e"/><text x="207" y="302.5" class="who">요청자가 승인</text>
+<circle cx="172.0" cy="158" r="11" fill="#0d1117" stroke="#a78bfa" stroke-width="2"/>
+<path d="M169.0,153 L174.0,158 L169.0,163" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="345" y="92" width="146" height="132" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="359" y="116" class="label">3단계</text>
+<text x="359" y="140" class="name">구현</text>
+<path d="M359,154 L477,154" stroke="#30363d"/>
+<text x="359" y="178" class="how">범위 안의 파일만</text>
+<text x="359" y="197" class="how">바뀌었다</text>
+<circle cx="336.0" cy="158" r="11" fill="#0d1117" stroke="#a78bfa" stroke-width="2"/>
+<path d="M333.0,153 L338.0,158 L333.0,163" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="509" y="92" width="146" height="132" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="523" y="116" class="label">4단계</text>
+<text x="523" y="140" class="name">검사</text>
+<path d="M523,154 L641,154" stroke="#30363d"/>
+<text x="523" y="178" class="how">필수 검사를</text>
+<text x="523" y="197" class="how">모두 통과한다</text>
+<rect x="509" y="284" width="146" height="44" rx="8" fill="#271a0e" stroke="#8a5a1c"/><circle cx="523" cy="298.0" r="3.5" fill="#f0883e"/><text x="535" y="302.5" class="who">세 번 실패하면</text><text x="535" y="318.5" class="who">개발자가 봄</text>
+<circle cx="500.0" cy="158" r="11" fill="#0d1117" stroke="#a78bfa" stroke-width="2"/>
+<path d="M497.0,153 L502.0,158 L497.0,163" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="673" y="92" width="146" height="132" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="687" y="116" class="label">5단계</text>
+<text x="687" y="140" class="name">검수</text>
+<path d="M687,154 L805,154" stroke="#30363d"/>
+<text x="687" y="178" class="how">미리보기에서 수용,</text>
+<text x="687" y="197" class="how">제품 지도 반영</text>
+<rect x="673" y="284" width="146" height="28" rx="8" fill="#271a0e" stroke="#8a5a1c"/><circle cx="687" cy="298.0" r="3.5" fill="#f0883e"/><text x="699" y="302.5" class="who">요청자가 수용</text>
+<circle cx="664.0" cy="158" r="11" fill="#0d1117" stroke="#a78bfa" stroke-width="2"/>
+<path d="M661.0,153 L666.0,158 L661.0,163" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="837" y="92" width="146" height="132" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="851" y="116" class="label">6단계</text>
+<text x="851" y="140" class="name">인계</text>
+<path d="M851,154 L969,154" stroke="#30363d"/>
+<text x="851" y="178" class="how">서버 검사 통과,</text>
+<text x="851" y="197" class="how">커밋 하나로 병합</text>
+<rect x="837" y="284" width="146" height="28" rx="8" fill="#112119" stroke="#3fb950"/><circle cx="851" cy="298.0" r="3.5" fill="#3fb950"/><text x="863" y="302.5" class="gh">GitHub 가 병합</text>
+<circle cx="828.0" cy="158" r="11" fill="#0d1117" stroke="#a78bfa" stroke-width="2"/>
+<path d="M825.0,153 L830.0,158 L825.0,163" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="17" y="238" width="966" height="32" rx="8" fill="#0c2d6b" fill-opacity=".45" stroke="#1f6feb"/>
+<text x="500" y="259" class="ai" text-anchor="middle">모든 단계의 일은 AI 가 합니다 — Claude Code 나 Codex</text>
+<circle cx="29" cy="363" r="5" fill="#a78bfa"/>
+<text x="40" y="368" class="small">Akasha 관문</text>
+<circle cx="148" cy="363" r="5" fill="#f0883e"/>
+<text x="159" y="368" class="small">사람이 정함</text>
+<circle cx="264" cy="363" r="5" fill="#3fb950"/>
+<text x="275" y="368" class="small">GitHub</text>
+<circle cx="350" cy="363" r="5" fill="#2f81f7"/>
+<text x="361" y="368" class="small">AI</text>
+</svg>

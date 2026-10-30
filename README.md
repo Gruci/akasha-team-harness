@@ -75,43 +75,13 @@ Add a date filter to the customer search.
 
 ## What You Get
 
-One request from someone in operations, not a developer:
-
-```
-requester  ─►  "Add a date filter to the customer search."
-the AI     ─►  "Sign-up date or transaction date?"
-               "Should customers without permission be visible?"
-the AI     ─►  finds two reports that also read the customer table
-               impact: adds an index, no data change, revert the commit to undo
-the AI     ─►  builds it with a test per condition, in its own work copy
-the AI     ─►  checks pass ─► preview ─► the requester accepts
-GitHub     ─►  merges one commit: "Add a date filter (#42)" + briefing
-```
-
-Akasha says nothing in this exchange. It is the reason the AI asked before it built, recorded the impact, stayed in its work copy, and could not hand over before the checks and the acceptance.
+<p align="center"><img src="docs/readme/one-request.en.svg" width="1000" alt="One request from someone in operations, start to merge. The AI asks which date and whether customers without permission are visible, records the impact, builds the change with a test per condition in its own work copy, and shows a preview that the requester accepts. GitHub merges one commit with the briefing. The AI works inside the Akasha harness, whose gates hold each step."></p>
 
 * * *
 
 ## How It Works
 
-```
-request ──► specification ──► build ──► checks ──► inspection ──► handover
-   │              │              │          │            │             │
- clear          impact        files in    checks      accepted       merged
- conditions     recorded      the scope   pass        + map shows
-                                                      the change
-```
-
-The AI does the work of each stage. Akasha holds the task in its stage until the exit condition is met.
-
-| Stage | Exit condition |
-|:--|:--|
-| 1. Request | The completion conditions are clear |
-| 2. Specification | The impact is recorded, and the requester approves |
-| 3. Build | Only files in the scope changed |
-| 4. Checks | Required checks pass. After three failed repairs, the task stops for a developer |
-| 5. Inspection | The requester accepts in a preview, and the product map shows the change |
-| 6. Handover | The server check passes, and one commit merges with the briefing |
+<p align="center"><img src="docs/readme/stages.en.svg" width="1000" alt="Six stages with an Akasha gate between each: request, specification, build, checks, inspection, and handover. The AI does the work of every stage. The requester answers, approves, and accepts; a developer steps in after three failed repairs; GitHub merges."></p>
 
 Small changes use the `small` workflow, defects the `fix` workflow.
 

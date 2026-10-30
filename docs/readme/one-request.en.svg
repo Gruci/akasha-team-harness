@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="724" viewBox="0 0 1000 724" role="img" aria-label="One request from someone in operations, start to merge. The requester asks for a date filter on the customer search. The AI asks which date and whether customers without permission are visible; finds two reports that read the customer table and records the impact; builds the change with a test per condition in its own work copy; runs the checks and shows a preview that the requester accepts; and opens a pull request that GitHub merges as one commit with the briefing. The AI works inside the Akasha harness, whose gates hold each step: conditions clear, impact recorded, work copy only, checks pass, requester accepts, and the server check akasha.">
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;fill:#e6edf3}
+.title{font-size:22px;font-weight:700}
+.sub{font-size:14px;fill:#8b949e}
+.label{font-size:12px;font-weight:600;letter-spacing:.06em;fill:#8b949e}
+.akasha{font-size:12px;font-weight:700;letter-spacing:.06em;fill:#c4b5fd}
+.name{font-size:15px;font-weight:700}
+.small{font-size:12.5px;fill:#8b949e}
+.msg{font-size:13px;paint-order:stroke;stroke:#0d1117;stroke-width:5px;stroke-linejoin:round}
+.row{font-size:13px;font-weight:600}
+.how{font-size:12.5px;fill:#8b949e}
+.gate{font-size:12.5px;fill:#c4b5fd}
+.who{font-size:12px;fill:#f0b072}
+.gh{font-size:12px;fill:#7ee787}
+.ai{font-size:13px;fill:#79c0ff}
+.foot{font-size:14px;fill:#8b949e}
+.code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+@media (prefers-reduced-motion:reduce){.dot{display:none}}
+</style>
+<defs>
+<marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3d444d"/></marker>
+</defs>
+<rect width="1000" height="724" rx="14" fill="#0d1117"/>
+<text x="26" y="42" class="title">One request, start to merge</text>
+<text x="26" y="66" class="sub">From someone in operations, not a developer. The AI does every step inside the Akasha harness.</text>
+<rect x="232" y="78" width="556" height="542" rx="14" fill="#a78bfa" fill-opacity=".04" stroke="#a78bfa" stroke-width="1.5"/>
+<path d="M110,154 L110,640" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M420,154 L420,640" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M894,154 L894,640" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<rect x="24" y="94" width="172" height="60" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="116" r="5" fill="#f0883e"/><text x="56" y="121" class="name">Requester</text><text x="38" y="142" class="small">operations team</text>
+<rect x="322" y="94" width="196" height="60" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="342" cy="116" r="5" fill="#2f81f7"/><text x="354" y="121" class="name">The AI</text><text x="336" y="142" class="small">Claude Code or Codex</text>
+<rect x="812" y="94" width="164" height="60" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="832" cy="116" r="5" fill="#3fb950"/><text x="844" y="121" class="name">GitHub</text><text x="826" y="142" class="small">server check, merge</text>
+<text x="606" y="112" class="akasha">AKASHA HARNESS</text>
+<text x="606" y="132" class="small">skills · hooks · gates</text>
+<text x="265" y="180" class="msg" text-anchor="middle">“Add a date filter to</text>
+<text x="265" y="196" class="msg" text-anchor="middle">the customer search.”</text>
+<path d="M114,208 L414,208" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2.4s" begin="0s" repeatCount="indefinite" path="M114,208 L414,208"/></circle>
+<text x="265" y="238" class="msg" text-anchor="middle">“Sign-up date or transaction date?”</text>
+<text x="265" y="254" class="msg" text-anchor="middle">“Show customers without permission?”</text>
+<path d="M416,266 L116,266" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2.4s" begin="-0.6s" repeatCount="indefinite" path="M416,266 L116,266"/></circle>
+<rect x="606" y="246" width="168" height="28" rx="8" fill="#211a3a" stroke="#6d5bd0"/><circle cx="620" cy="260.0" r="3.5" fill="#a78bfa"/><text x="632" y="264.5" class="gate">conditions clear</text>
+<rect x="248" y="290" width="344" height="79" rx="8" fill="#161b22" stroke="#30363d"/><text x="264" y="316" class="row">Finds two reports that read the customer table</text><text x="264" y="335" class="how">Impact: adds an index, changes no data,</text><text x="264" y="354" class="how">and a revert of the commit undoes it</text>
+<rect x="606" y="312" width="168" height="28" rx="8" fill="#211a3a" stroke="#6d5bd0"/><circle cx="620" cy="326.0" r="3.5" fill="#a78bfa"/><text x="632" y="330.5" class="gate">impact recorded</text>
+<rect x="248" y="384" width="344" height="60" rx="8" fill="#161b22" stroke="#30363d"/><text x="264" y="410" class="row">Builds it with a test per condition</text><text x="264" y="429" class="how">in its own work copy</text>
+<rect x="606" y="396" width="168" height="28" rx="8" fill="#211a3a" stroke="#6d5bd0"/><circle cx="620" cy="410.0" r="3.5" fill="#a78bfa"/><text x="632" y="414.5" class="gate">work copy only</text>
+<text x="265" y="466" class="msg" text-anchor="middle">Checks pass — a preview of each condition</text>
+<path d="M416,478 L116,478" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2.4s" begin="-1.2s" repeatCount="indefinite" path="M416,478 L116,478"/></circle>
+<text x="265" y="504" class="msg" text-anchor="middle">“Correct.” — accepts each one</text>
+<path d="M114,516 L414,516" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2.4s" begin="-1.8s" repeatCount="indefinite" path="M114,516 L414,516"/></circle>
+<rect x="606" y="462" width="168" height="28" rx="8" fill="#211a3a" stroke="#6d5bd0"/><circle cx="620" cy="476.0" r="3.5" fill="#a78bfa"/><text x="632" y="480.5" class="gate">checks pass</text>
+<rect x="606" y="496" width="168" height="28" rx="8" fill="#211a3a" stroke="#6d5bd0"/><circle cx="620" cy="510.0" r="3.5" fill="#a78bfa"/><text x="632" y="514.5" class="gate">requester accepts</text>
+<text x="657" y="556" class="msg" text-anchor="middle">Pull request with the briefing</text>
+<path d="M424,568 L888,568" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2.4s" begin="-0.3s" repeatCount="indefinite" path="M424,568 L888,568"/></circle>
+<rect x="606" y="582" width="168" height="28" rx="8" fill="#211a3a" stroke="#6d5bd0"/><circle cx="620" cy="596.0" r="3.5" fill="#a78bfa"/><text x="632" y="600.5" class="gate">server check <tspan class="code">akasha</tspan></text>
+<rect x="806" y="584" width="176" height="60" rx="10" fill="#112119" stroke="#3fb950" stroke-width="1.5"/>
+<text x="822" y="608" class="row">Merges one commit</text>
+<text x="822" y="628" class="how">“Add a date filter (#42)”</text>
+<rect x="24" y="660" width="952" height="44" rx="8" fill="#161b22" stroke="#30363d"/>
+<text x="500" y="687" class="foot" text-anchor="middle">Akasha never speaks. The purple gates are where it holds the AI to the procedure.</text>
+</svg>
