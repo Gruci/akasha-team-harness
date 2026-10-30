@@ -2,7 +2,7 @@
 
 `akasha.toml` holds the team rules for one repository. The administrators own it through CODEOWNERS.
 
-Each command of a task reads `akasha.toml` and the team workflows from the default branch on the server, once for each command. Thus each computer uses the rules that the administrators merged, also when its checkout is old. Without a server, or when the default branch has no `akasha.toml`, Akasha reads the files in the checkout. `setup` and `infra --apply` read and write the file in the checkout, because the administrator changes it there and opens a pull request.
+Each command of a task reads `akasha.toml` and the team workflows from the default branch on the server, once for each command. Thus each computer uses the rules that the administrators merged, also when its checkout is old. Without a server, or when the default branch has no `akasha.toml`, Akasha reads the files in the checkout. With GitHub, a server that does not answer stops the command. When a server that is not on GitHub does not tell its default branch in 10 seconds, Akasha uses the default branch as git fetched it last. `setup` and `infra --apply` read and write the file in the checkout, because the administrator changes it there and opens a pull request.
 
 ## Example
 
@@ -103,7 +103,7 @@ A change that matches a contract pattern is medium risk or higher. The coordinat
 
 | Key | Value |
 |:--|:--|
-| `enabled` | The workflows that tasks can use. The default is all workflows |
+| `enabled` | The workflows that new requests can use. The default is all workflows. A task that started with a workflow continues with it, also when the workflow is not in the list now |
 
 ## `[server]`
 

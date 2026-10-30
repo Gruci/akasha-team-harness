@@ -30,6 +30,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(team.developers, ("@lead",))
         self.assertEqual(team.commands, {"tests": "python -m pytest -q"})
         self.assertEqual(list(team.workflows), ["feature"])
+        self.assertEqual(set(team.defined), {"feature", "fix", "small"})      # for the tasks that started before
         self.assertEqual(team.contracts["orders"], ("api/orders/**",))
 
     def test_incorrect_shapes_are_refused(self):

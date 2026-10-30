@@ -77,7 +77,8 @@ class Team:
     commands: dict[str, str] = field(default_factory=dict)
     preview: dict[str, str] = field(default_factory=dict)
     contracts: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    workflows: dict[str, Workflow] = field(default_factory=dict)
+    workflows: dict[str, Workflow] = field(default_factory=dict)     # the enabled workflows, for new requests
+    defined: dict[str, Workflow] = field(default_factory=dict)       # all workflows, for the tasks that started
     server_rules: str = "github"
 
 
@@ -196,6 +197,7 @@ def _team(data: dict, flows: dict[str, Workflow]) -> Team:
         preview={name: _text(value, f"[preview] {name}") for name, value in preview.items()},
         contracts={name: _strings(globs, f"[contracts] {name}") for name, globs in contracts.items()},
         workflows={name: flows[name] for name in enabled},
+        defined=dict(flows),
         server_rules=rules,
     )
 

@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -12,7 +13,7 @@ from unittest.mock import patch
 from akasha import __main__ as command_line
 from akasha import config, flow, setup
 from akasha.coordinator import board
-from akasha.core import workcopy
+from akasha.core import stages, workcopy
 from akasha.core import task as tasks
 from akasha.engine import hooks
 from akasha.infra import desired, github
@@ -717,9 +718,17 @@ class SharedTaskTests(unittest.TestCase):
             self.assertEqual(command_line.run(["check", task.id]), 0)      # the checks passed
         self.assertIn(f"Akasha could not update the task branch {task.branch} on the server", output.getvalue())
         self.assertIn("Permission to team/app.git denied", output.getvalue())
-        shared = board.parse(self.fake.issues[task.board]["body"])
-        self.assertTrue(any(note.startswith("Akasha could not update the task branch") for note in shared.notes))
+        stale = lambda notes: [note for note in notes if note.startswith("Akasha could not update")]  # noqa: E731
+        body = self.fake.issues[task.board]["body"]
+        self.assertEqual(len(stale(board.parse(body).notes)), 1)
+        self.assertIn(f"akasha check {task.id}` on the computer of the work copy", stale(board.parse(body).notes)[0])
+        self.assertNotIn("Permission to team/app.git", body)              # the answer of the server stays here
         self.assertEqual(self.on_server(task.branch), "")
+        with person("dev-a", "pc-a", self.fake):
+            self.assertEqual(flow.check(self.first, task.id).notes, [])    # the push works now
+        self.assertNotEqual(self.on_server(task.branch), "")
+        self.assertEqual(stale(board.parse(self.fake.issues[task.board]["body"]).notes), [])
+        self.assertEqual(stale(tasks.load(self.first, task.id).notes), [])
 
     def test_a_task_that_another_computer_cancelled_is_not_on_the_board_here(self):
         task = self.started(scope=["search.py"])
@@ -822,6 +831,51 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(flow.advance(self.old, task.id), [])
         self.assertEqual(tasks.load(self.old, task.id).stage, "handover")          # the workflow of the server
         self.assertNotIn("[workflows]", (self.old / "akasha.toml").read_text(encoding="utf-8"))
+
+    def test_a_task_keeps_its_workflow_when_the_team_turns_it_off(self):
+        kept, _ = flow.start(self.old, "Change the search", "ops-a")                    # the feature workflow
+        removed, _ = flow.start(self.old, "Change the export", "ops-a")
+        for task, workflow in ((kept, "feature"), (removed, "retired")):              # both wait for the merge
+            task = tasks.load(self.old, task.id)
+            task.workflow, task.stage, task.pull_request = workflow, "handover", PULL_REQUEST
+            tasks.save(self.old, task)
+        rules = (self.other / "akasha.toml").read_text(encoding="utf-8") + '[workflows]\nenabled = ["small", "fix"]\n'
+        self.merged("akasha.toml", rules)
+        with patch("akasha.flow.github.merged", return_value=False):
+            flow.start(self.old, "Export the list", "ops-a", workflow="small")          # no old task stops it
+            self.assertIn(stages.EXPLAIN["merged"], flow.advance(self.old, kept.id))
+            with self.assertRaises(ValueError) as stopped:
+                flow.advance(self.old, removed.id)
+        self.assertIn(f"the task {removed.id} uses the workflow retired", str(stopped.exception))
+
+    def test_a_server_that_does_not_answer_does_not_hold_up_a_command(self):
+        rules = (self.other / "akasha.toml").read_text(encoding="utf-8") + '[roles]\ndevelopers = ["lead-a"]\n'
+        self.merged("akasha.toml", rules)
+        task, _ = flow.start(self.old, "Change the search", "ops-a", workflow="small")   # git fetches the rules
+        (Path(task.workcopy) / "search.py").write_text("x = 1\n", encoding="utf-8")
+        program = Path(sys.executable).as_posix().replace("%", "%%").replace(" ", "% ")
+        workcopy.git(self.old, "remote", "set-url", "origin", f"ext::{program} -c import% time;time.sleep(30)")
+        workcopy.git(self.old, "config", "protocol.ext.allow", "always")              # the server never answers
+        with (self.old / "akasha.toml").open("a", encoding="utf-8") as file:
+            file.write('[roles]\ndevelopers = ["local-only"]\n')
+        real = workcopy.git
+
+        def refused(cwd, *args):
+            if args[:1] == ("push",):
+                return subprocess.CompletedProcess(args, 1, "", "the server did not answer")
+            return real(cwd, *args)
+
+        began = time.monotonic()
+        with patch.object(github, "ANSWER_SECONDS", 1):
+            with flow.one_command():
+                self.assertEqual(flow.rules(self.old).developers, ("lead-a",))      # as git fetched it last
+            flow.advance(self.old, task.id)
+            with patch("akasha.flow.workcopy.git", side_effect=refused), \
+                    patch("akasha.flow.workcopy.fetch", wraps=workcopy.fetch) as fetched:
+                result = flow.check(self.old, task.id)
+        self.assertLess(time.monotonic() - began, 20)          # each git that waits for the server stops after 1 s
+        self.assertEqual(fetched.call_count, 0)                # no second wait after the failed push
+        self.assertIn(f"Akasha could not update the task branch {task.branch}", result.notes[0])
 
     def test_one_command_reads_the_server_once(self):
         fake = FakeBoard()

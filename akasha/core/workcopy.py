@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 from pathlib import Path
 
@@ -12,11 +13,40 @@ WORK_DIR = Path(".akasha") / "work"
 BRANCH_PREFIX = "akasha/"                              # the branch of each task: akasha/<task>
 WIP_PREFIX = "akasha-wip/"                             # the work that a person hands off before the checks pass
 _QUIET = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}     # git must fail, not wait for a password that nobody types
+# A new process group, so that a timeout stops a program and all the programs that it started
+GROUP = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
 
 
-def git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          env=_QUIET)
+def stop(process: subprocess.Popen) -> None:
+    """Stop a program that started in a new process group (GROUP), and all the programs that it started."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass                                      # the programs stopped before
+
+
+def git(cwd: Path, *args: str, timeout: float | None = None) -> subprocess.CompletedProcess:
+    """Run git. With `timeout`, git and the programs that it started for the network, for example ssh, stop after
+    that many seconds, and the return code is not zero. subprocess.run stops only git, and on Windows it then waits
+    for the other programs, for example until the computer stops a connection to a server that does not answer."""
+    if timeout is None:
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", env=_QUIET)
+    process = subprocess.Popen(["git", *args], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                               encoding="utf-8", errors="replace", env=_QUIET, **GROUP)
+    try:
+        output, errors = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        stop(process)
+        try:
+            process.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass                                      # a program that ignores the stop keeps its output to itself
+        return subprocess.CompletedProcess(["git", *args], 124, "", f"the server did not answer in {timeout:g} seconds")
+    return subprocess.CompletedProcess(["git", *args], process.returncode, output, errors)
 
 
 def fetch(cwd: Path, branch: str) -> subprocess.CompletedProcess:

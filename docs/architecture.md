@@ -58,7 +58,7 @@ flowchart LR
 | The person and the copy of the repository | `.akasha/state/me.json` (the GitHub name, for one hour) and `.akasha/state/machine.json` (the random mark of this copy) | No |
 | Work copies | `.akasha/work/<task>/`, on the branch `akasha/<task>`. A handoff pushes the work to `akasha-wip/<task>` | No |
 
-Each command of a task fetches the default branch from the server once. The team rules, the team workflows, and the start of each new work copy come from that branch, not from the checkout of the computer, which can be old. Without a server, Akasha uses the checkout, as in Akasha 1.0.0.
+Each command of a task fetches the default branch from the server once. The team rules, the team workflows, and the start of each new work copy come from that branch, not from the checkout of the computer, which can be old. Without a server, Akasha uses the checkout, as in Akasha 1.0.0. When a server that is not on GitHub does not answer, Akasha uses the default branch as git fetched it last.
 
 ## Three enforcement layers
 

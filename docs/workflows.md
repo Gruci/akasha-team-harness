@@ -81,6 +81,8 @@ Each failed check counts as one failed repair. After three failed repairs, Akash
    enabled = ["feature", "fix"]
    ```
 
+   A task that started with a workflow continues with it, also when the workflow is not in the list now. Do not remove the file of a team workflow while tasks use it: the commands of these tasks stop, and they tell the workflow that is missing.
+
 Akasha refuses a workflow with an unknown exit condition, a workflow without stages, and a workflow with two stages that have the same id.
 
 > **CAUTION:** Keep the stage ids `build` and `handover`. Akasha makes the work copy when a task enters `build`. The handover command operates only at `handover`. Put `infra_ready` before `handover`, because auto-merge needs the server rules.

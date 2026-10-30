@@ -4,17 +4,15 @@ from __future__ import annotations
 
 import locale
 import os
-import signal
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from akasha.config import Team
+from akasha.core.workcopy import GROUP, stop
 from akasha.validators import secrets
 
 TIMEOUT_SECONDS = 1800
-# A new process group, so that a timeout stops the command and all the processes that it started
-_GROUP = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
 
 
 @dataclass
@@ -46,22 +44,15 @@ def _decode(raw: bytes) -> str:
         return raw.decode(locale.getpreferredencoding(False), errors="replace")
 
 
-def _stop(process: subprocess.Popen) -> None:
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
-    else:
-        os.killpg(process.pid, signal.SIGKILL)
-
-
 def _command(command: str, workcopy: Path) -> tuple[str, str]:
     if os.name == "nt" and command.startswith("./"):
         command = ".\\" + command[2:]                 # cmd.exe runs .\gradlew, not ./gradlew
     process = subprocess.Popen(command, shell=True, cwd=workcopy, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               **_GROUP)
+                               **GROUP)
     try:
         output, _ = process.communicate(timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        _stop(process)
+        stop(process)
         try:
             process.communicate(timeout=10)
         except subprocess.TimeoutExpired:

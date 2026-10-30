@@ -37,6 +37,7 @@ _ignored: dict[str, list[tuple[board.Comment, str]]] = {}         # the decision
 _read_status: dict[str, str] = {}             # the status of each task before the decision comments of its last read
 _depth = 0                                    # how many commands run now, one inside another
 _branches: dict[Path, str] = {}               # the default branch on the server, for the current command
+_unanswered: set[Path] = set()                # the copies whose server did not answer in the current command
 _teams: dict[Path, Team] = {}                 # the team rules on the server, for the current command
 _behind: dict[Path, str] = {}                 # why the main checkout stays behind, after the last request
 P, R = ParamSpec("P"), TypeVar("R")
@@ -53,6 +54,7 @@ def one_command() -> Iterator[None]:
     global _depth
     if not _depth:
         _branches.clear()
+        _unanswered.clear()
         _teams.clear()
     _depth += 1
     try:
@@ -74,7 +76,8 @@ def _server_branch(root: Path) -> str:
     """The default branch on the server, for example main, fetched once in each command. "" without a remote.
 
     With GitHub, a server that does not answer stops the command: the shared task board needs the server too. Without
-    GitHub, Akasha uses the default branch that this computer knows, as in Akasha 1.0.0."""
+    GitHub, Akasha uses the default branch that this computer knows, as git fetched it last. The server must tell
+    its default branch in github.ANSWER_SECONDS, so that a server that does not answer does not hold up each command."""
     if root in _branches:
         return _branches[root]
     branch = ""
@@ -86,6 +89,7 @@ def _server_branch(root: Path) -> str:
                 problem = fetched.stderr.strip()[:300] if fetched is not None else "it does not tell its default branch"
                 raise RuntimeError(f"Akasha cannot fetch the default branch from origin: {problem}. Make sure that the "
                                    "server is reachable and that git can log in to it, then do the step again")
+            _unanswered.add(root)
             branch = github.known_branch(root)
     if branch and workcopy.git(root, "rev-parse", "-q", "--verify", f"refs/remotes/origin/{branch}").returncode:
         branch = ""
@@ -96,7 +100,8 @@ def _server_branch(root: Path) -> str:
 def rules(root: Path) -> Team:
     """The team rules of this command: akasha.toml and the team workflows on the default branch of the server. Thus
     each computer uses the rules that the administrators merged, also when its checkout is old. Without a server, or
-    when the server has no akasha.toml, the files of this checkout."""
+    when the server has no akasha.toml, the files of this checkout. When a server that is not on GitHub does not
+    answer, the default branch as git fetched it last (_server_branch)."""
     if root not in _teams:
         branch = _server_branch(root)
         _teams[root] = config.shared(root, f"origin/{branch}" if branch else "")
@@ -552,8 +557,9 @@ def _tidy(root: Path) -> None:
         if task.status == "open" and task.stage == "handover" and task.pull_request:
             try:
                 advance(root, task.id)                # the task is done when GitHub merged the pull request
-            except (board.BoardError, HolderError):
-                pass        # for example a person deleted the issue. The request reads and writes the board itself
+            except (board.BoardError, HolderError, ValueError):
+                pass        # for example a deleted issue, or a workflow that the team removed: `akasha advance` of the
+                            # task tells it. The request reads and writes the board itself
             task = tasks.load(root, task.id)
         if task.status == "done" and task.workcopy:
             try:
@@ -698,11 +704,22 @@ def start(root: Path, title: str, requester: str = "", workflow: str = "feature"
     return task, found
 
 
+def _workflow(team: Team, task: Task) -> config.Workflow:
+    """The workflow of the task. `[workflows] enabled` names the workflows of new requests: a task that started with
+    another workflow continues with it."""
+    flow = team.defined.get(task.workflow)
+    if flow is None:
+        raise ValueError(f"the task {task.id} uses the workflow {task.workflow}, and the team rules do not define it "
+                         f"now. Ask an administrator to put the team workflow {task.workflow} back in "
+                         f"{config.TEAM_WORKFLOWS.as_posix()}/ on the default branch")
+    return flow
+
+
 def context(root: Path, team: Team, task: Task) -> stages.Context:
     """Measure the facts for the exit conditions. The risk level can only go up when the real changes are known.
 
     Akasha asks GitHub only for the facts that the exit conditions of the current stage need."""
-    exits = set(team.workflows[task.workflow].stage(task.stage).exit)
+    exits = set(_workflow(team, task).stage(task.stage).exit)
     changed = workcopy.changed_files(task) if task.workcopy else []
     if changed:
         _raise_risk(task, changed, team)
@@ -725,7 +742,7 @@ def advance(root: Path, task_id: str) -> list[str]:
     if gate and task.workcopy and task.status == "open":      # the real changes raised the risk after the specification
         blocked = ["risk_approvals"]
     else:
-        blocked = stages.advance(task, team.workflows[task.workflow], measured)
+        blocked = stages.advance(task, _workflow(team, task), measured)
     if task.status == "open" and task.stage == "build" and not task.branch:      # also after a failed creation
         _open_workcopy(root, team, task)
     if task.status == "done" and task.workcopy:
@@ -807,7 +824,7 @@ def _respecify(root: Path, task: Task) -> None:
         return
     task.approvals.pop("requester", None)             # these decisions were for the older revision
     task.accepted = {}
-    flow = rules(root).workflows.get(task.workflow)
+    flow = rules(root).defined.get(task.workflow)
     ids = [stage.id for stage in flow.stages] if flow else []
     approval = next((stage.id for stage in flow.stages if "requester_approved" in stage.exit), "") if flow else ""
     if approval and task.stage in ids and ids.index(task.stage) > ids.index(approval):
@@ -1042,7 +1059,7 @@ def check(root: Path, task_id: str) -> runner.Result:
     When all checks pass, Akasha saves the work as a commit and pushes the task branch (_push). Thus the task branch
     on the server always passed the checks, and other tasks can build on it. Akasha saves nothing while the work copy
     has files outside the scope, for example files that a test made. A push that the server refused goes into the
-    notes of the task and of the result."""
+    notes of the task and of the result (_push)."""
     team, task = rules(root), _held(root, task_id)
     tree = _tree(task)
     result = runner.run(team, tree, workcopy.changed_files(task))
@@ -1054,7 +1071,6 @@ def check(root: Path, task_id: str) -> runner.Result:
     if failed:
         if stages.record_failure(task, "the check " + ", ".join(failed) + " failed"):
             _tell_stop(root, team, task)
-    task.notes += [note for note in result.notes if note not in task.notes]
     _publish(root, task)
     return result
 
@@ -1071,12 +1087,17 @@ def _push(root: Path, team: Team, tree: Path, task: Task, result: runner.Result)
     example a merge of the default branch that GitHub made in the pull request, Akasha merges them and pushes once
     more. A conflict stops the check. The base goes forward to the default branch in the merge, so that the changes
     of the task stay its own changes. When the merge changed files, Akasha checks the merged work first: the task
-    branch on the server always passed the checks. When the push fails again, a note in the result tells it. Without
-    a server, nothing goes out, as in Akasha 1.0.0."""
+    branch on the server always passed the checks. When the server did not answer at the start of the command,
+    Akasha does not fetch after a failed push.
+
+    When the push fails again, a note in the result tells the answer of the server. The note of the task only tells
+    that the branch on the server is older: the note goes on the issue, and the answer can show paths and secrets,
+    for example the output of a pre-push hook. A later push that works removes the note. Without a server, nothing
+    goes out, as in Akasha 1.0.0."""
     if workcopy.git(tree, "remote", "get-url", "origin").returncode:
         return result
     pushed, remote = workcopy.git(tree, "push", "-q", "-u", "origin", task.branch), f"origin/{task.branch}"
-    if pushed.returncode and workcopy.fetch(tree, task.branch).returncode == 0:
+    if pushed.returncode and root not in _unanswered and workcopy.fetch(tree, task.branch).returncode == 0:
         checked = workcopy.git(tree, "rev-parse", "HEAD^{tree}").stdout.strip()
         if workcopy.git(tree, "merge", "--no-edit", "-q", remote).returncode:
             workcopy.git(tree, "merge", "--abort")
@@ -1092,10 +1113,14 @@ def _push(root: Path, team: Team, tree: Path, task: Task, result: runner.Result)
             if not _passed(result):
                 return result                         # the merged work waits for a repair; the next check pushes it
         pushed = workcopy.git(tree, "push", "-q", "-u", "origin", task.branch)
+    stale = (f"Akasha could not update the task branch {task.branch} on the server, so the branch there is older "
+             "than the work copy")
+    task.notes = [note for note in task.notes if not note.startswith(stale)]
     if pushed.returncode:
-        result.notes.append(f"Akasha could not update the task branch {task.branch} on the server, so the branch there "
-                            f"is older than the work copy: {' '.join(pushed.stderr.split())[:300]}. Tasks that build "
-                            "on this task start from the older branch. Run the check again later")
+        result.notes.append(f"{stale}: {' '.join(pushed.stderr.split())[:300]}. Tasks that build on this task start "
+                            "from the older branch. Run the check again later")
+        task.notes.append(f"{stale}. Tasks that build on this task start from the older branch. `akasha check "
+                          f"{task.id}` on the computer of the work copy tells the reason and tries again")
     return result
 
 

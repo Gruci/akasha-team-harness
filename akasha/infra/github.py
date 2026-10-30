@@ -17,6 +17,7 @@ from akasha.repo import gh, gh_repo
 
 SERVER_STATE = config.STATE_DIR / "server.json"      # the last examination of the server rules on this computer
 RECORD_AGE = 3600                                      # one hour, in seconds
+ANSWER_SECONDS = 10                                    # git waits this long for the server to tell its default branch
 _NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no branch protection for private repositories
 _HEAD = re.compile(r"^ref: refs/heads/(\S+)\tHEAD$", re.M)        # the answer of git ls-remote --symref origin HEAD
 
@@ -35,11 +36,13 @@ def default_branch(root: Path) -> str:
     """The default branch on the server now, for example main, or "" when the server does not tell it.
 
     With GitHub, gh tells it. Else, or when gh does not answer, git asks the server for its HEAD. The origin/HEAD of
-    this computer is not enough: git sets it at the clone, and it stays when the team renames the default branch."""
+    this computer is not enough: git sets it at the clone, and it stays when the team renames the default branch.
+    git asks for ANSWER_SECONDS at most: without this limit, each command waits until the computer stops the
+    connection to a server that does not answer, for example about 21 seconds on Windows."""
     found = repository(root) if repo.origin(root) else None
     if found is not None:
         return found[1]
-    listed = git(root, "ls-remote", "--symref", "origin", "HEAD")
+    listed = git(root, "ls-remote", "--symref", "origin", "HEAD", timeout=ANSWER_SECONDS)
     head = _HEAD.search(listed.stdout) if listed.returncode == 0 else None
     return head.group(1) if head else ""
 
