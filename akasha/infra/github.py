@@ -3,23 +3,15 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 from akasha.infra import desired
-
-
-def _gh(root: Path, *args: str, payload: dict | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(["gh", *args], cwd=root, input=json.dumps(payload) if payload is not None else None,
-                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+from akasha.repo import gh
 
 
 def repository(root: Path) -> tuple[str, str] | None:
     """(owner/name, default branch) of the GitHub repository, or None without GitHub."""
-    try:
-        viewed = _gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
-    except (OSError, subprocess.TimeoutExpired):
-        return None
+    viewed = gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
     if viewed.returncode:
         return None
     data = json.loads(viewed.stdout)
@@ -27,7 +19,7 @@ def repository(root: Path) -> tuple[str, str] | None:
 
 
 def protection(root: Path, slug: str, branch: str) -> dict | None:
-    read = _gh(root, "api", f"repos/{slug}/branches/{branch}/protection")
+    read = gh(root, "api", f"repos/{slug}/branches/{branch}/protection")
     return json.loads(read.stdout) if read.returncode == 0 else None
 
 
@@ -47,9 +39,10 @@ def status(root: Path) -> list[str]:
 
 def apply(root: Path, approved_by: str) -> list[str]:
     """Write the repository files and set branch protection. An administrator must approve first."""
-    if not approved_by:
-        raise PermissionError("an administrator must approve a change to the repository settings")
-    for target, text in desired.files(_team(root)).items():
+    team = _team(root)
+    if not approved_by or (team.administrators and approved_by not in team.administrators):
+        raise PermissionError("an administrator that akasha.toml names must approve a change to the repository settings")
+    for target, text in desired.files(team).items():
         path = root / target
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
@@ -57,8 +50,8 @@ def apply(root: Path, approved_by: str) -> list[str]:
     if found is None:
         return ["Akasha wrote the files, but cannot reach GitHub to set branch protection"]
     slug, branch = found
-    done = _gh(root, "api", "--method", "PUT", f"repos/{slug}/branches/{branch}/protection", "--input", "-",
-               payload=desired.protection())
+    done = gh(root, "api", "--method", "PUT", f"repos/{slug}/branches/{branch}/protection", "--input", "-",
+              payload=desired.protection())
     if done.returncode:
         return [f"GitHub refused the branch protection: {done.stderr.strip()[:300]}"]
     return []

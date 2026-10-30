@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from akasha.__main__ import main  # noqa: E402  (the path must contain the plugin folder first)
+from akasha.__main__ import run  # noqa: E402  (the path must contain the plugin folder first)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run())

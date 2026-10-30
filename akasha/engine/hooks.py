@@ -10,15 +10,16 @@ import re
 import sys
 from pathlib import Path
 
-from akasha import config
+from akasha import config, flow
 from akasha.core import task as tasks
+from akasha.core import workcopy
 from akasha.repo import main_root
 from akasha.validators import guard, secrets
 
 SHELL_TOOLS = ("Bash", "PowerShell", "shell")
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch")
 _PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update) File: (.+)$", re.M)
-SETUP_HINT = "Akasha is installed, but this repository has no akasha.toml. When the user asks, say: Set up Akasha."
+SETUP_HINT = "This repository has no akasha.toml. To set up Akasha, use the akasha-setup skill."
 
 
 def _payload() -> dict:
@@ -45,9 +46,12 @@ def command() -> str:
 
 
 def session_start(root: Path) -> int:
+    notice = f"[AKASHA] Akasha command: {command()} <command>"
+    if not (root / config.CONFIG_FILE).is_file():
+        print(f"[AKASHA] {SETUP_HINT}\n{notice}")
+        return 0
     open_tasks = [task for task in tasks.all_tasks(root) if task.status == "open"]
-    lines = ["[AKASHA] Do each change as an Akasha task. The akasha-request skill gives the procedure.",
-             f"[AKASHA] Akasha command: {command()} <command>"]
+    lines = ["[AKASHA] Do each change as an Akasha task. The akasha-request skill gives the procedure.", notice]
     lines += [f"[AKASHA] Open task {task.id}: stage {task.stage}, risk {task.risk}, {task.title}" for task in open_tasks]
     print("\n".join(lines))
     return 0
@@ -84,10 +88,17 @@ def after_tool(cwd: Path, tool: str, tool_input: dict) -> int:
 
 
 def turn_end(root: Path) -> int:
-    stopped = [task for task in tasks.all_tasks(root) if task.status == "stopped"]
-    if stopped:
-        print(json.dumps({"systemMessage": f"[AKASHA] Task {stopped[0].id} stopped after failed repairs. "
-                                           "A developer must examine it."}))
+    """Tell the user about each task that needs a person: a stopped task, or changes outside the task scope."""
+    found = []
+    for task in tasks.all_tasks(root):
+        if task.status == "stopped":
+            found.append(f"Task {task.id} stopped after failed repairs. A developer must examine it.")
+        elif task.status == "open" and task.workcopy and Path(task.workcopy).is_dir():
+            outside = flow.outside_scope(task, workcopy.changed_files(task))
+            if outside:
+                found.append(f"Task {task.id} changed files outside its scope: {', '.join(outside[:5])}.")
+    if found:
+        print(json.dumps({"systemMessage": "[AKASHA] " + " ".join(found)}))
     return 0
 
 
@@ -97,14 +108,12 @@ def main(agent: str, event: str) -> int:
     root = main_root(cwd)
     if root is None:
         return 0
+    if event == "SessionStart":
+        return session_start(root)
     if not (root / config.CONFIG_FILE).is_file():
-        if event == "SessionStart":
-            print(f"[AKASHA] {SETUP_HINT}")
         return 0
     tool = str(payload.get("tool_name") or "")
     tool_input = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
-    if event == "SessionStart":
-        return session_start(root)
     if event == "PreToolUse":
         return before_tool(root, cwd, tool, tool_input)
     if event == "PostToolUse":

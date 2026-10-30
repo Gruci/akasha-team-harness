@@ -25,7 +25,7 @@ def _team_config(root: Path) -> str:
         lines.append(f'tests = "{packs[0].tests}"')
     if packs and packs[0].lint:
         lines.append(f'lint = "{packs[0].lint}"')
-    lines += ["", "[preview]", 'command = ""', 'database = "app_{task}"']
+    lines += ["", "[preview]", '# command = "npm run dev -- --port {port}"', 'database = "app_{task}"']
     return "\n".join(lines) + "\n"
 
 
@@ -50,6 +50,6 @@ def run(root: Path, approved_by: str) -> list[str]:
         report += [f"GitHub: {item}" for item in problems] or ["GitHub settings agree with akasha.toml."]
     else:
         report += [f"GitHub: {item}" for item in github.status(root)]
-        report.append("To change the GitHub settings, an administrator must approve: python -m akasha setup "
-                      "--approve-infra <administrator>")
+        report.append("To change the GitHub settings, an administrator must approve. "
+                      "Then run setup again with --approve-infra <administrator>.")
     return report

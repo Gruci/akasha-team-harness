@@ -8,7 +8,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from akasha import flow
+from akasha import config, flow, setup
 from akasha.core import handover, workcopy
 from akasha.core import task as tasks
 from akasha.engine import hooks
@@ -71,12 +71,66 @@ class FlowTests(unittest.TestCase):
         task = tasks.load(root, task.id)
         self.assertEqual(task.status, "stopped")
         self.assertIn("A developer must examine the problem", task.notes[-1])
+        task = flow.resume(root, task.id, "dev-a")
+        self.assertEqual((task.status, task.failures), ("open", 0))
 
     def test_the_scope_stops_changes_outside_it(self):
         root = make_repo(PASS)
         task, _ = flow.start(root, "Change the search", "ops-member", workflow="small", scope=["src/search/**"])
         (Path(task.workcopy) / "billing.py").write_text("x = 1\n", encoding="utf-8")
         self.assertIn("outside the task scope", flow.advance(root, task.id)[0])
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(hooks.turn_end(root), 0)
+        self.assertIn("billing.py", json.loads(output.getvalue())["systemMessage"])
+
+    def test_the_handover_pushes_and_opens_one_pull_request(self):
+        root = make_repo(PASS)
+        remote = Path(tempfile.mkdtemp(prefix="akasha-remote-"))
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main"], cwd=remote, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=root, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=root, check=True, capture_output=True)
+        task, _ = flow.start(root, "Change the search", "ops-member", workflow="small")
+        (Path(task.workcopy) / "search.py").write_text("x = 1\n", encoding="utf-8")
+        flow.advance(root, task.id)
+        flow.check(root, task.id)
+        flow.advance(root, task.id)
+        opened = subprocess.CompletedProcess([], 0, "https://github.com/team/app/pull/7\n", "")
+        with patch("akasha.flow.github.repository", return_value=("team/app", "main")), \
+                patch("akasha.flow.github.status", return_value=[]), patch("akasha.flow.gh", return_value=opened) as gh:
+            self.assertEqual(flow.handover(root, task.id), ("https://github.com/team/app/pull/7", []))
+            self.assertEqual(tasks.load(root, task.id).status, "done")
+            (Path(task.workcopy) / "search.py").write_text("x = 2\n", encoding="utf-8")
+            flow.handover(root, task.id)                  # a review change goes to the same pull request
+        self.assertEqual([call.args[1:3] for call in gh.call_args_list], [("pr", "create")])
+        pushed = workcopy.git(remote, "rev-parse", task.branch).stdout
+        self.assertEqual(pushed, workcopy.git(Path(task.workcopy), "rev-parse", "HEAD").stdout)
+
+    def test_a_wider_scope_finds_overlaps(self):
+        root = make_repo(PASS)
+        first, _ = flow.start(root, "Change the search", "ops-a", scope=["src/search/**"])
+        second, found = flow.start(root, "Add a date filter", "ops-b")
+        self.assertEqual(found, [])
+        _task, found = flow.specify(root, second.id, [], [], False, ["src/search/date.py"])
+        self.assertEqual([(item.kind, item.other) for item in found], [("order", first.id)])
+
+    def test_a_developer_approval_needs_a_developer_from_the_team_config(self):
+        root = make_repo(PASS)
+        with (root / "akasha.toml").open("a", encoding="utf-8") as file:
+            file.write('[roles]\ndevelopers = ["dev-a"]\n')
+        task, _ = flow.start(root, "Change the totals", "ops-member")
+        with self.assertRaises(ValueError):
+            flow.approve(root, task.id, "developer", "ops-member")
+        self.assertEqual(flow.approve(root, task.id, "developer", "dev-a").approvals, {"developer": "dev-a"})
+
+    def test_setup_writes_a_team_config_that_loads(self):
+        folder = Path(tempfile.mkdtemp(prefix="akasha-setup-"))
+        subprocess.run(["git", "init", "-q"], cwd=folder, check=True)
+        report = setup.run(folder, "")
+        self.assertIn("Akasha wrote akasha.toml", report[0])
+        self.assertEqual(config.load(folder).required_checks, ("secrets",))
+        self.assertIn("akasha:start", (folder / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertIn(".akasha/work/", (folder / ".gitignore").read_text(encoding="utf-8"))
 
 
 class HookTests(unittest.TestCase):
@@ -98,7 +152,8 @@ class HookTests(unittest.TestCase):
         output = io.StringIO()
         with patch("sys.stdin", io.StringIO(json.dumps({"cwd": str(folder)}))), redirect_stdout(output):
             self.assertEqual(hooks.main("claude", "SessionStart"), 0)
-        self.assertIn("Set up Akasha", output.getvalue())
+        self.assertIn("akasha-setup", output.getvalue())
+        self.assertIn("Akasha command:", output.getvalue())
 
 
 if __name__ == "__main__":

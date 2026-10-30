@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from akasha import VERSION, config, flow, setup
-from akasha.coordinator import board
+from akasha.coordinator import board, resources
 from akasha.core import task as tasks
 from akasha.infra import github
 from akasha.repo import main_root
@@ -38,15 +38,19 @@ def _parser() -> argparse.ArgumentParser:
     request.add_argument("--feature", default="")
     request.add_argument("--scope", nargs="*", default=[])
     request.add_argument("--contract", nargs="*", default=[])
-    specify = commands.add_parser("specify", help="add completion conditions or open questions")
+    specify = commands.add_parser("specify", help="add completion conditions, open questions, or scope patterns")
     specify.add_argument("task")
     specify.add_argument("--condition", nargs="*", default=[])
     specify.add_argument("--question", nargs="*", default=[])
     specify.add_argument("--clear-questions", action="store_true")
+    specify.add_argument("--scope", nargs="*", default=[])
     approve = commands.add_parser("approve", help="record an approval")
     approve.add_argument("task")
     approve.add_argument("--role", required=True, choices=config.ROLES)
     approve.add_argument("--by", required=True)
+    resume = commands.add_parser("resume", help="open a stopped task again after a developer examined it")
+    resume.add_argument("task")
+    resume.add_argument("--by", required=True, help="the developer who examined the problem")
     for name, text in (("advance", "move the task to its next stage"), ("show", "show one task"),
                        ("handover", "open the pull request with the handover document")):
         commands.add_parser(name, help=text).add_argument("task")
@@ -92,10 +96,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  overlap — {item.message()}")
         return 0
     if args.command == "specify":
-        _show(flow.specify(root, args.task, args.condition, args.question, args.clear_questions))
+        task, found = flow.specify(root, args.task, args.condition, args.question, args.clear_questions, args.scope)
+        _show(task)
+        for item in found:
+            print(f"  overlap — {item.message()}")
         return 0
     if args.command == "approve":
         _show(flow.approve(root, args.task, args.role, args.by))
+        return 0
+    if args.command == "resume":
+        _show(flow.resume(root, args.task, args.by))
         return 0
     if args.command == "advance":
         blocked = flow.advance(root, args.task)
@@ -104,7 +114,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  blocked — {reason}")
         return 1 if blocked else 0
     if args.command == "show":
-        _show(tasks.load(root, args.task))
+        task = tasks.load(root, args.task)
+        _show(task)
+        preview = config.load(root).preview
+        for name, template in preview.items():
+            if template:
+                print(f"  preview {name}: {resources.fill(template, task.id)}")
+        for name in ("scope", "risk_reasons", "conditions", "open_questions", "notes"):
+            for item in getattr(task, name):
+                print(f"  {name.replace('_', ' ').rstrip('s')}: {item}")
+        for role, person in task.approvals.items():
+            print(f"  approval: {role} {person}")
+        for condition, result in task.accepted.items():
+            print(f"  inspection: {'yes' if result else 'no'} — {condition}")
+        for name, status in task.checks.items():
+            print(f"  check {name}: {status}")
         return 0
     if args.command == "check":
         result = flow.check(root, args.task)
@@ -118,8 +142,11 @@ def main(argv: list[str] | None = None) -> int:
         _show(flow.accept(root, args.task, args.condition, args.result == "yes"))
         return 0
     if args.command == "handover":
-        print(flow.handover(root, args.task))
-        return 0
+        address, blocked = flow.handover(root, args.task)
+        print(f"Pull request: {address}")
+        for reason in blocked:
+            print(f"  blocked — {reason}")
+        return 1 if blocked else 0
     if args.command == "board":
         open_tasks, source = board.open_tasks(root)
         print(f"Shared task board ({source}): {len(open_tasks)} open task(s)")
@@ -133,9 +160,14 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
-if __name__ == "__main__":
+def run(argv: list[str] | None = None) -> int:
+    """Run a command. Tell an expected problem in one line, without a traceback."""
     try:
-        sys.exit(main())
-    except (ValueError, LookupError, RuntimeError, PermissionError, config.ConfigError) as error:
+        return main(argv)
+    except (ValueError, LookupError, RuntimeError, PermissionError) as error:
         print(f"Akasha: {error}", file=sys.stderr)
-        sys.exit(2)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(run())
