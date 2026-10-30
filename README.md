@@ -75,13 +75,42 @@ Add a date filter to the customer search.
 
 ## What You Get
 
-<p align="center"><img src="docs/readme/one-request.en.svg" width="1000" alt="One request from someone in operations, start to merge. The AI asks which date and whether customers without permission are visible, records the impact, builds the change with a test per condition in its own work copy, and shows a preview that the requester accepts. GitHub merges one commit with the briefing. The AI works inside the Akasha harness, whose gates hold each step."></p>
+<p align="center"><img src="docs/readme/team.en.svg" width="1000" alt="Three people work in one repository at the same time, each with their own AI. The shared task board of Akasha stacks the export button on the date filter because they are the same feature, and lets the invoice task run in parallel. GitHub merges three commits in order: #41, #42, and #43."></p>
+
+Three people ask for changes in one repository on the same afternoon. Each person talks only to their own AI. None of them is a developer.
+
+| Who | Asks | The shared task board |
+|:--|:--|:--|
+| Operations, with Claude Code | "Add a date filter to the customer search." | A new task with its own work copy |
+| Finance, with Claude Code | "Show the tax on invoices." | No overlap with the date filter, so both run in parallel |
+| Sales, with Codex, a bit later | "Add an export button to the customer search." | The same feature as the date filter. The task starts from that branch and hands over after the date filter merges |
+
+GitHub merges three commits in order — `#41 Show the tax on invoices`, `#42 Add a date filter`, `#43 Add an export button` — each with its own briefing. Nobody waited for an answer from another person.
+
+When two tasks overlap, the board decides:
+
+| Overlap | What happens |
+|:--|:--|
+| Same feature | The new task builds on the earlier one |
+| Same files | The earlier task merges first |
+| Same contract | A notice goes on the issue of the other task, and GitHub tells the people who follow it |
+
+Each task also gets its own issue on the board, its own preview port, and its own preview database.
 
 * * *
 
 ## How It Works
 
 <p align="center"><img src="docs/readme/stages.en.svg" width="1000" alt="Six stages with an Akasha gate between each: request, specification, build, checks, inspection, and handover. The AI does the work of every stage. The requester answers, approves, and accepts; a developer steps in after three failed repairs; GitHub merges."></p>
+
+| Stage | Exit condition | Who besides the AI |
+|:--|:--|:--|
+| 1. Request | The completion conditions are clear | The requester answers the questions |
+| 2. Specification | The impact is recorded, and the requester approves | The requester approves |
+| 3. Build | Only files in the scope changed | — |
+| 4. Checks | All required checks pass | A developer, after three failed repairs |
+| 5. Inspection | The requester accepts in a preview, and the product map shows the change | The requester accepts |
+| 6. Handover | The server check passes, and one commit merges with the briefing | GitHub merges |
 
 Small changes use the `small` workflow, defects the `fix` workflow.
 

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="714" viewBox="0 0 1000 714" role="img" aria-label="Three people work in one repository at the same time, each with their own AI. Operations asks for a date filter on the customer search, and Finance asks for the tax on invoices. Later, Sales asks for an export button on the customer search. Inside the Akasha harness, the shared task board finds that the export button is the same feature, so that task starts from the branch of the date filter and hands over after it merges. The invoice task has no overlap and runs in parallel. GitHub merges three commits in order: #41 Show the tax on invoices, #42 Add a date filter, #43 Add an export button. When tasks overlap, the board decides: the same feature stacks, the same files merge the earlier task first, and the same contract leaves a notice on the other task.">
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;fill:#e6edf3}
+.title{font-size:22px;font-weight:700}
+.sub{font-size:14px;fill:#8b949e}
+.label{font-size:12px;font-weight:600;letter-spacing:.06em;fill:#8b949e}
+.akasha{font-size:12px;font-weight:700;letter-spacing:.06em;fill:#c4b5fd}
+.name{font-size:15px;font-weight:700}
+.small{font-size:12.5px;fill:#8b949e}
+.msg{font-size:13px;paint-order:stroke;stroke:#0d1117;stroke-width:5px;stroke-linejoin:round}
+.row{font-size:13px;font-weight:600}
+.how{font-size:12.5px;fill:#8b949e}
+.gate{font-size:12.5px;fill:#c4b5fd}
+.who{font-size:12px;fill:#f0b072}
+.gh{font-size:12px;fill:#7ee787}
+.ai{font-size:13px;fill:#79c0ff}
+.foot{font-size:14px;fill:#8b949e}
+.code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+.bar{font-size:13px}
+.commit{font-size:13px;font-weight:700;fill:#7ee787}
+.gatehead{font-size:13px;font-weight:600;fill:#c4b5fd}
+@media (prefers-reduced-motion:reduce){.dot{display:none}}
+</style>
+<defs>
+<marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3d444d"/></marker>
+<marker id="time" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#30363d"/></marker>
+<marker id="stack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+</defs>
+<rect width="1000" height="714" rx="14" fill="#0d1117"/>
+<text x="26" y="42" class="title">Three people, one repository, at the same time</text>
+<text x="26" y="66" class="sub">Each person talks only to their own AI. Akasha keeps the tasks apart through a shared task board.</text>
+<text x="200" y="100" class="label">ONE REPOSITORY · AT THE SAME TIME</text>
+<path d="M478,96 L960,96" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5" marker-end="url(#time)"/>
+<rect x="200" y="112" width="776" height="304" rx="14" fill="#a78bfa" fill-opacity=".04" stroke="#a78bfa" stroke-width="1.5"/>
+<text x="216" y="138" class="akasha">AKASHA HARNESS</text>
+<text x="346" y="138" class="small">shared task board · overlap checks · stage gates</text>
+<path d="M200,482 L968,482" stroke="#3fb950" stroke-width="2"/>
+<path d="M184,190 L460,190" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M860,190 L880,190 L880,474" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-0.0s" repeatCount="indefinite" path="M184,190 L880,190 L880,482"/></circle>
+<path d="M184,280 L240,280" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M660,280 L680,280 L680,474" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-1.3s" repeatCount="indefinite" path="M184,280 L680,280 L680,482"/></circle>
+<path d="M184,370 L260,370" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M470,370 L490,370 L490,474" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-2.6s" repeatCount="indefinite" path="M184,370 L490,370 L490,482"/></circle>
+<rect x="24" y="162" width="160" height="56" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="184" r="5" fill="#f0883e"/><text x="56" y="189" class="name">Sales</text><text x="38" y="210" class="small">with Codex</text>
+<rect x="460" y="176" width="400" height="28" rx="14" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="474" y="194.5" class="bar">“Add an export button to the customer search.”</text>
+<circle cx="880" cy="482" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="880" y="508" class="commit" text-anchor="middle">#43</text>
+<text x="880" y="526" class="how" text-anchor="middle">Add an export button</text>
+<rect x="24" y="252" width="160" height="56" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="274" r="5" fill="#f0883e"/><text x="56" y="279" class="name">Operations</text><text x="38" y="300" class="small">with Claude Code</text>
+<rect x="240" y="266" width="420" height="28" rx="14" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="254" y="284.5" class="bar">“Add a date filter to the customer search.”</text>
+<circle cx="680" cy="482" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="680" y="508" class="commit" text-anchor="middle">#42</text>
+<text x="680" y="526" class="how" text-anchor="middle">Add a date filter</text>
+<rect x="24" y="342" width="160" height="56" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="364" r="5" fill="#f0883e"/><text x="56" y="369" class="name">Finance</text><text x="38" y="390" class="small">with Claude Code</text>
+<rect x="260" y="356" width="210" height="28" rx="14" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="274" y="374.5" class="bar">“Show the tax on invoices.”</text>
+<circle cx="490" cy="482" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="490" y="508" class="commit" text-anchor="middle">#41</text>
+<text x="490" y="526" class="how" text-anchor="middle">Show the tax on invoices</text>
+<rect x="460" y="144" width="300" height="28" rx="8" fill="#211a3a" stroke="#6d5bd0"/><circle cx="474" cy="158.0" r="3.5" fill="#a78bfa"/><text x="486" y="162.5" class="gate">same feature → builds on the date filter</text>
+<rect x="260" y="324" width="226" height="28" rx="8" fill="#211a3a" stroke="#6d5bd0"/><circle cx="274" cy="338.0" r="3.5" fill="#a78bfa"/><text x="286" y="342.5" class="gate">no overlap → runs in parallel</text>
+<path d="M490,264 L490,210" stroke="#a78bfa" stroke-width="2" stroke-dasharray="5 4" fill="none" marker-end="url(#stack)"/>
+<text x="502" y="241" class="gate">starts from its branch</text>
+<text x="860" y="226" class="small" text-anchor="end">hands over after #42 merges</text>
+<rect x="24" y="454" width="160" height="56" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="476" r="5" fill="#3fb950"/><text x="56" y="481" class="name">GitHub</text><text x="38" y="502" class="small">main</text>
+<text x="24" y="572" class="label">WHEN TASKS OVERLAP, THE SHARED TASK BOARD DECIDES</text>
+<rect x="24" y="584" width="306" height="50" rx="8" fill="#211a3a" stroke="#6d5bd0"/>
+<circle cx="38" cy="600" r="3.5" fill="#a78bfa"/>
+<text x="50" y="605" class="gatehead">Same feature</text>
+<text x="50" y="624" class="how">the new task builds on the earlier one</text>
+<rect x="347" y="584" width="306" height="50" rx="8" fill="#211a3a" stroke="#6d5bd0"/>
+<circle cx="361" cy="600" r="3.5" fill="#a78bfa"/>
+<text x="373" y="605" class="gatehead">Same files</text>
+<text x="373" y="624" class="how">the earlier task merges first</text>
+<rect x="670" y="584" width="306" height="50" rx="8" fill="#211a3a" stroke="#6d5bd0"/>
+<circle cx="684" cy="600" r="3.5" fill="#a78bfa"/>
+<text x="696" y="605" class="gatehead">Same contract</text>
+<text x="696" y="624" class="how">a notice on the issue of the other task</text>
+<rect x="24" y="650" width="952" height="44" rx="8" fill="#161b22" stroke="#30363d"/>
+<text x="500" y="677" class="foot" text-anchor="middle">Nobody waits for an answer. Each task builds in its own work copy and merges as its own commit.</text>
+</svg>
