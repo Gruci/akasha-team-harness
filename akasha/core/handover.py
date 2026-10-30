@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from akasha.config import Check
 from akasha.core.task import Task
+from akasha.validators.runner import command
 
 
 def _named(name: str, checks: dict[str, Check]) -> str:
-    """The name of a check with its command, and with its folder when the command does not run at the top."""
+    """The name of a check with the command that ran, and with its folder when the command does not run at the top.
+    The handover runs the checks on this computer, so the command is the command of this computer (runner.command)."""
     check = checks.get(name)
     if check is None:
         return name                                   # the built-in check secrets has no command
-    return f"{name} (`{check.command}`" + (f" in `{check.cwd}`" if check.cwd else "") + ")"
+    return f"{name} (`{command(check)}`" + (f" in `{check.cwd}`" if check.cwd else "") + ")"
 
 
 def verification(task: Task, branch: str, checks: dict[str, Check]) -> str:

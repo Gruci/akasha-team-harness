@@ -1,9 +1,11 @@
 import unittest
+from unittest.mock import patch
 
 from akasha.config import Check, Team
 from akasha.core.handover import commit_body, pull_request_body
 from akasha.core.risk import assess, matches
 from akasha.core.task import Task, new_id
+from akasha.validators import runner
 from akasha.validators.briefing import MAX_LINES, examine
 
 TEAM = Team(risk={"high": ("**/auth/**", "**/migrations/**"), "medium": ("**/api/**",)},
@@ -109,6 +111,14 @@ class HandoverTests(unittest.TestCase):
             task, "main", checks))
         task.briefing = "\n".join(["The longest briefing."] * MAX_LINES)
         self.assertLess(len(commit_body(task, "main", checks).splitlines()), 40)
+
+    def test_verification_names_the_command_that_ran_on_this_computer(self):
+        task = Task(id="date-filter-0a1b", title="Add a date filter", workflow="small", stage="handover",
+                    checks={"build": "PASS"}, briefing=BRIEFING.strip())
+        checks = {"build": Check("npm run build", command_windows="npm.cmd run build")}
+        for windows, ran in ((True, "npm.cmd run build"), (False, "npm run build")):
+            with self.subTest(windows=windows), patch.object(runner, "WINDOWS", windows):
+                self.assertIn(f"passed on the latest main: build (`{ran}`).", commit_body(task, "main", checks))
 
 
 if __name__ == "__main__":

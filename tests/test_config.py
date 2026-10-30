@@ -1,10 +1,12 @@
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from akasha import config
 from akasha.core import stages
+from akasha.validators import runner
 
 
 class ConfigTests(unittest.TestCase):
@@ -61,11 +63,34 @@ class ConfigTests(unittest.TestCase):
         top = config.load(self.repo('[checks.static]\ncommand = "x"\ncwd = "."\n[checks]\nrun_all_when = []\n'))
         self.assertEqual((top.checks["static"].cwd, top.run_all_when), ("", ()))
 
+    def test_the_file_patterns_of_the_checks_get_the_form_of_git_paths(self):
+        # A pattern that matches no changed file turns a required check off: NOT_NEEDED is a pass.
+        team = config.load(self.repo(
+            "[checks]\nrequired = ['front']\nrun_all_when = ['.\\requirements.txt', './']\n"
+            "[checks.front]\ncommand = 'x'\ncwd = 'frontend'\n"
+            "only_when = ['./frontend/**', 'frontend\\src\\**', 'docs/', '**/*.ts']\n"))
+        self.assertEqual(team.checks["front"].only_when, ("frontend/**", "frontend/src/**", "docs/**", "**/*.ts"))
+        self.assertEqual(team.run_all_when, ("requirements.txt", "**"))
+        for pattern in ("./frontend/**", "frontend\\src\\**", "frontend/"):
+            with self.subTest(pattern=pattern):
+                check = config.load(self.repo(f"[checks.front]\ncommand = 'x'\nonly_when = ['{pattern}']\n"))
+                self.assertTrue(runner.needed(check.checks["front"], ["frontend/src/app.js"], ()))
+
+    def test_the_formats_of_1_0_0_still_load(self):
+        empty = config.load(self.repo('[checks]\nrequired = []\n'))     # no check is not a pass, so the default
+        self.assertEqual((empty.required_checks, empty.checks), (("secrets",), {}))
+        command = f"'\"{sys.executable}\" -c \"print(1)\"'"
+        root = self.repo(f'[checks]\nrequired = ["secrets", "setup"]\nsetup = {command}\n')
+        setup = config.load(root)
+        self.assertEqual(setup.checks["setup"], config.Check(setup.setup))     # 1.0.0 ran it as a check
+        self.assertEqual(runner.run(setup, root, []).status, {"secrets": "PASS", "setup": "PASS"})
+        self.assertEqual(config.load(self.repo(f"[checks]\nsetup = {command}\n")).checks, {})
+
     def test_incorrect_checks_are_refused(self):
         for text in ('[checks.secrets]\ncommand = "x"\n', '[checks.setup]\ncommand = "x"\n',
                      '[checks.required]\ncommand = "x"\n', '[checks.run_all_when]\ncommand = "x"\n',
                      '[checks]\nsecrets = "x"\n', '[checks]\nstatic = "python static_check.py"\n',
-                     '[checks]\ntests = ""\n', '[checks]\nlint = 1\n', '[checks]\nrequired = []\n',
+                     '[checks]\ntests = ""\n', '[checks]\nlint = 1\n', '[checks]\nrequired = [""]\n',
                      '[checks]\nrun_all_when = "akasha.toml"\n', '[checks."my check"]\ncommand = "x"\n',
                      '[checks.static]\ncwd = "src"\n', '[checks.static]\ncommand = "x"\nshell = "bash"\n',
                      '[checks.static]\ncommand = "x"\ncwd = "../other"\n',

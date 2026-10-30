@@ -87,15 +87,20 @@ def needed(check: Check, changed: list[str], run_all_when: tuple[str, ...]) -> b
     return not check.only_when or any(matches(path, pattern) for path in changed for pattern in patterns)
 
 
+def command(check: Check) -> str:
+    """The command of the check on this computer: on Windows, command_windows replaces the command."""
+    return check.command_windows if WINDOWS and check.command_windows else check.command
+
+
 def _check(name: str, check: Check, workcopy: Path, changed: list[str], team: Team) -> tuple[str, str]:
-    """Run one check of the team in its folder. On Windows, command_windows replaces the command."""
+    """Run one check of the team in its folder."""
     if not needed(check, changed, team.run_all_when):
         return "NOT_NEEDED", f"no changed file matches only_when: {', '.join(check.only_when)}"
     folder = workcopy / check.cwd
     if not folder.is_dir():
         return "FAIL", (f"the folder {check.cwd} of the check {name} does not exist. Correct cwd in [checks.{name}] "
                         f"of {CONFIG_FILE}, or add the folder")
-    return _command(check.command_windows if WINDOWS and check.command_windows else check.command, folder)
+    return _command(command(check), folder)
 
 
 def run(team: Team, workcopy: Path, changed: list[str]) -> Result:

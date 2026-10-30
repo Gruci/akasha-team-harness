@@ -128,6 +128,21 @@ def _text(value: object, where: str) -> str:
     return value
 
 
+def _pattern(pattern: str) -> str:
+    """A file pattern in the form of the paths that git gives: / between the parts and no leading ./. A pattern that
+    ends with / is each file in that folder, so frontend/ is frontend/**."""
+    pattern = pattern.replace("\\", "/")
+    while pattern.startswith("./"):
+        pattern = pattern[2:]
+    return pattern + "**" if not pattern or pattern.endswith("/") else pattern
+
+
+def _patterns(value: object, where: str) -> tuple[str, ...]:
+    """The file patterns that select the checks. A pattern that matches no changed file turns a check off, and
+    NOT_NEEDED is a pass, so the patterns get the form of the changed files."""
+    return tuple(_pattern(item) for item in _strings(value, where))
+
+
 def _relative(value: object, where: str, example: str, top: bool = True) -> str:
     """A folder in the repository, with / between the parts. "" is the top of the repository, unless `top` is False.
     An absolute path, a drive, and `..` are refused."""
@@ -164,7 +179,7 @@ def _check(name: str, value: object) -> Check:
     unknown = sorted(set(value) - set(CHECK_KEYS))
     if unknown:
         raise ConfigError(f"{CONFIG_FILE}: unknown key {unknown[0]} in {where} — use {', '.join(CHECK_KEYS)}")
-    only_when = _strings(value.get("only_when", []), f"{where} only_when")
+    only_when = _patterns(value.get("only_when", []), f"{where} only_when")
     if "only_when" in value and not only_when:
         raise ConfigError(f"{CONFIG_FILE}: {where} only_when needs one or more file patterns. To run the check for "
                           "each change, remove only_when")
@@ -181,12 +196,9 @@ def _checks(section: dict) -> dict[str, Check]:
 
 
 def _required(section: dict) -> tuple[str, ...]:
-    """The names of the required checks. The default is the built-in check secrets. An empty list is refused: no
-    check is not a pass, so each task would wait at its checks."""
-    required = _strings(section.get("required", ["secrets"]), "[checks] required")
-    if not required:
-        raise ConfigError(f'{CONFIG_FILE}: [checks] required needs one or more checks, for example ["secrets"]')
-    return required
+    """The names of the required checks. The default is the built-in check secrets. An empty list is the default
+    too: no check is not a pass (runner.passed), and Akasha 1.0.0 read the empty list, so it must still load."""
+    return _strings(section.get("required", ["secrets"]), "[checks] required") or ("secrets",)
 
 
 def _examine_keys(data: dict) -> None:
@@ -281,16 +293,19 @@ def _team(data: dict, flows: dict[str, Workflow]) -> Team:
     rules = data.get("server", {}).get("rules", "github")
     if rules not in SERVER_RULES:
         raise ConfigError(f"{CONFIG_FILE}: [server] rules must be {' or '.join(SERVER_RULES)}")
-    named = _checks(checks)
+    named, required = _checks(checks), _required(checks)
+    setup = _text(checks["setup"], "[checks] setup") if "setup" in checks else ""
+    if setup and "setup" in required:                 # Akasha 1.0.0 ran setup as a check when required named it
+        named["setup"] = Check(setup)
     return Team(
         developers=_strings(roles.get("developers", []), "[roles] developers"),
         administrators=_strings(roles.get("administrators", []), "[roles] administrators"),
         risk={level: _strings(globs, f"[risk] {level}") for level, globs in risk.items()},
         approval={level: _strings(holders, f"[approval] {level}") for level, holders in approval.items()},
-        required_checks=_required(checks),
+        required_checks=required,
         checks=named,
-        setup=_text(checks["setup"], "[checks] setup") if "setup" in checks else "",
-        run_all_when=_strings(checks["run_all_when"], "[checks] run_all_when") if "run_all_when" in checks
+        setup=setup,
+        run_all_when=_patterns(checks["run_all_when"], "[checks] run_all_when") if "run_all_when" in checks
         else RUN_ALL_WHEN,
         preview={name: _text(value, f"[preview] {name}") for name, value in preview.items()},
         contracts={name: _strings(globs, f"[contracts] {name}") for name, globs in contracts.items()},
