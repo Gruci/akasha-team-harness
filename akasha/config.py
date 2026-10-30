@@ -9,6 +9,7 @@ from pathlib import Path
 CONFIG_FILE = "akasha.toml"
 STATE_DIR = Path(".akasha") / "state"
 TEAM_WORKFLOWS = Path(".akasha") / "workflows"
+TEAM_CONTEXT = Path(".akasha") / "context"           # the decisions and lessons of the team, as Markdown files
 BUILT_IN_WORKFLOWS = Path(__file__).parent / "workflows"
 
 RISK_LEVELS = ("low", "medium", "high")
@@ -21,7 +22,7 @@ _KEYS: dict[str, set[str] | None] = {
     "roles": {"developers", "administrators"},
     "risk": {"high", "medium"},
     "approval": {"high", "medium"},
-    "checks": {"required", "tests", "lint"},
+    "checks": {"required", "setup", "tests", "lint"},
     "preview": {"command", "database"},
     "contracts": None,                       # the team gives the contract names
     "workflows": {"enabled"},
@@ -154,7 +155,8 @@ def load(root: Path, path: Path | None = None) -> Team:
         approval={level: _strings(holders, f"[approval] {level}") for level, holders in approval.items()}
         if approval else {"high": ("developer",)},
         required_checks=_strings(checks.get("required", ["secrets"]), "[checks] required"),
-        commands={name: _text(checks[name], f"[checks] {name}") for name in ("tests", "lint") if name in checks},
+        commands={name: _text(checks[name], f"[checks] {name}") for name in ("setup", "tests", "lint")
+                  if name in checks},
         preview={name: _text(value, f"[preview] {name}") for name, value in preview.items()},
         contracts={name: _strings(globs, f"[contracts] {name}") for name, globs in contracts.items()},
         workflows={name: flows[name] for name in enabled},

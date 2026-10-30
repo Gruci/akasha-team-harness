@@ -1,4 +1,5 @@
 name = "typescript"
 extensions = [".ts", ".tsx", ".js", ".jsx"]
+setup = "npm ci"
 tests = "npm test --silent"
 lint = "npx eslint ."

@@ -16,13 +16,15 @@ class Pack:
     extensions: tuple[str, ...]
     tests: str
     lint: str
+    setup: str          # the usual command that installs the dependencies in a new copy
 
 
 def packs() -> list[Pack]:
     found = []
     for path in sorted(PACKS.glob("*.toml")):
         data = tomllib.loads(path.read_text(encoding="utf-8"))
-        found.append(Pack(data["name"], tuple(data["extensions"]), data.get("tests", ""), data.get("lint", "")))
+        found.append(Pack(data["name"], tuple(data["extensions"]), data.get("tests", ""), data.get("lint", ""),
+                          data.get("setup", "")))
     return found
 
 

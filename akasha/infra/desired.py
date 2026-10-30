@@ -26,19 +26,24 @@ def protection() -> dict:
     }
 
 
+def _owner(name: str) -> str:
+    """A CODEOWNERS owner: @user, @org/team, or an email address. A plain GitHub name gets the @."""
+    return name if "@" in name else f"@{name}"
+
+
 def _holders(team: Team, roles: tuple[str, ...]) -> list[str]:
     people = {"developer": team.developers, "administrator": team.administrators}
-    return sorted({person for role in roles for person in people.get(role, ())})
+    return sorted({_owner(person) for role in roles for person in people.get(role, ())})
 
 
 def codeowners(team: Team) -> str:
     """CODEOWNERS from the risk rules and the approval rules. The team rules belong to the administrators."""
-    lines = ["# Akasha writes this file from akasha.toml. Change akasha.toml, then run: python -m akasha infra"]
+    lines = ["# Akasha writes this file from akasha.toml. To change it, change akasha.toml and set up Akasha again."]
     for level in ("medium", "high"):
         owners = _holders(team, team.approval.get(level, ()))
         if owners:
             lines += [f"{pattern} {' '.join(owners)}" for pattern in team.risk.get(level, ())]
-    rules = sorted(team.administrators)
+    rules = sorted(_owner(person) for person in team.administrators)
     if rules:
         lines += [f"/{CONFIG_FILE} {' '.join(rules)}", f"/.akasha/ {' '.join(rules)}", f"/.github/ {' '.join(rules)}"]
     return "\n".join(lines) + "\n"

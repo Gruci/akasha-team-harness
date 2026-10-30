@@ -52,6 +52,9 @@ def session_start(root: Path) -> int:
         return 0
     open_tasks = [task for task in tasks.all_tasks(root) if task.status == "open"]
     lines = ["[AKASHA] Do each change as an Akasha task. The akasha-request skill gives the procedure.", notice]
+    context = sorted(path.relative_to(root).as_posix() for path in (root / config.TEAM_CONTEXT).glob("*.md"))
+    if context:
+        lines.append(f"[AKASHA] Read the team context before you write a specification: {', '.join(context)}")
     lines += [f"[AKASHA] Open task {task.id}: stage {task.stage}, risk {task.risk}, {task.title}" for task in open_tasks]
     print("\n".join(lines))
     return 0

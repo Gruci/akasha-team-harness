@@ -21,6 +21,8 @@ def _team_config(root: Path) -> str:
              "[checks]"]
     required = ["secrets"] + (["tests"] if packs and packs[0].tests else [])
     lines.append("required = [" + ", ".join(f'"{name}"' for name in required) + "]")
+    if packs and packs[0].setup:
+        lines.append(f'# setup = "{packs[0].setup}"    # installs the dependencies in a work copy and in CI')
     if packs and packs[0].tests:
         lines.append(f'tests = "{packs[0].tests}"')
     if packs and packs[0].lint:

@@ -16,6 +16,7 @@ The session start notice gives the Akasha command. This skill writes it as `akas
    - Which GitHub names are the administrators?
    - Which folders contain high-risk code, for example data changes, permissions, or payments?
    - Which command starts a preview of the product?
+   - Which command installs the dependencies of the project in a new copy?
    - Which command runs the tests?
 4. Write each answer into `akasha.toml`.
 5. Run `akasha infra`. Tell the user each setting that is not correct.

@@ -14,6 +14,8 @@ class InfraTests(unittest.TestCase):
         self.assertIn("**/api/** @admin @lead", lines)
         self.assertIn("/akasha.toml @admin", lines)
         self.assertIn("/.github/ @admin", lines)
+        plain = Team(developers=("lead",), risk={"high": ("**/auth/**",)})
+        self.assertIn("**/auth/** @lead", desired.codeowners(plain).splitlines())
 
     def test_files_and_protection(self):
         files = desired.files(Team())

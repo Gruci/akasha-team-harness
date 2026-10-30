@@ -106,6 +106,14 @@ class FlowTests(unittest.TestCase):
         pushed = workcopy.git(remote, "rev-parse", task.branch).stdout
         self.assertEqual(pushed, workcopy.git(Path(task.workcopy), "rev-parse", "HEAD").stdout)
 
+    def test_the_setup_command_runs_in_a_new_copy_and_in_ci(self):
+        root = make_repo(PASS)
+        with (root / "akasha.toml").open("a", encoding="utf-8") as file:
+            file.write(f"setup = '{FAIL}'\n")
+        self.assertEqual(flow.ci_check(root, None, "HEAD").status, {"setup": "FAIL"})
+        task, _ = flow.start(root, "Change the search", "ops-member", workflow="small")
+        self.assertIn("setup command failed", task.notes[0])
+
     def test_a_wider_scope_finds_overlaps(self):
         root = make_repo(PASS)
         first, _ = flow.start(root, "Change the search", "ops-a", scope=["src/search/**"])
@@ -154,6 +162,15 @@ class HookTests(unittest.TestCase):
             self.assertEqual(hooks.main("claude", "SessionStart"), 0)
         self.assertIn("akasha-setup", output.getvalue())
         self.assertIn("Akasha command:", output.getvalue())
+
+    def test_session_start_shows_the_team_context(self):
+        root = make_repo(PASS)
+        (root / ".akasha" / "context").mkdir(parents=True)
+        (root / ".akasha" / "context" / "decisions.md").write_text("# Decisions\n", encoding="utf-8")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            hooks.session_start(root)
+        self.assertIn(".akasha/context/decisions.md", output.getvalue())
 
 
 if __name__ == "__main__":

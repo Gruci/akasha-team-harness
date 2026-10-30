@@ -1,4 +1,5 @@
 name = "go"
 extensions = [".go"]
+setup = "go mod download"
 tests = "go test ./..."
 lint = "go vet ./..."

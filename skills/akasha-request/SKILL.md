@@ -35,7 +35,8 @@ Do not ask the requester technical questions.
 
 ## Stage 2 — Specification and risk
 
-1. Find the files that the change needs. Record them: `akasha specify <task> --scope <file patterns>`.
+1. Read the team context files that the session start notice shows. Find the files that the change needs.
+   Record them: `akasha specify <task> --scope <file patterns>`.
    Akasha sets the risk level from these files and shows each overlap with other tasks.
 2. Run `akasha show <task>`. Read the risk level and the risk reasons.
 3. Write a short specification for the requester in simple words. Tell what changes, what does not change, and the risk level.

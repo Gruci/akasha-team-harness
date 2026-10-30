@@ -24,7 +24,7 @@ def _publish(root: Path, task: Task) -> None:
 def _examine_role(team: Team, role: str, person: str) -> None:
     """A developer or an administrator must be a person that akasha.toml names for that role."""
     names = {"developer": team.developers, "administrator": team.administrators}.get(role, ())
-    if names and person not in names:
+    if names and person.lstrip("@") not in {name.lstrip("@") for name in names}:
         raise ValueError(f"{person} is not a {role} in {config.CONFIG_FILE} — use {', '.join(names)}")
 
 
@@ -40,6 +40,14 @@ def _tidy(root: Path) -> None:
             except RuntimeError:
                 continue                  # the work copy has changes that are not saved; the next request tries again
             tasks.save(root, task)
+
+
+def _open_workcopy(root: Path, team: Team, task: Task) -> None:
+    """Make the work copy and run the setup command of the team in it. A failed setup becomes a note."""
+    workcopy.create(root, task)
+    status, detail = runner.prepare(team, Path(task.workcopy))
+    if status != "PASS":
+        task.notes.append(f"the setup command failed in the work copy: {detail[-300:]}")
 
 
 def outside_scope(task: Task, changed: list[str]) -> tuple[str, ...]:
@@ -69,7 +77,7 @@ def start(root: Path, title: str, requester: str, workflow: str = "feature", fea
     others, _source = board.open_tasks(root)
     found = overlap.find(task, others)
     if task.stage == "build":
-        workcopy.create(root, task)
+        _open_workcopy(root, team, task)
     _publish(root, task)
     return task, found
 
@@ -90,7 +98,7 @@ def advance(root: Path, task_id: str) -> list[str]:
     measured = context(root, team, task)
     blocked = stages.advance(task, team.workflows[task.workflow], measured)
     if not blocked and task.stage == "build" and not task.workcopy:
-        workcopy.create(root, task)
+        _open_workcopy(root, team, task)
     _publish(root, task)
     missing = " and a ".join(role for role in measured.approval_roles if role not in task.approvals)
     return [f"a {missing} must approve the {task.risk} risk level" if name == "risk_approvals"
@@ -166,6 +174,11 @@ def ci_check(root: Path, config_path: Path | None, base: str) -> runner.Result:
     """The server check: the rules come from config_path, which CI takes from the default branch."""
     team = config.load(root, config_path)
     diff = workcopy.git(root, "diff", "--name-only", f"{base}...HEAD")
+    if diff.returncode:
+        raise RuntimeError(f"git diff against {base} failed: {diff.stderr.strip()[:300]}")
+    status, detail = runner.prepare(team, root)
+    if status != "PASS":
+        return runner.Result({"setup": status}, {"setup": detail})
     return runner.run(team, root, [line for line in diff.stdout.splitlines() if line.strip()])
 
 

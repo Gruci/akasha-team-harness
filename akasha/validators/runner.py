@@ -41,6 +41,11 @@ def _command(command: str, workcopy: Path) -> tuple[str, str]:
     return ("PASS" if done.returncode == 0 else "FAIL"), output[-3000:]
 
 
+def prepare(team: Team, folder: Path) -> tuple[str, str]:
+    """Run the setup command of the team in a new copy of the repository, for example to install dependencies."""
+    return _command(team.commands["setup"], folder) if "setup" in team.commands else ("PASS", "")
+
+
 def run(team: Team, workcopy: Path, changed: list[str]) -> Result:
     """A check with no command in the team config is SKIP. SKIP is not a pass for a required check."""
     result = Result()

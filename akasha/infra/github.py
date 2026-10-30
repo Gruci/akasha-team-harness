@@ -40,7 +40,8 @@ def status(root: Path) -> list[str]:
 def apply(root: Path, approved_by: str) -> list[str]:
     """Write the repository files and set branch protection. An administrator must approve first."""
     team = _team(root)
-    if not approved_by or (team.administrators and approved_by not in team.administrators):
+    named = {person.lstrip("@") for person in team.administrators}
+    if not approved_by or (named and approved_by.lstrip("@") not in named):
         raise PermissionError("an administrator that akasha.toml names must approve a change to the repository settings")
     for target, text in desired.files(team).items():
         path = root / target
