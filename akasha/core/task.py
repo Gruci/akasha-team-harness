@@ -55,9 +55,16 @@ def _folder(root: Path) -> Path:
 
 
 def new_id(title: str) -> str:
-    """A short name from the title, with four random characters so that two tasks never share a name."""
+    """A short name from the title, with eight random characters. The name is also a branch name and a folder name,
+    so it keeps only a to z, 0 to 9, and hyphens: a title without these letters, for example in Korean, gives
+    `task-<random>`. flow makes sure that no other task in the repository has the name."""
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:32].strip("-") or "task"
-    return f"{slug}-{secrets.token_hex(2)}"
+    return f"{slug}-{secrets.token_hex(4)}"
+
+
+def exists(root: Path, task_id: str) -> bool:
+    """True when this computer has a task file with this id."""
+    return (_folder(root) / f"{task_id}.json").is_file()
 
 
 def save(root: Path, task: Task) -> None:

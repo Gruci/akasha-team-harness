@@ -95,5 +95,6 @@ The agent engine runs these commands. People do not have to remember them. The s
 
 - Python 3.11 or later, and git.
 - The GitHub command line `gh`, logged in with an account that can write to the repository.
+- The git remote `origin` is the team repository on GitHub, not a fork. Akasha gives `gh` the repository of `origin`, so that the branches, the issues, and the pull requests go to the same repository.
 
-> **NOTE:** Without GitHub, the shared task board holds only the tasks on one computer, and the handover cannot open a pull request.
+> **NOTE:** Without GitHub, the shared task board holds only the tasks on one computer, and the handover cannot open a pull request. When `origin` is on GitHub and `gh` cannot read or write the board, the commands stop.

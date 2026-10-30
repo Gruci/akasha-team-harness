@@ -11,7 +11,7 @@ from pathlib import Path
 from akasha import config
 from akasha.core.workcopy import git
 from akasha.infra import desired, server
-from akasha.repo import gh
+from akasha.repo import gh, gh_repo
 
 SERVER_STATE = config.STATE_DIR / "server.json"      # the last examination of the server rules on this computer
 _NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no branch protection for private repositories
@@ -19,7 +19,8 @@ _NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no bran
 
 def repository(root: Path) -> tuple[str, str] | None:
     """(owner/name, default branch) of the GitHub repository, or None without GitHub."""
-    viewed = gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
+    named = gh_repo(root)                             # gh repo view does not read GH_REPO
+    viewed = gh(root, "repo", "view", *([named] if named else []), "--json", "nameWithOwner,defaultBranchRef")
     if viewed.returncode:
         return None
     data = json.loads(viewed.stdout)

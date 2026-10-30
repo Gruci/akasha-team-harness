@@ -31,8 +31,31 @@ def _find(root: Path, task_id: str) -> Task | None:
         return board.find(root, task_id)
 
 
+def _taken(root: Path, task_id: str) -> bool:
+    """True when a task file, a branch on this computer or on the server, or an issue on the board has this id."""
+    branches = [f"refs/heads/{prefix}{task_id}" for prefix in (workcopy.BRANCH_PREFIX, workcopy.WIP_PREFIX)]
+    if tasks.exists(root, task_id) or workcopy.git(root, "rev-parse", "--verify", "-q", branches[0]).returncode == 0:
+        return True
+    if board.find(root, task_id) is not None:
+        return True
+    return bool(workcopy.git(root, "ls-remote", "origin", *branches).stdout.strip())    # without a server: empty
+
+
+def _unique_id(root: Path, title: str) -> str:
+    """A new task id that no other task in the repository has. Two tasks with one id share one branch, and the
+    handover of the new task can find the merged pull request of the old task."""
+    for _ in range(5):
+        candidate = tasks.new_id(title)
+        if not _taken(root, candidate):
+            return candidate
+    raise RuntimeError("Akasha made five task ids, and another task has each of them. Do the request again")
+
+
 def _compare(root: Path, task: Task) -> list[overlap.Overlap]:
-    """Compare the task with the tasks of all requesters. Write each overlap also on the issue of the other task."""
+    """Compare the task with the tasks of all requesters. Write each overlap also on the issue of the other task.
+
+    When the board is on GitHub and gh cannot read it, the comparison stops with BoardError: a comparison with only
+    the tasks on this computer would find no overlap with the tasks of other people."""
     others, _source = board.read(root)
     found = overlap.find(task, others)
     addresses = {other.id: other.board for other in others if other.board}
@@ -69,7 +92,7 @@ def _start_ref(root: Path, task: Task) -> str:
     """Where the work copy starts: the branch of the earlier task when this task builds on one, else the latest
     default branch from the server. Without a server, the current commit."""
     if task.builds_on:
-        branch = f"akasha/{task.builds_on}"
+        branch = f"{workcopy.BRANCH_PREFIX}{task.builds_on}"
         workcopy.git(root, "fetch", "-q", "origin", branch)
         for ref in (branch, f"origin/{branch}"):              # this computer first, then the server
             if workcopy.git(root, "rev-parse", "--verify", "-q", ref).returncode == 0:
@@ -119,7 +142,7 @@ def start(root: Path, title: str, requester: str, workflow: str = "feature", fea
     if builds_on and _find(root, builds_on) is None:
         raise ValueError(f"no task {builds_on} on this computer or on the shared task board")
     flow = team.workflows[workflow]
-    task = Task(id=tasks.new_id(title), title=title, workflow=workflow, stage=flow.stages[0].id,
+    task = Task(id=_unique_id(root, title), title=title, workflow=workflow, stage=flow.stages[0].id,
                 requester=requester, feature=feature, scope=list(scope or []), contracts=list(contracts or []),
                 builds_on=builds_on)
     _raise_risk(task, task.scope, team)
@@ -324,7 +347,7 @@ def _examine_base(root: Path, task: Task) -> None:
     them."""
     if not task.builds_on:
         return
-    listed = gh(root, "pr", "list", "--head", f"akasha/{task.builds_on}", "--state", "merged",
+    listed = gh(root, "pr", "list", "--head", f"{workcopy.BRANCH_PREFIX}{task.builds_on}", "--state", "merged",
                 "--json", "number", "--jq", "length")
     if listed.returncode or listed.stdout.strip() in ("", "0"):
         raise RuntimeError(f"the task builds on {task.builds_on}, which did not merge yet. Hand over after it merges")

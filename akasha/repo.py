@@ -1,10 +1,25 @@
-"""Find the main checkout of the repository, also from inside the work copy of a task, and run the GitHub command line."""
+"""Find the main checkout of the repository, also from inside the work copy of a task, run the GitHub command line,
+and tell who and where this person is."""
 
 from __future__ import annotations
 
 import json
+import os
+import re
+import secrets
 import subprocess
+import time
 from pathlib import Path
+
+from akasha.config import STATE_DIR
+
+# The GitHub repository in an address of origin: https://github.com/a/b.git, git@github.com:a/b.git, ssh://...
+_GITHUB = re.compile(r"^(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?(?:www\.|ssh\.)?github\.com(?::\d+)?[:/]+"
+                     r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/*$", re.I)
+_ME_FILE = STATE_DIR / "me.json"               # the GitHub name of this person, for the hooks
+_MACHINE_FILE = STATE_DIR / "machine.json"     # the random mark of this copy of the repository
+_ME_AGE = 3600                                 # one hour, in seconds
+_logins: dict[Path, str] = {}                  # one question to gh in each process
 
 
 def main_root(cwd: Path) -> Path | None:
@@ -16,10 +31,87 @@ def main_root(cwd: Path) -> Path | None:
     return Path(found.stdout.strip()).parent
 
 
-def gh(root: Path, *args: str, payload: dict | None = None) -> subprocess.CompletedProcess:
-    """Run the GitHub command line. When gh is missing or does not answer, the return code is not zero."""
+def github_slug(address: str) -> str:
+    """owner/name when the git address is a GitHub repository, else ""."""
+    found = _GITHUB.match(address.strip())
+    return f"{found.group(1)}/{found.group(2)}" if found else ""
+
+
+def origin(root: Path) -> str:
+    """owner/name of the GitHub repository of the git remote origin, or "" when origin is not on GitHub."""
+    try:
+        found = subprocess.run(["git", "remote", "get-url", "origin"], cwd=root, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return github_slug(found.stdout) if found.returncode == 0 else ""
+
+
+def gh_repo(root: Path) -> str:
+    """The repository that gh uses: the GH_REPO that the person set, else the repository of origin, else ""."""
+    return os.environ.get("GH_REPO") or origin(root)
+
+
+def gh(root: Path, *args: str, payload: dict | None = None, timeout: float = 60) -> subprocess.CompletedProcess:
+    """Run the GitHub command line. When gh is missing or does not answer, the return code is not zero.
+
+    gh gets the repository of origin, so that gh and git always use the same repository. Without this, gh can
+    select another remote, for example upstream, and the issues and pull requests go to another repository than the
+    branches. A GH_REPO that the person set stays. `gh repo view` does not read GH_REPO, so its callers give the
+    repository from gh_repo."""
+    env = None
+    if not os.environ.get("GH_REPO") and (slug := origin(root)):
+        env = {**os.environ, "GH_REPO": slug}
     try:
         return subprocess.run(["gh", *args], cwd=root, input=json.dumps(payload) if payload is not None else None,
-                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+                              env=env)
     except (OSError, subprocess.TimeoutExpired) as error:
         return subprocess.CompletedProcess(["gh", *args], 127, "", str(error))
+
+
+def me(root: Path) -> str:
+    """The GitHub name of the person on this computer in lower case, or "" when gh does not answer.
+
+    Akasha asks gh once in each process. Each hook is a new process, so Akasha also keeps the name for one hour."""
+    if root in _logins:
+        return _logins[root]
+    path = root / _ME_FILE
+    try:
+        known = json.loads(path.read_text(encoding="utf-8"))
+        login = str(known["login"]).lower() if time.time() - float(known["checked"]) < _ME_AGE else ""
+    except (OSError, ValueError, KeyError, TypeError):
+        login = ""
+    if not login:
+        asked = gh(root, "api", "user", "--jq", ".login")
+        login = asked.stdout.strip().lower() if asked.returncode == 0 else ""
+        if login:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"login": login, "checked": time.time()}), encoding="utf-8")
+    _logins[root] = login
+    return login
+
+
+def host(root: Path) -> str:
+    """The random mark of this copy of the repository on this computer. Akasha makes it at the first call."""
+    path = root / _MACHINE_FILE
+    missing = False
+    try:
+        mark = json.loads(path.read_text(encoding="utf-8")).get("host")
+    except FileNotFoundError:
+        mark, missing = "", True
+    except (OSError, ValueError, AttributeError):
+        mark = ""                                     # a damaged file gets a new mark
+    if isinstance(mark, str) and mark:
+        return mark
+    made = secrets.token_hex(8)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if missing:
+        try:
+            with path.open("x", encoding="utf-8") as file:    # two processes at the same time keep one mark
+                file.write(json.dumps({"host": made}))
+            return made
+        except FileExistsError:
+            return host(root)
+    path.write_text(json.dumps({"host": made}), encoding="utf-8")
+    return made

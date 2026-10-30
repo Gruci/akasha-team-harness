@@ -10,10 +10,12 @@ from unittest.mock import patch
 
 from akasha import __main__ as command_line
 from akasha import config, flow, setup
+from akasha.coordinator import board
 from akasha.core import workcopy
 from akasha.core import task as tasks
 from akasha.engine import hooks
 from akasha.infra import desired, github
+from tests.test_coordinator import FakeBoard
 from tests.test_risk import BRIEFING
 
 PASS = f'"{sys.executable}" -c "raise SystemExit(0)"'
@@ -255,6 +257,43 @@ class FlowTests(unittest.TestCase):
         self.assertEqual([(item.kind, item.other) for item in found], [("order", first.id)])
         flow.cancel(root, first.id, "ops-a")
         self.assertEqual(flow.specify(root, second.id, [], [], False, ["src/search/more.py"])[1], [])
+
+    def test_task_ids_are_unique_in_the_repository(self):
+        self.assertRegex(tasks.new_id("날짜 필터"), r"^task-[0-9a-f]{8}$")
+        root = make_repo(PASS)
+        add_remote(root)
+        tasks.save(root, tasks.Task(id="x-1", title="x", workflow="feature", stage="request"))
+        workcopy.git(root, "branch", "akasha/x-2")
+        workcopy.git(root, "push", "-q", "origin", "HEAD:refs/heads/akasha-wip/x-4", "HEAD:refs/heads/akasha/x-6")
+        fake = FakeBoard()
+        fake.add(board.body(tasks.Task(id="x-3", title="x", workflow="feature", stage="request", status="done")),
+                 state="CLOSED")
+        with patch("akasha.coordinator.board.gh", fake), \
+                patch("akasha.core.task.new_id", side_effect=["x-1", "x-2", "x-3", "x-4", "x-5"]):
+            task, _ = flow.start(root, "x", "ops-a")
+        self.assertEqual(task.id, "x-5")
+        with patch("akasha.coordinator.board.gh", fake), \
+                patch("akasha.core.task.new_id", side_effect=["x-1", "x-2", "x-3", "x-4", "x-6"]), \
+                self.assertRaises(RuntimeError) as stopped:
+            flow.start(root, "x", "ops-a")
+        self.assertIn("five task ids", str(stopped.exception))       # the last one is a branch on the server
+
+    def test_a_board_on_github_that_fails_stops_the_request(self):
+        root = make_repo(PASS)
+        with patch("akasha.coordinator.board.gh", FakeBoard(broken=True)):
+            first, _ = flow.start(root, "Add a date filter", "ops-a")     # without GitHub, the board is local
+            self.assertEqual([item.id for item in board.read(root)[0]], [first.id])
+            workcopy.git(root, "remote", "add", "origin", "https://github.com/team/app.git")
+            with self.assertRaises(board.BoardError) as stopped:
+                flow.start(root, "Export the filtered list", "ops-b")
+            self.assertIn("gh auth status", str(stopped.exception))
+            with self.assertRaises(board.BoardError):
+                flow.advance(root, first.id)
+            output = io.StringIO()
+            with patch("akasha.__main__.main_root", return_value=root), redirect_stderr(output):
+                self.assertEqual(command_line.run(["board"]), 2)
+            self.assertIn("cannot read the shared task board", output.getvalue())
+        self.assertEqual([item.id for item in tasks.all_tasks(root)], [first.id])
 
     def test_a_gate_needs_a_person_from_the_team_config(self):
         root = make_repo(PASS)

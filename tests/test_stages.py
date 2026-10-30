@@ -4,7 +4,7 @@ from pathlib import Path
 
 from akasha import config
 from akasha.core import stages
-from akasha.core.task import Task, all_tasks, load, new_id, save
+from akasha.core.task import Task, all_tasks, exists, load, new_id, save
 
 
 def feature() -> config.Workflow:
@@ -74,8 +74,10 @@ class StageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             task = Task(id=new_id("Add a date filter!"), title="Add a date filter", workflow="feature", stage="request")
-            self.assertRegex(task.id, r"^add-a-date-filter-[0-9a-f]{4}$")
+            self.assertRegex(task.id, r"^add-a-date-filter-[0-9a-f]{8}$")
+            self.assertFalse(exists(root, task.id))
             save(root, task)
+            self.assertTrue(exists(root, task.id))
             self.assertEqual(load(root, task.id), task)
             self.assertEqual([item.id for item in all_tasks(root)], [task.id])
             with self.assertRaises(LookupError):

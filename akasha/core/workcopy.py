@@ -9,6 +9,8 @@ from pathlib import Path
 from akasha.core.task import Task
 
 WORK_DIR = Path(".akasha") / "work"
+BRANCH_PREFIX = "akasha/"                              # the branch of each task: akasha/<task>
+WIP_PREFIX = "akasha-wip/"                             # the work that a person hands off before the checks pass
 _QUIET = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}     # git must fail, not wait for a password that nobody types
 
 
@@ -34,7 +36,7 @@ def create(root: Path, task: Task, start: str = "HEAD") -> Path:
         raise RuntimeError("the repository has no commit — make the first commit before a task starts"
                            if start == "HEAD" else f"git cannot find {start}")
     path = root / WORK_DIR / task.id
-    branch = f"akasha/{task.id}"
+    branch = f"{BRANCH_PREFIX}{task.id}"
     base = head.stdout.strip()
     if git(root, "rev-parse", "--verify", "-q", branch).returncode == 0:
         base = git(root, "merge-base", base, branch).stdout.strip() or base

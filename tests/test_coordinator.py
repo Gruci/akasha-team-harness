@@ -1,11 +1,71 @@
+import json
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from akasha.coordinator import board, overlap, resources
+from akasha.core import task as tasks
 from akasha.core.task import Task
+
+NOT_LOGGED_IN = "To get started with GitHub CLI, please run:  gh auth login"
 
 
 def task(task_id: str, **values) -> Task:
     return Task(id=task_id, title=task_id, workflow="feature", stage="request", **values)
+
+
+def answer(stdout: object = "", code: int = 0, stderr: str = "") -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess([], code, stdout if isinstance(stdout, str) else json.dumps(stdout), stderr)
+
+
+class FakeBoard:
+    """GitHub issues in memory, for the gh calls of the board. It records each call. A broken board fails each call,
+    as gh does when nobody logged in."""
+
+    def __init__(self, broken: bool = False, login: str = "dev-a"):
+        self.broken, self.login = broken, login
+        self.issues: dict[str, dict] = {}
+        self.calls: list[tuple[str, ...]] = []
+
+    def add(self, text: str, state: str = "OPEN", comments: list[dict] | None = None) -> str:
+        address = f"https://github.com/team/app/issues/{len(self.issues) + 1}"
+        self.issues[address] = {"body": text, "state": state, "comments": comments or []}
+        return address
+
+    def __call__(self, root, *args, payload=None, timeout=60):
+        self.calls.append(args)
+        if self.broken:
+            return answer("", 1, NOT_LOGGED_IN)
+        value = lambda name: args[args.index(name) + 1] if name in args else ""     # noqa: E731
+        verb = args[:2]
+        if verb == ("label", "create"):
+            return answer()
+        if verb == ("issue", "create"):
+            return answer(self.add(value("--body")) + "\n")
+        if verb == ("issue", "list"):
+            words = value("--search").replace(" in:body", "")
+            found = [{"body": issue["body"], "url": address} for address, issue in self.issues.items()
+                     if (value("--state") == "all" or issue["state"] == "OPEN") and words in issue["body"]]
+            return answer(found)
+        issue = self.issues.get(args[2] if len(args) > 2 else "")
+        if issue is None:
+            return answer("", 1, "GraphQL: Could not resolve to an issue or pull request")
+        if verb == ("issue", "edit"):
+            issue["body"] = value("--body")
+        elif verb == ("issue", "close"):
+            issue["state"] = "CLOSED"
+        elif verb == ("issue", "comment"):
+            number = 100 + sum(len(item["comments"]) for item in self.issues.values())
+            issue["comments"].append({"author": {"login": self.login}, "authorAssociation": "MEMBER",
+                                      "body": value("--body"), "createdAt": "2026-10-31T00:00:00Z",
+                                      "includesCreatedEdit": False, "isMinimized": False,
+                                      "url": f"{args[2]}#issuecomment-{number}"})
+        elif verb == ("issue", "view"):
+            fields = value("--json").split(",")
+            return answer({name: issue[name] if name != "url" else args[2] for name in fields})
+        return answer()
 
 
 class OverlapTests(unittest.TestCase):
@@ -44,6 +104,69 @@ class BoardTests(unittest.TestCase):
                          ("date-filter-0a1b", "customer-search-filter", ["src/search/**"], "medium"))
         self.assertIsNone(board.parse("an issue without a block"))
         self.assertIsNone(board.parse("```akasha-scope\nnot json\n```"))
+
+    def test_find_takes_only_the_issue_with_exactly_the_id(self):
+        root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
+        fake = FakeBoard()
+        fake.add(board.body(task("date-filter-0a1b2c3d-old")))
+        closed = fake.add(board.body(task("date-filter-0a1b2c3d", status="done")), state="CLOSED")
+        with patch("akasha.coordinator.board.gh", fake):
+            found = board.find(root, "date-filter-0a1b2c3d")
+            self.assertEqual((found.id, found.board), ("date-filter-0a1b2c3d", closed))
+            searched = fake.calls[-1]
+            self.assertEqual(searched[searched.index("--search") + 1], "date-filter-0a1b2c3d in:body")
+            self.assertEqual(searched[searched.index("--state") + 1], "all")
+            self.assertIsNone(board.find(root, "date-filter-9f9f9f9f"))
+            tasks.save(root, task("date-filter-0a1b2c3d", board=closed))      # this computer knows the issue
+            fake.calls.clear()
+            self.assertEqual(board.find(root, "date-filter-0a1b2c3d").board, closed)
+        self.assertEqual(fake.calls, [("issue", "view", closed, "--json", "body,url")])
+
+    def test_a_board_on_github_that_fails_stops_the_command(self):
+        root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
+        tasks.save(root, task("date-filter-0a1b2c3d"))
+        with patch("akasha.coordinator.board.gh", FakeBoard(broken=True)):
+            self.assertEqual(board.read(root)[1], "local")                 # without GitHub, as before
+            self.assertIsNone(board.find(root, "date-filter-0a1b2c3d"))
+            self.assertEqual(board.publish(root, task("date-filter-0a1b2c3d")), "")
+            with patch("akasha.coordinator.board.available", return_value=True):
+                for action in (lambda: board.read(root), lambda: board.find(root, "date-filter-0a1b2c3d"),
+                               lambda: board.publish(root, task("date-filter-0a1b2c3d")),
+                               lambda: board.comments(root, "https://github.com/team/app/issues/1")):
+                    with self.assertRaises(board.BoardError) as stopped:
+                        action()
+                    self.assertIn("gh auth status", str(stopped.exception))
+                    self.assertIn("gh auth login", str(stopped.exception))
+
+    def test_publish_examines_each_write(self):
+        root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
+        fake = FakeBoard()
+        mine = task("date-filter-0a1b2c3d")
+        with patch("akasha.coordinator.board.gh", fake), \
+                patch("akasha.coordinator.board.available", return_value=True):
+            address = board.publish(root, mine)
+            self.assertEqual(board.parse(fake.issues[address]["body"]).id, mine.id)
+            mine.status = "cancelled"
+            board.publish(root, mine)
+            self.assertEqual(fake.issues[address]["state"], "CLOSED")
+            del fake.issues[address]                                       # a person deleted the issue
+            with self.assertRaises(board.BoardError):
+                board.publish(root, mine)
+
+    def test_comments_tell_the_number_the_account_and_the_edits(self):
+        root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
+        fake = FakeBoard()
+        address = fake.add("body", comments=[
+            {"author": {"login": "Ops-A"}, "authorAssociation": "NONE", "body": "/approve spec r1",
+             "createdAt": "2026-10-31T01:00:00Z", "includesCreatedEdit": True, "isMinimized": False,
+             "url": "https://github.com/team/app/issues/1#issuecomment-123456"}])
+        with patch("akasha.coordinator.board.gh", fake):
+            board.comment(root, address, "/approve risk high")
+            first, second = board.comments(root, address)
+        self.assertEqual(first, board.Comment(123456, "Ops-A", "NONE", "2026-10-31T01:00:00Z", True, False,
+                                              "/approve spec r1"))
+        self.assertEqual((second.number, second.author, second.edited, second.body),
+                         (101, "dev-a", False, "/approve risk high"))
 
 
 class ResourceTests(unittest.TestCase):
