@@ -2,3 +2,4 @@ name = "java"
 extensions = [".java", ".kt"]
 tests = "./gradlew test"
 lint = "./gradlew check"
+ignore = [".gradle/", "build/"]

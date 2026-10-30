@@ -276,7 +276,8 @@ def check(root: Path, task_id: str) -> runner.Result:
     """Run the required checks in the work copy. Each failure counts as one failed repair.
 
     When all checks pass, Akasha saves the work as a commit and pushes the task branch. Thus the task branch on the
-    server always passed the checks, and other tasks can build on it."""
+    server always passed the checks, and other tasks can build on it. Akasha saves nothing while the work copy has
+    files outside the scope, for example files that a test made."""
     team, task = config.load(root), tasks.load(root, task_id)
     if not task.workcopy:
         raise ValueError("the task has no work copy — advance it to the build stage first")
@@ -285,12 +286,17 @@ def check(root: Path, task_id: str) -> runner.Result:
     failed = [name for name, status in result.status.items() if status == "FAIL"]
     if failed:
         stages.record_failure(task, "the check " + ", ".join(failed) + " failed")
-    elif result.status and all(status == "PASS" for status in result.status.values()):
+    elif result.status and all(status == "PASS" for status in result.status.values()) and not _strays(task):
         tree = Path(task.workcopy)
         _commit(tree, task.title)
         workcopy.git(tree, "push", "-q", "-u", "origin", task.branch)      # without a server, the push fails quietly
     _publish(root, task)
     return result
+
+
+def _strays(task: Task) -> tuple[str, ...]:
+    """Files in the work copy that the scope does not permit. They must not go into a commit."""
+    return outside_scope(task, workcopy.changed_files(task))
 
 
 def ci_check(root: Path, config_path: Path | None, base: str) -> runner.Result:
@@ -350,6 +356,10 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
         raise ValueError("the pull request of this task merged — make a new request for more changes")
     task.pull_request = known["url"] if known.get("state") == "OPEN" else ""
     tasks.save(root, task)
+    strays = _strays(task)
+    if strays:
+        raise RuntimeError(f"the work copy has files outside the scope: {', '.join(strays[:5])}. Remove them, add them "
+                           "to .gitignore, or widen the scope with specify --scope. Then do the handover again")
     tree = Path(task.workcopy)
     _commit(tree, task.title)
     fetched = workcopy.git(tree, "fetch", "origin", branch)

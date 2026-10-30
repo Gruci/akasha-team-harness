@@ -176,6 +176,33 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(created[created.index("--label") + 1], "akasha-merge")
         auto_merge.assert_not_called()                       # the merge workflow of Akasha merges it
 
+    def test_files_outside_the_scope_never_go_into_a_commit(self):
+        root = make_repo(PASS)
+        remote = add_remote(root)
+        task, _ = flow.start(root, "Change the search", "ops-member", workflow="small", scope=["src/**"])
+        work = Path(task.workcopy)
+        (work / "src").mkdir()
+        (work / "src" / "search.py").write_text("x = 1\n", encoding="utf-8")
+        (work / "notes.pyc").write_text("made by a test\n", encoding="utf-8")
+        self.assertEqual(flow.check(root, task.id).status["tests"], "PASS")
+        self.assertNotEqual(workcopy.git(work, "status", "--porcelain").stdout, "")     # nothing saved
+        self.assertNotEqual(workcopy.git(remote, "rev-parse", "--verify", "-q", task.branch).returncode, 0)
+        task = tasks.load(root, task.id)
+        task.stage, task.briefing = "handover", BRIEFING
+        tasks.save(root, task)
+        with patch("akasha.flow.github.repository", return_value=("team/app", "main")), \
+                patch("akasha.flow.github.pull_request", return_value={}), self.assertRaises(RuntimeError) as stopped:
+            flow.handover(root, task.id)
+        self.assertIn("notes.pyc", str(stopped.exception))
+        (work / "notes.pyc").unlink()
+        flow.check(root, task.id)
+        self.assertEqual(workcopy.git(remote, "rev-parse", "--verify", "-q", task.branch).returncode, 0)
+
+    def test_setup_ignores_the_files_that_tests_make(self):
+        root = make_repo(PASS)                                # it tracks app.py, so the Python pack applies
+        setup.run(root, "")
+        self.assertIn("__pycache__/", (root / ".gitignore").read_text(encoding="utf-8").splitlines())
+
     def test_a_task_builds_on_an_earlier_task(self):
         root = make_repo(PASS)
         add_remote(root)

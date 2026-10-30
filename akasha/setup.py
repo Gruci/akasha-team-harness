@@ -71,7 +71,8 @@ def run(root: Path, approved_by: str) -> list[str]:
         report.append(f"Akasha wrote {config.PRODUCT_MAP.as_posix()}. The agent engine fills it during the tasks.")
     ignore = root / ".gitignore"
     present = ignore.read_text(encoding="utf-8") if ignore.is_file() else ""
-    missing = [line for line in IGNORED if line not in present.splitlines()]
+    made = [line for pack in langs.detect(root) for line in pack.ignore]     # files that tests and builds make
+    missing = [line for line in dict.fromkeys(IGNORED + tuple(made)) if line not in present.splitlines()]
     if missing:
         ignore.write_text(present.rstrip("\n") + ("\n" if present.strip() else "") + "\n".join(missing) + "\n",
                           encoding="utf-8")

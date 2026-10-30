@@ -17,6 +17,7 @@ class Pack:
     tests: str
     lint: str
     setup: str          # the usual command that installs the dependencies in a new copy
+    ignore: tuple[str, ...] = ()    # the files that tests and builds make, which must not go into a commit
 
 
 def packs() -> list[Pack]:
@@ -24,7 +25,7 @@ def packs() -> list[Pack]:
     for path in sorted(PACKS.glob("*.toml")):
         data = tomllib.loads(path.read_text(encoding="utf-8"))
         found.append(Pack(data["name"], tuple(data["extensions"]), data.get("tests", ""), data.get("lint", ""),
-                          data.get("setup", "")))
+                          data.get("setup", ""), tuple(data.get("ignore", ()))))
     return found
 
 
