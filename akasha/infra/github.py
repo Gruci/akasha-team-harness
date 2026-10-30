@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import functools
+import hashlib
 import json
+import re
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 from akasha import config, repo
-from akasha.core.workcopy import git
+from akasha.core.workcopy import fetch, git
 from akasha.infra import desired, server
 from akasha.repo import gh, gh_repo
 
 SERVER_STATE = config.STATE_DIR / "server.json"      # the last examination of the server rules on this computer
+RECORD_AGE = 3600                                      # one hour, in seconds
 _NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no branch protection for private repositories
+_HEAD = re.compile(r"^ref: refs/heads/(\S+)\tHEAD$", re.M)        # the answer of git ls-remote --symref origin HEAD
 
 
 def repository(root: Path) -> tuple[str, str] | None:
@@ -25,6 +29,32 @@ def repository(root: Path) -> tuple[str, str] | None:
         return None
     data = json.loads(viewed.stdout)
     return data["nameWithOwner"], (data.get("defaultBranchRef") or {}).get("name") or "main"
+
+
+def default_branch(root: Path) -> str:
+    """The default branch on the server now, for example main, or "" when the server does not tell it.
+
+    With GitHub, gh tells it. Else, or when gh does not answer, git asks the server for its HEAD. The origin/HEAD of
+    this computer is not enough: git sets it at the clone, and it stays when the team renames the default branch."""
+    found = repository(root) if repo.origin(root) else None
+    if found is not None:
+        return found[1]
+    listed = git(root, "ls-remote", "--symref", "origin", "HEAD")
+    head = _HEAD.search(listed.stdout) if listed.returncode == 0 else None
+    return head.group(1) if head else ""
+
+
+def known_branch(root: Path) -> str:
+    """The default branch that this computer knows without the network, or "": the branch of the last examination
+    of the server rules, else origin/HEAD."""
+    try:
+        branch = json.loads((root / SERVER_STATE).read_text(encoding="utf-8")).get("branch")
+    except (OSError, ValueError, AttributeError):
+        branch = ""
+    if isinstance(branch, str) and branch:
+        return branch
+    head = git(root, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD").stdout.strip()
+    return head.removeprefix("origin/") if head.startswith("origin/") else ""
 
 
 def protection(root: Path, slug: str, branch: str) -> dict | None:
@@ -58,13 +88,7 @@ def _server_file(root: Path, branch: str, path: str) -> str | None:
 def _server_team(root: Path, branch: str) -> config.Team:
     """The team config on the default branch. The server files must agree with it, not with a local copy that is
     not up to date."""
-    text = _server_file(root, branch, config.CONFIG_FILE)
-    if text is None:
-        return config.load(root)
-    with tempfile.TemporaryDirectory() as folder:
-        path = Path(folder) / config.CONFIG_FILE
-        path.write_text(text, encoding="utf-8")
-        return config.load(root, path)
+    return config.shared(root, f"origin/{branch}")
 
 
 def status(root: Path) -> list[str]:
@@ -78,7 +102,7 @@ def status(root: Path) -> list[str]:
         return problems
     slug, branch = found
     current = settings(root, slug)
-    git(root, "fetch", "-q", "origin", branch)                        # the server uses the default branch
+    fetch(root, branch)                               # the server uses the default branch
     team = _server_team(root, branch)
     if team.server_rules == "akasha":                 # GitHub has no protection on this plan; the helpers enforce
         problems = desired.settings_drift(current, ("allow_squash_merge",))
@@ -90,27 +114,47 @@ def status(root: Path) -> list[str]:
                    if (text := _server_file(root, branch, path)) is not None), "")
     if desired.block(owners) != desired.codeowners(team):
         problems.append(f"the Akasha block of CODEOWNERS on {branch} is missing or different from akasha.toml")
-    _remember(root, problems, bool((current.get("permissions") or {}).get("admin")), team.server_rules)
+    _remember(root, problems, bool((current.get("permissions") or {}).get("admin")), team.server_rules, branch)
     return problems
 
 
-def _remember(root: Path, problems: list[str], admin: bool, rules: str = "github") -> None:
+@functools.cache
+def _installed() -> str:
+    """A hash of the files of this Akasha. An update keeps the version 1.0.0, so the hash tells a new install."""
+    package, digest = Path(__file__).resolve().parents[1], hashlib.sha256()
+    for path in sorted(package.rglob("*")):
+        if path.is_file() and path.suffix != ".pyc":
+            digest.update(path.relative_to(package).as_posix().encode() + b"\0" + path.read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def _marks(root: Path, branch: str) -> dict:
+    """What the last examination depends on, without the network: the default branch as this computer knows it, the
+    GitHub account of this person, and the files of Akasha. When one of them changes, the record is old."""
+    commit = git(root, "rev-parse", "-q", "--verify", f"refs/remotes/origin/{branch}").stdout.strip() if branch else ""
+    return {"commit": commit, "me": repo.me(root) if repo.origin(root) else "", "installed": _installed()}
+
+
+def _remember(root: Path, problems: list[str], admin: bool, rules: str = "github", branch: str = "") -> None:
     path = root / SERVER_STATE
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"checked": time.time(), "problems": problems, "admin": admin, "rules": rules}),
-                    encoding="utf-8")
+    path.write_text(json.dumps({"checked": time.time(), "problems": problems, "admin": admin, "rules": rules,
+                                "branch": branch, **_marks(root, branch)}), encoding="utf-8")
 
 
-def readiness(root: Path, max_age: float = 12 * 3600) -> dict:
+def readiness(root: Path, max_age: float = RECORD_AGE) -> dict:
     """The last examination of the server rules: the problems, and whether this person administers the repository.
 
-    Akasha examines GitHub again only when the record is older than max_age, so that a session start stays fast."""
+    Akasha examines GitHub again when the record is older than max_age, or when the default branch on this computer,
+    the GitHub account, or the files of Akasha changed since: for example, an administrator turned the rules on and
+    merged the server files. Else the session start stays fast. The handover gate always examines GitHub again."""
     path = root / SERVER_STATE
     try:
         known = json.loads(path.read_text(encoding="utf-8"))
-        if time.time() - known["checked"] < max_age:
+        marks = _marks(root, str(known.get("branch") or ""))
+        if time.time() - known["checked"] < max_age and all(known.get(key) == value for key, value in marks.items()):
             return known
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         pass
     status(root)
     return json.loads(path.read_text(encoding="utf-8"))

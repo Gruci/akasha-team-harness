@@ -145,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
         _show(task)
         for note in task.notes:
             print(f"  note — {note}")
+        if flow.behind(root):                         # the main checkout is old: read the latest files on the server
+            print(f"  note — {flow.behind(root)}")
         for item in found:
             print(f"  overlap — {item.message()}")
         return 0
@@ -189,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "show":
         task = flow.load(root, args.task, write=False)
         _show(task)
-        preview = config.load(root).preview
+        preview = flow.rules(root).preview
         for name, template in preview.items():
             if template:
                 print(f"  preview {name}: {resources.fill(template, task.id)}")
@@ -221,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
         task = flow.load(root, args.task, write=False)
         for name, status in result.status.items():
             print(f"[{status}] {name}" + (f"\n{result.details[name]}" if status != "PASS" and result.details[name] else ""))
+        for note in result.notes:
+            print(note)
         if task.status == "stopped":
             print(task.notes[-1])
         return 0 if all(status == "PASS" for status in result.status.values()) else 1
@@ -250,9 +254,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run(argv: list[str] | None = None) -> int:
-    """Run a command. Tell an expected problem in one line, without a traceback."""
+    """Run a command. Tell an expected problem in one line, without a traceback. One command reads the rules from
+    the server once, also when it shows the task after the change."""
     try:
-        return main(argv)
+        with flow.one_command():
+            return main(argv)
     except (ValueError, LookupError, RuntimeError, PermissionError) as error:
         print(f"Akasha: {error}", file=sys.stderr)
         return 2

@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 import unittest
@@ -102,6 +103,45 @@ class ApplyTests(unittest.TestCase):
             self.apply("", by="dev-b", origin="")
         self.assertEqual(self.apply("", by="admin-a", origin=""),
                          ["Akasha wrote the files, but cannot reach GitHub to change the settings"])
+
+
+class ReadinessTests(unittest.TestCase):
+    """The record of the last examination of the server rules follows the server, the person, and Akasha."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="akasha-ready-"))
+        for args in (("init", "-q"), ("config", "user.email", "test@example.com"), ("config", "user.name", "Test"),
+                     ("commit", "-q", "--allow-empty", "-m", "first"), ("update-ref", "refs/remotes/origin/main", "HEAD")):
+            subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
+        self.login = "dev-a"
+
+    def examined(self) -> bool:
+        """Read the record. True when Akasha examined GitHub again."""
+        with patch("akasha.repo.origin", return_value="team/app"), \
+                patch("akasha.repo.me", side_effect=lambda root: self.login), \
+                patch("akasha.infra.github.status", side_effect=lambda root: github._remember(root, [], True, "github",
+                                                                                           "main")) as status:
+            github.readiness(self.root)
+        return status.called
+
+    def test_a_record_is_old_when_the_server_the_person_or_akasha_changes(self):
+        self.assertTrue(self.examined())                               # no record yet
+        self.assertFalse(self.examined())
+        self.assertEqual(github.known_branch(self.root), "main")
+        subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "settings"], cwd=self.root, check=True)
+        subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=self.root, check=True)
+        self.assertTrue(self.examined())                               # a fetch moved the default branch
+        self.assertFalse(self.examined())
+        self.login = "dev-b"
+        self.assertTrue(self.examined())                               # another GitHub account
+        with patch("akasha.infra.github._installed", return_value="another-akasha"):
+            self.assertTrue(self.examined())                           # an update of Akasha keeps the version 1.0.0
+        self.assertTrue(self.examined())
+        path = self.root / github.SERVER_STATE
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["checked"] -= github.RECORD_AGE + 1
+        path.write_text(json.dumps(record), encoding="utf-8")
+        self.assertTrue(self.examined())                               # one hour at most
 
 
 if __name__ == "__main__":

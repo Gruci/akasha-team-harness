@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from akasha import config
+from akasha.core.workcopy import fetch, git
 from akasha.engine import codex
 from akasha.infra import github
 from akasha.validators import langs
@@ -51,9 +52,26 @@ def _team_config(root: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _on_server(root: Path) -> str:
+    """The default branch when it has akasha.toml on the server, but this checkout has none, else "". Then the setup
+    pull request merged, and this checkout is old: a new akasha.toml would make a second setup pull request."""
+    if (root / config.CONFIG_FILE).is_file() or git(root, "remote", "get-url", "origin").returncode:
+        return ""
+    branch = github.default_branch(root)
+    if branch:
+        fetch(root, branch)
+    return branch if branch and config.on_server(root, f"origin/{branch}") else ""
+
+
 def run(root: Path, approved_by: str) -> list[str]:
-    """Examine the repository first. A repository with the team rules and the server rules on needs nothing."""
+    """Examine the repository first. A repository with the team rules and the server rules on needs nothing. A
+    checkout that only lacks the latest default branch needs a pull, not a second setup."""
     path = root / config.CONFIG_FILE
+    pull = _on_server(root)
+    if pull:
+        return [f"The default branch {pull} on the server already has {config.CONFIG_FILE}, but this checkout does not. "
+                f"Akasha does not write a second team config. Pull the default branch first: git pull origin {pull}. "
+                "Then run the setup again: it examines the server rules."]
     problems = [] if approved_by else github.status(root)
     if path.is_file() and not approved_by and not problems:
         return ["Akasha is ready in this repository: the team rules and the server rules are on. Nothing to set up."]

@@ -18,6 +18,8 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
 2. Ask the requester questions until the completion conditions are clear. Record each condition:
    `python -m akasha specify <task> --condition "<condition>"`.
 3. Read `.akasha/context/product-map.md`. Find the files, data, and APIs that the change touches.
+   If the request said that the main checkout is behind the default branch, read the latest files with
+   `git show origin/<default branch>:<path>` and `git grep <text> origin/<default branch>`.
    Record the scope: `python -m akasha specify <task> --scope <file patterns>`.
 4. Record the impact analysis: `python -m akasha impact <task> --features "<text>" --data "<text>"
    --contracts "<text>" --tasks "<text>" --rollback "<text>"`.
@@ -25,7 +27,8 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
    `/approve spec r<N>` on the issue of the task. If the requester is the GitHub account of this computer and approves,
    run `python -m akasha approve <task> --role requester`. Akasha writes the comment.
 6. Make the change only in the work copy of the task. Write an automated test for each completion condition.
-7. Run `python -m akasha check <task>`. Repair each failure.
+7. Run `python -m akasha check <task>`. Repair each failure. If Akasha says that it could not update the task branch
+   on the server, tell the user.
 8. Show the result to the requester. The requester writes `/accept <number> r<N>` or `/reject <number> r<N> <reason>`
    on the issue. If the requester is the GitHub account of this computer, run
    `python -m akasha accept <task> --condition <number> --result yes`.

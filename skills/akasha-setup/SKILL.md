@@ -13,6 +13,7 @@ Akasha examines the repository first. Do only the part that the repository needs
 
 1. Run `akasha setup`.
 2. If Akasha says that the repository is ready, tell the user that Akasha is ready. Stop here.
+   If Akasha says that the default branch on the server already has `akasha.toml`, the setup is done, and this checkout is old. Tell the user to pull the default branch with the command that Akasha shows. Then run `akasha setup` again.
 3. If Akasha wrote `akasha.toml`, the repository did not use Akasha yet. Ask the user these questions. Ask one question at a time.
    - Which GitHub names are the administrators?
    - Which folders contain high-risk code, for example data changes, permissions, or payments?

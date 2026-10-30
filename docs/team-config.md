@@ -1,6 +1,8 @@
 # Team config
 
-`akasha.toml` holds the team rules for one repository. Akasha reads it for each command. The administrators own it through CODEOWNERS.
+`akasha.toml` holds the team rules for one repository. The administrators own it through CODEOWNERS.
+
+Each command of a task reads `akasha.toml` and the team workflows from the default branch on the server, once for each command. Thus each computer uses the rules that the administrators merged, also when its checkout is old. Without a server, or when the default branch has no `akasha.toml`, Akasha reads the files in the checkout. `setup` and `infra --apply` read and write the file in the checkout, because the administrator changes it there and opens a pull request.
 
 ## Example
 
@@ -119,7 +121,8 @@ Put the other decisions and lessons of your team in `.akasha/context/` as Markdo
 
 ## How Akasha examines this file
 
-- Akasha refuses an unknown section, an unknown key, and a value of the wrong type.
+- Akasha refuses an unknown section, an unknown key, and a value of the wrong type. When the incorrect file is on the default branch, the message names the branch, for example `origin/main`.
 - The server check takes `akasha.toml` from the default branch. Thus a pull request cannot make its own rules weaker.
+- A change applies to the tasks when it merges on the default branch. A change in a checkout that did not merge does not apply.
 
 > **CAUTION:** A change to `akasha.toml` changes the rules for all tasks. Get the approval of an administrator for each change.

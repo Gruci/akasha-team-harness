@@ -1,8 +1,13 @@
-"""Read and examine the team config (akasha.toml) and the workflows."""
+"""Read and examine the team config (akasha.toml) and the workflows.
+
+The commands of a task read the rules from the default branch on the server (shared), so that each computer uses the
+rules that the administrators merged, also when its checkout is old. The setup reads and writes the files of the
+checkout, because the administrator changes them there and opens a pull request."""
 
 from __future__ import annotations
 
 import re
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -100,53 +105,75 @@ def _examine_keys(data: dict) -> None:
             raise ConfigError(f"{CONFIG_FILE}: unknown key {unknown[0]} in [{section}]")
 
 
-def _workflow(path: Path) -> Workflow:
+def _workflow(name: str, text: str) -> Workflow:
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
-        raise ConfigError(f"{path.name}: {error}") from None
-    name = _text(data.get("name"), f"{path.name}: name")
+        raise ConfigError(f"{name}: {error}") from None
+    flow_name = _text(data.get("name"), f"{name}: name")
     raw = data.get("stages")
     if not isinstance(raw, list) or not raw:
-        raise ConfigError(f"{path.name}: a workflow needs one or more [[stages]]")
+        raise ConfigError(f"{name}: a workflow needs one or more [[stages]]")
     stages = []
     for item in raw:
-        stage_id = _text(item.get("id"), f"{path.name}: stage id")
-        exits = _strings(item.get("exit", []), f"{path.name}: exit of {stage_id}")
+        stage_id = _text(item.get("id"), f"{name}: stage id")
+        exits = _strings(item.get("exit", []), f"{name}: exit of {stage_id}")
         unknown = [condition for condition in exits if condition not in EXIT_CONDITIONS]
         if unknown:
-            raise ConfigError(f"{path.name}: unknown exit condition {unknown[0]} — use {', '.join(EXIT_CONDITIONS)}")
+            raise ConfigError(f"{name}: unknown exit condition {unknown[0]} — use {', '.join(EXIT_CONDITIONS)}")
         stages.append(Stage(stage_id, exits))
     if len({stage.id for stage in stages}) != len(stages):
-        raise ConfigError(f"{path.name}: two stages have the same id")
-    return Workflow(name, tuple(stages))
+        raise ConfigError(f"{name}: two stages have the same id")
+    return Workflow(flow_name, tuple(stages))
 
 
-def workflows(root: Path) -> dict[str, Workflow]:
-    """The built-in workflows. A team workflow with the same name replaces the built-in workflow."""
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+
+def _shown(root: Path, ref: str, path: str) -> str | None:
+    """The text of a file at a git ref, for example origin/main, or None when the ref has no such file."""
+    shown = _git(root, "show", f"{ref}:{path}")
+    return shown.stdout if shown.returncode == 0 else None
+
+
+def _team_files(root: Path, ref: str) -> list[tuple[str, str]]:
+    """The team workflows as (file name, text): from the checkout, or from the git ref."""
+    if not ref:
+        folder = root / TEAM_WORKFLOWS
+        return [(path.name, path.read_text(encoding="utf-8")) for path in sorted(folder.glob("*.toml"))] \
+            if folder.is_dir() else []
+    folder = TEAM_WORKFLOWS.as_posix()
+    listed = _git(root, "ls-tree", "-z", f"{ref}:{folder}")         # "<mode> <type> <object>\t<name>" for each file
+    entries = [item.split("\t", 1) for item in listed.stdout.split("\0") if "\t" in item] if listed.returncode == 0 \
+        else []
+    names = sorted(name for kind, name in entries if kind.split()[1:2] == ["blob"] and name.endswith(".toml"))
+    return [(name, text) for name in names if (text := _shown(root, ref, f"{folder}/{name}")) is not None]
+
+
+def workflows(root: Path, ref: str = "") -> dict[str, Workflow]:
+    """The built-in workflows. A team workflow with the same name replaces the built-in workflow. With `ref`, the
+    team workflows come from that git ref."""
     found = {}
-    for folder in (BUILT_IN_WORKFLOWS, root / TEAM_WORKFLOWS):
-        for path in sorted(folder.glob("*.toml")) if folder.is_dir() else ():
-            flow = _workflow(path)
-            found[flow.name] = flow
+    built_in = [(path.name, path.read_text(encoding="utf-8")) for path in sorted(BUILT_IN_WORKFLOWS.glob("*.toml"))]
+    for name, text in built_in + _team_files(root, ref):
+        flow = _workflow(name, text)
+        found[flow.name] = flow
     return found
 
 
-def load(root: Path, path: Path | None = None) -> Team:
-    """The team config of the repository at root. Without akasha.toml, Akasha uses the default rules.
+def _parsed(text: str) -> dict:
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise ConfigError(f"{CONFIG_FILE}: {error}") from None
 
-    CI gives `path`: the team config from the default branch, so that a pull request cannot change its own rules."""
-    path = path or root / CONFIG_FILE
-    data: dict = {}
-    if path.is_file():
-        try:
-            data = tomllib.loads(path.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as error:
-            raise ConfigError(f"{CONFIG_FILE}: {error}") from None
+
+def _team(data: dict, flows: dict[str, Workflow]) -> Team:
+    """Examine the data of akasha.toml and make the team rules."""
     _examine_keys(data)
     roles, risk, approval = data.get("roles", {}), data.get("risk", {}), data.get("approval", {})
     checks, preview, contracts = data.get("checks", {}), data.get("preview", {}), data.get("contracts", {})
-    flows = workflows(root)
     enabled = _strings(data["workflows"]["enabled"], "[workflows] enabled") if "workflows" in data else tuple(flows)
     missing = [name for name in enabled if name not in flows]
     if missing:
@@ -171,6 +198,32 @@ def load(root: Path, path: Path | None = None) -> Team:
         workflows={name: flows[name] for name in enabled},
         server_rules=rules,
     )
+
+
+def load(root: Path, path: Path | None = None) -> Team:
+    """The team config in this checkout of the repository at root. Without akasha.toml, Akasha uses the default rules.
+
+    CI gives `path`: the team config from the default branch, so that a pull request cannot change its own rules."""
+    path = path or root / CONFIG_FILE
+    return _team(_parsed(path.read_text(encoding="utf-8")) if path.is_file() else {}, workflows(root))
+
+
+def shared(root: Path, ref: str) -> Team:
+    """The team config on the server: akasha.toml and the team workflows at `ref`, for example origin/main after a
+    fetch. Thus each computer uses the rules that the administrators merged, also when its checkout is old. Without
+    `ref`, or when `ref` has no akasha.toml, the files of this checkout, as in Akasha 1.0.0."""
+    text = _shown(root, ref, CONFIG_FILE) if ref else None
+    if text is None:
+        return load(root)
+    try:
+        return _team(_parsed(text), workflows(root, ref))
+    except ConfigError as error:
+        raise ConfigError(f"{error} (the team config on {ref})") from None
+
+
+def on_server(root: Path, ref: str) -> bool:
+    """True when the git ref, for example origin/main, has akasha.toml. It uses no network."""
+    return bool(ref) and _git(root, "cat-file", "-e", f"{ref}:{CONFIG_FILE}").returncode == 0
 
 
 def set_server_rules(root: Path, rules: str) -> None:

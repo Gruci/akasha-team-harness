@@ -73,6 +73,7 @@ Install the same plugin and open the team repository. At session start, the Akas
 | The hook finds | What happens |
 |:--|:--|
 | Not set up yet | The AI offers the setup of step 1 |
+| Set up on the server,<br>but your checkout is old | The AI tells you to pull the default branch.<br>No second setup |
 | Server rules off | The AI tells you. An administrator approves once, and the AI turns them on.<br>Work can start now. Only the handover waits |
 | Ready | The AI starts work. No setup |
 

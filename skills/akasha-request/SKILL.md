@@ -58,8 +58,8 @@ If the requester withdraws the request, run `akasha cancel <task> --reason "<rea
 
 ## Stage 2 — Specification and impact
 
-1. Read the product map and the team context files that the session start notice shows.
-2. Find the files, the data, and the APIs that the change touches. Record the scope: `akasha specify <task> --scope <file patterns>`.
+1. Read the product map and the team context files that the session start notice shows. If the request said that the main checkout is behind the default branch, the files of the main checkout are old. Read the latest files from the server: `git show origin/<default branch>:<path>`. Search them with `git grep <text> origin/<default branch>`.
+2. Find the files, the data, and the APIs that the change touches. Use the latest files, as in step 1. Record the scope: `akasha specify <task> --scope <file patterns>`.
 3. Do the impact analysis. Record it: `akasha impact <task> --features "<text>" --data "<text>" --contracts "<text>" --tasks "<text>" --rollback "<text>"`.
    - `features`: the features that use the code that you change. Search for each caller.
    - `data`: each table, column, or file that changes, each reader and writer of it, and the order of the migration. Write "No data change" when there is none.
@@ -111,6 +111,8 @@ To continue the task of another person:
 ## Stage 4 — Checks and repair
 
 1. Run `akasha check <task>`. When all checks pass, Akasha saves the work and pushes the task branch.
+   - If Akasha says that the task branch on the server has commits that conflict with the work copy, do the steps in the message. Then run the check again.
+   - If Akasha says that it could not update the task branch on the server, tell the user the reason. Run the check again later.
 2. Repair each failure. Then run the check again.
 3. If Akasha stops the task after three failed repairs, stop the work. Tell the requester in simple words that a developer must examine the problem.
 4. With GitHub, the developer writes `/resume` on the issue of the task. If the developer is the GitHub account of this computer and tells you to continue, run `akasha resume <task>`. Then run `akasha advance <task>`.

@@ -73,7 +73,7 @@ Each failed check counts as one failed repair. After three failed repairs, Akash
    exit = ["merged"]
    ```
 
-3. Commit the file. A team workflow with the name of a built-in workflow replaces the built-in workflow.
+3. Commit the file, and merge it on the default branch. The commands of a task read the team workflows from the default branch on the server. A team workflow with the name of a built-in workflow replaces the built-in workflow.
 4. To permit only some workflows, write them in `akasha.toml`:
 
    ```toml

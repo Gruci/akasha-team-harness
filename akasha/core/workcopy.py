@@ -19,6 +19,11 @@ def git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
                           env=_QUIET)
 
 
+def fetch(cwd: Path, branch: str) -> subprocess.CompletedProcess:
+    """Fetch one branch of origin into origin/<branch>, also in a clone that fetches only some branches."""
+    return git(cwd, "fetch", "-q", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}")
+
+
 def names(cwd: Path, *args: str) -> list[str]:
     """File names from a git listing. Names with Korean or other non-ASCII letters stay as they are."""
     listed = git(cwd, "-c", "core.quotePath=false", *args, "-z")

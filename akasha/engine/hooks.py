@@ -51,12 +51,31 @@ def command() -> str:
     return f'"{python}" -X utf8 "{launcher.as_posix()}"' if launcher.is_file() else f'"{python}" -X utf8 -m akasha'
 
 
+def _server_only(root: Path) -> str:
+    """The default branch that has akasha.toml when this checkout has none, else "". For example, the setup pull
+    request merged, and this person did not pull since. It uses no network: it reads what git fetched last."""
+    if (root / config.CONFIG_FILE).is_file():
+        return ""
+    branch = github.known_branch(root)
+    return branch if branch and config.on_server(root, f"origin/{branch}") else ""
+
+
+def _uses_akasha(root: Path) -> bool:
+    """True when this checkout or the default branch on the server has akasha.toml. Then the hooks run."""
+    return (root / config.CONFIG_FILE).is_file() or bool(_server_only(root))
+
+
 def session_start(root: Path) -> int:
     notice = f"[AKASHA] Akasha command: {command()} <command>"
-    if not (root / config.CONFIG_FILE).is_file():
+    if not _uses_akasha(root):
         print(f"[AKASHA] {SETUP_HINT}\n{notice}")
         return 0
     lines = ["[AKASHA] Do each change as an Akasha task. The akasha-request skill gives the procedure.", notice]
+    pull = _server_only(root)
+    if pull:
+        lines.append(f"[AKASHA] The default branch {pull} on the server uses Akasha, but this checkout is old and has "
+                     f"no {config.CONFIG_FILE}. Do not set up Akasha again. Pull the default branch first: git pull "
+                     f"origin {pull}")
     context = sorted(path.relative_to(root).as_posix() for path in (root / config.TEAM_CONTEXT).glob("*.md"))
     if context:
         lines.append(f"[AKASHA] Read the team context before you write a specification: {', '.join(context)}")
@@ -166,7 +185,7 @@ def main(agent: str, event: str) -> int:
         return 0
     if event == "SessionStart":
         return session_start(root)
-    if not (root / config.CONFIG_FILE).is_file():
+    if not _uses_akasha(root):                        # an old checkout of a repository with Akasha keeps the guard
         return 0
     tool = str(payload.get("tool_name") or "")
     tool_input = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}

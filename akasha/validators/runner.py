@@ -21,6 +21,7 @@ _GROUP = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "n
 class Result:
     status: dict[str, str] = field(default_factory=dict)     # check -> PASS, FAIL, or SKIP
     details: dict[str, str] = field(default_factory=dict)    # check -> the text that tells why
+    notes: list[str] = field(default_factory=list)           # what occurred after the checks, for example a push
 
 
 def secrets_status(workcopy: Path, changed: list[str]) -> tuple[str, str]:

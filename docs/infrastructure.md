@@ -100,8 +100,17 @@ Each person installs Akasha. Nobody has to do a setup in a repository that is re
 | All rules are on | Nothing |
 | A rule is off, and the person administers the repository | Turn the rules on with the `akasha-setup` skill |
 | A rule is off, and the person does not administer the repository | Ask an administrator. Work can start now; the handover waits |
+| The default branch on the server has `akasha.toml`, but the checkout of the person does not | Pull the default branch. Do not set up Akasha again. The guard works already |
 
-Akasha keeps the result for 12 hours in `.akasha/state/server.json`, so that a session start stays fast. Each `infra` command and each examination before the handover updates it.
+Akasha keeps the result for one hour in `.akasha/state/server.json`, so that a session start stays fast. Akasha examines GitHub again before the hour ends when one of these changed:
+
+- the default branch on this computer, after a fetch. For example, an administrator merged the server files.
+- the GitHub account of this computer.
+- the files of Akasha, after an update. The version stays the same after an update, so Akasha compares the files.
+
+Each `infra` command and each examination before the handover updates the result. The examination before the handover never uses the kept result.
+
+To find the default branch without the network, the hooks read this result, else `origin/HEAD`. `setup` asks the server. When the default branch already has `akasha.toml` and the checkout does not, `setup` writes nothing and tells the person to pull.
 
 ## When a person changes a setting
 

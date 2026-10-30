@@ -58,6 +58,8 @@ flowchart LR
 | The person and the copy of the repository | `.akasha/state/me.json` (the GitHub name, for one hour) and `.akasha/state/machine.json` (the random mark of this copy) | No |
 | Work copies | `.akasha/work/<task>/`, on the branch `akasha/<task>`. A handoff pushes the work to `akasha-wip/<task>` | No |
 
+Each command of a task fetches the default branch from the server once. The team rules, the team workflows, and the start of each new work copy come from that branch, not from the checkout of the computer, which can be old. Without a server, Akasha uses the checkout, as in Akasha 1.0.0.
+
 ## Three enforcement layers
 
 | Layer | When | What enforces it |
@@ -75,13 +77,13 @@ The agent engine runs these commands. People do not have to remember them. The s
 | Command | Function |
 |:--|:--|
 | `setup` | Writes `akasha.toml`, the product map, and the files that Codex reads. With the approval of an administrator, it also changes the GitHub settings |
-| `request` | Records a new task and shows overlaps. With GitHub, the requester is your GitHub account, or the account that `--requester` names. `--builds-on` stacks it on an earlier task |
+| `request` | Records a new task and shows overlaps. With GitHub, the requester is your GitHub account, or the account that `--requester` names. `--builds-on` stacks it on an earlier task. It brings the main checkout forward to the latest default branch, or tells how far it stays behind |
 | `specify` | Adds completion conditions, open questions, or file patterns of the scope. `--builds-on ""` stops building on the earlier task. `--requester <GitHub name>` gives a GitHub account to a requester that is not one, for example a name that Akasha 1.0.0 recorded |
 | `impact` | Records the impact analysis, a reason why the product map does not change, or a change of behavior that an earlier requester accepted |
 | `approve` | Records the approval of a requester or of a gate role. With GitHub, it writes the decision comment only for the GitHub account of this computer, else it tells the comment that the person must write. Without GitHub, `--by` names the person |
 | `advance` | Moves the task to the next stage, or shows what blocks it |
 | `show` | Shows one task: stage, risk, holder, scope, the revision of the specification, the numbered conditions, impact, approvals, checks, preview values, and the decision comments that do not count. It only reads |
-| `check` | Runs the required checks in the work copy |
+| `check` | Runs the required checks in the work copy. When they pass, it saves the work and pushes the task branch. It tells a push that the server refuses |
 | `accept` | Records the inspection of the requester, of one condition by its text or number, or of all conditions. With GitHub, the same rule as `approve` |
 | `brief` | Examines and records the briefing |
 | `handover` | Checks the change again on the latest default branch, opens the pull request, and turns on auto-merge |

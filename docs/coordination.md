@@ -109,8 +109,8 @@ The file test is careful. Two patterns touch when the part before the first wild
 
 When two people want the same feature, the second task builds on the first task. Nobody waits for an answer.
 
-1. The second task starts with `request --builds-on <earlier task>`. Its work copy starts from the branch of the earlier task.
-2. Akasha pushes the branch of each task when all its checks pass. Thus the branch on the server always passed the checks.
+1. The second task starts with `request --builds-on <earlier task>`. Its work copy starts from the branch of the earlier task on the server. Akasha reads the name of that branch from the task, also when another computer made it. Only when the server does not have the branch, the work copy starts from the branch on this computer, for example in a repository without a server.
+2. Akasha pushes the branch of each task when all its checks pass. Thus the branch on the server always passed the checks. The server can have newer commits on the branch, for example a merge of the default branch that GitHub made in the pull request. Then the server refuses the push, and Akasha merges these commits into the work copy. When the merge changed files, Akasha runs the checks again on the merged work, and pushes it only when they pass. A conflict stops the check: the message tells how to repair it. When the push fails again, the check tells it, and a note stays on the task. Without a server, nothing goes out.
 3. The agent engine writes a test for each completion condition. Thus the checks of the later task keep the behavior that the earlier requester accepted.
 4. The later task hands over only after the earlier task merged. Else its pull request would carry changes that the earlier requester did not accept. If the earlier task is cancelled, the handover stops and tells it. Then run `specify <task> --builds-on ""`. The base of the task goes back to the default branch, and the changes of the earlier task in the work copy become changes of the later task. Remove the changes that the later task does not need.
 5. A large feature gets the feature keys `<feature>/<part>`. A part that needs another part builds on it.
@@ -125,7 +125,7 @@ When two people want the same feature, the second task builds on the first task.
 
 Each task builds in its own work copy: a git worktree in `.akasha/work/<task>`, on the branch `akasha/<task>`.
 
-- A work copy starts from the latest default branch on the server, or from the branch of the earlier task.
+- A work copy starts from the latest default branch on the server, or from the branch of the earlier task. Akasha asks the server for the name of its default branch: GitHub tells it, else git asks the server. Thus a clone from before the team renamed the default branch starts from the correct branch.
 - While a task builds, Akasha stops edits in the main checkout.
 - Two tasks never write in the same folder.
 - When the pull request merges, Akasha removes the work copy.
@@ -133,6 +133,15 @@ Each task builds in its own work copy: a git worktree in `.akasha/work/<task>`, 
 - After a handoff, the work copy and the local branch of the task go away. A takeover makes a new work copy from the work on the server.
 - A folder that is not on the branch of the task is not its work copy, for example an empty folder after a failed removal. In such a folder, git works on the main checkout. Thus `check`, `handover`, and `handoff` stop there and do not save or push the changes of the main checkout.
 - The guard and the notice at the end of each turn look only at the work copies on this computer.
+
+## The main checkout
+
+The agent engine writes the specification and the impact analysis before the work copy exists. Thus it reads the product map, the team context, and the code in the main checkout. Git does not update that checkout by itself, so it can be older than the work that other people merged.
+
+At each request, Akasha fetches the default branch. When the main checkout is on the default branch and has no changes, Akasha brings it forward to the latest commit (`git merge --ff-only`). Else the request tells how many commits the checkout is behind. Then the agent engine reads the latest files from the server:
+
+- `git show origin/<default branch>:<path>` shows one file.
+- `git grep <text> origin/<default branch>` searches all files.
 
 ## Preview resources
 

@@ -194,9 +194,10 @@ class FlowTests(unittest.TestCase):
 
     def test_without_github_protection_the_pull_request_gets_the_merge_label(self):
         root = make_repo(PASS)
-        add_remote(root)
         with (root / "akasha.toml").open("a", encoding="utf-8") as file:
             file.write('[server]\nrules = "akasha"\n')
+        workcopy.git(root, "commit", "-qam", "the helpers of Akasha enforce the server rules")
+        add_remote(root)                                     # the rules come from the default branch on the server
         task, _ = flow.start(root, "Change the search", "ops-member", workflow="small")
         (Path(task.workcopy) / "search.py").write_text("x = 1\n", encoding="utf-8")
         flow.impact(root, task.id, IMPACT, map_note="The change adds no feature, screen, table, or API.")
@@ -371,7 +372,8 @@ class FlowTests(unittest.TestCase):
     def test_a_board_on_github_that_fails_stops_the_request(self):
         root = make_repo(PASS)
         with patch("akasha.coordinator.board.gh", FakeBoard(broken=True)), \
-                patch("akasha.repo.me", return_value="dev-a"), patch("akasha.repo.host", return_value="pc-a"):
+                patch("akasha.repo.me", return_value="dev-a"), patch("akasha.repo.host", return_value="pc-a"), \
+                patch("akasha.flow._server_branch", return_value=""):        # no git fetch from the real GitHub
             first, _ = flow.start(root, "Add a date filter", "ops-a")     # without GitHub, the board is local
             self.assertEqual([item.id for item in board.read(root)[0]], [first.id])
             workcopy.git(root, "remote", "add", "origin", "https://github.com/team/app.git")
@@ -475,6 +477,14 @@ class SharedTaskTests(unittest.TestCase):
             task, _ = flow.start(self.first, "Change the search", "ops-a", workflow="small", scope=scope)
         (Path(task.workcopy) / "search.py").write_text("x = 1\n", encoding="utf-8")
         return task
+
+    def team_rules(self, text: str) -> None:
+        """An administrator merges a change of akasha.toml on the server. Neither copy of the repository pulls it."""
+        other = clone(self.remote)
+        with (other / "akasha.toml").open("a", encoding="utf-8") as file:
+            file.write(text)
+        for args in (("commit", "-qam", "team rules"), ("push", "-q", "origin", "main")):
+            workcopy.git(other, *args)
 
     def on_server(self, branch: str) -> str:
         found = workcopy.git(self.remote, "rev-parse", "--verify", "-q", branch)
@@ -653,6 +663,64 @@ class SharedTaskTests(unittest.TestCase):
                 self.assertIn("is not the work copy of the task", str(stopped.exception))
         self.assertEqual(workcopy.git(self.first, "rev-parse", "HEAD").stdout.strip(), main)    # main did not move
 
+    def changed_on_server(self, task: tasks.Task, merge: str = "", name: str = "", text: str = "") -> str:
+        """The task branch on the server gets a new commit from the second copy: a merge of `merge`, as GitHub makes
+        it in the pull request, or else a change of the file `name`. Return the commit."""
+        workcopy.git(self.second, "fetch", "-q", "origin")
+        workcopy.git(self.second, "checkout", "-q", "-B", "update", f"origin/{task.branch}")
+        if merge:
+            workcopy.git(self.second, "merge", "-q", "--no-edit", merge)
+        else:
+            (self.second / name).write_text(text, encoding="utf-8")
+            workcopy.git(self.second, "commit", "-qam", f"change {name}")
+        workcopy.git(self.second, "push", "-q", "origin", f"HEAD:{task.branch}")
+        return self.on_server(task.branch)
+
+    def test_a_check_merges_the_newer_commits_of_the_task_branch(self):
+        task = self.started()
+        with person("dev-a", "pc-a", self.fake):
+            flow.check(self.first, task.id)                             # the task branch goes to the server
+        main = self.moved_main()
+        self.changed_on_server(task, merge="origin/main")               # GitHub updates the pull request
+        (Path(task.workcopy) / "search.py").write_text("x = 2\n", encoding="utf-8")
+        with person("dev-a", "pc-a", self.fake), patch("akasha.flow.runner.run", wraps=flow.runner.run) as checked:
+            result = flow.check(self.first, task.id)
+        self.assertEqual((result.status["tests"], result.notes, checked.call_count), ("PASS", [], 2))   # checked again
+        task = tasks.load(self.first, task.id)
+        self.assertEqual(self.on_server(task.branch), workcopy.git(Path(task.workcopy), "rev-parse", "HEAD").stdout.strip())
+        self.assertEqual((task.base, workcopy.changed_files(task)), (main, ["search.py"]))    # still its own changes
+
+    def test_a_conflict_with_the_task_branch_on_the_server_stops_the_check(self):
+        task = self.started()
+        with person("dev-a", "pc-a", self.fake):
+            flow.check(self.first, task.id)
+        server = self.changed_on_server(task, name="search.py", text="x = 3\n")
+        (Path(task.workcopy) / "search.py").write_text("x = 2\n", encoding="utf-8")
+        with person("dev-a", "pc-a", self.fake), self.assertRaises(RuntimeError) as stopped:
+            flow.check(self.first, task.id)
+        self.assertIn(f"run git merge origin/{task.branch}, repair the conflict", str(stopped.exception))
+        self.assertEqual(self.on_server(task.branch), server)
+        self.assertEqual(workcopy.git(Path(task.workcopy), "status", "--porcelain").stdout, "")     # no half merge
+
+    def test_a_push_that_the_server_refuses_is_told(self):
+        task = self.started()
+        real = workcopy.git
+
+        def refused(cwd, *args):
+            if args[:1] == ("push",):
+                return subprocess.CompletedProcess(args, 1, "", "remote: Permission to team/app.git denied to dev-a.")
+            return real(cwd, *args)
+
+        output = io.StringIO()
+        with person("dev-a", "pc-a", self.fake), patch("akasha.flow.workcopy.git", side_effect=refused), \
+                patch("akasha.__main__.main_root", return_value=self.first), redirect_stdout(output):
+            self.assertEqual(command_line.run(["check", task.id]), 0)      # the checks passed
+        self.assertIn(f"Akasha could not update the task branch {task.branch} on the server", output.getvalue())
+        self.assertIn("Permission to team/app.git denied", output.getvalue())
+        shared = board.parse(self.fake.issues[task.board]["body"])
+        self.assertTrue(any(note.startswith("Akasha could not update the task branch") for note in shared.notes))
+        self.assertEqual(self.on_server(task.branch), "")
+
     def test_a_task_that_another_computer_cancelled_is_not_on_the_board_here(self):
         task = self.started(scope=["search.py"])
         with person("dev-a", "pc-a", self.fake):
@@ -679,8 +747,7 @@ class SharedTaskTests(unittest.TestCase):
         self.assertEqual(tasks.load(self.first, task.id).setup_output, "")
 
     def test_a_developer_takes_over_a_stopped_task(self):
-        with (self.second / "akasha.toml").open("a", encoding="utf-8") as file:
-            file.write('[roles]\ndevelopers = ["dev-c"]\n')
+        self.team_rules('[roles]\ndevelopers = ["dev-c"]\n')            # the rules come from the server
         task = self.started()
         with person("dev-a", "pc-a", self.fake):
             flow.check(self.first, task.id)
@@ -701,8 +768,7 @@ class SharedTaskTests(unittest.TestCase):
         self.assertTrue(told["body"].startswith(f"@dev-a Akasha: dev-c took over the stopped task {task.id}"))
 
     def test_a_developer_resumes_and_takes_over_a_stopped_task(self):
-        with (self.second / "akasha.toml").open("a", encoding="utf-8") as file:
-            file.write('[roles]\ndevelopers = ["dev-c"]\n')
+        self.team_rules('[roles]\ndevelopers = ["dev-c"]\n')            # the rules come from the server
         task = self.started()
         with person("dev-a", "pc-a", self.fake):
             flow.check(self.first, task.id)
@@ -716,6 +782,93 @@ class SharedTaskTests(unittest.TestCase):
         self.assertEqual((taken.holder, taken.status, shared.holder, shared.status),
                          ("dev-c", "open", "dev-c", "open"))
         self.assertIn("dev-c examined the problem and opened the task again", shared.notes)
+
+
+class ServerTests(unittest.TestCase):
+    """Each computer takes the team rules and the start of each work copy from the server, also when its main
+    checkout is old."""
+
+    def setUp(self):
+        self.remote = add_remote(make_repo(PASS))
+        self.old, self.other = clone(self.remote), clone(self.remote)
+        board_gh = patch("akasha.coordinator.board.gh", FakeBoard(broken=True))   # origin is not on GitHub
+        board_gh.start()
+        self.addCleanup(board_gh.stop)
+
+    def merged(self, name: str, text: str, branch: str = "main") -> str:
+        """Another person merges a change on the server. Return its commit."""
+        path = self.other / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        for args in (("add", "-A"), ("commit", "-q", "-m", f"change {name}"), ("push", "-q", "origin", f"HEAD:{branch}")):
+            workcopy.git(self.other, *args)
+        return workcopy.git(self.other, "rev-parse", "HEAD").stdout.strip()
+
+    def head(self, root: Path) -> str:
+        return workcopy.git(root, "rev-parse", "HEAD").stdout.strip()
+
+    def test_the_team_rules_come_from_the_server(self):
+        rules = (self.other / "akasha.toml").read_text(encoding="utf-8") + '[workflows]\nenabled = ["small"]\n'
+        self.merged("akasha.toml", rules)
+        self.merged(".akasha/workflows/small.toml", 'name = "small"\n[[stages]]\nid = "build"\n'
+                                                    'exit = ["impact_assessed"]\n[[stages]]\nid = "handover"\n'
+                                                    'exit = ["merged"]\n')
+        (self.old / "app.py").write_text("print('draft')\n", encoding="utf-8")     # the main checkout stays old
+        with self.assertRaises(ValueError) as refused:
+            flow.start(self.old, "Add a date filter", "ops-a")                     # feature is off on the server
+        self.assertIn("use small", str(refused.exception))
+        task, _ = flow.start(self.old, "Add a date filter", "ops-a", workflow="small")
+        flow.impact(self.old, task.id, IMPACT)
+        self.assertEqual(flow.advance(self.old, task.id), [])
+        self.assertEqual(tasks.load(self.old, task.id).stage, "handover")          # the workflow of the server
+        self.assertNotIn("[workflows]", (self.old / "akasha.toml").read_text(encoding="utf-8"))
+
+    def test_one_command_reads_the_server_once(self):
+        fake = FakeBoard()
+        with person(fake=fake):
+            task, _ = flow.start(self.old, "Change the search", "ops-a", workflow="small")
+            with patch("akasha.flow.github.default_branch", wraps=github.default_branch) as asked, \
+                    patch("akasha.__main__.main_root", return_value=self.old), redirect_stdout(io.StringIO()):
+                self.assertEqual(command_line.run(["check", task.id]), 0)        # it also shows the task again
+        self.assertEqual(asked.call_count, 1)
+
+    def test_a_work_copy_starts_from_the_default_branch_that_the_server_names_now(self):
+        for args in (("branch", "-m", "main", "trunk"), ("symbolic-ref", "HEAD", "refs/heads/trunk")):
+            workcopy.git(self.remote, *args)                                      # the team renames the branch
+        workcopy.git(self.other, "fetch", "-q", "origin")
+        workcopy.git(self.other, "checkout", "-q", "-b", "trunk", "origin/trunk")
+        latest = self.merged("filter.py", "x = 1\n", "trunk")
+        self.assertEqual(workcopy.git(self.old, "symbolic-ref", "refs/remotes/origin/HEAD").stdout.strip(),
+                         "refs/remotes/origin/main")                              # git set it at the clone
+        task, _ = flow.start(self.old, "Change the search", "ops-a", workflow="small")
+        self.assertEqual(task.base, latest)
+        self.assertTrue((Path(task.workcopy) / "filter.py").is_file())
+        self.assertIn("1 commit(s) behind origin/trunk", flow.behind(self.old))   # the main checkout is on main
+
+    def test_a_later_task_starts_from_the_checked_branch_of_the_earlier_task(self):
+        earlier, _ = flow.start(self.old, "Add a date filter", "ops-a", workflow="small")
+        work = Path(earlier.workcopy)
+        (work / "date_filter.py").write_text("x = 1\n", encoding="utf-8")
+        flow.check(self.old, earlier.id)                                          # the branch goes to the server
+        (work / "draft.py").write_text("y = 1\n", encoding="utf-8")
+        for args in (("add", "-A"), ("commit", "-q", "-m", "draft")):            # not checked, not on the server
+            workcopy.git(work, *args)
+        later, _ = flow.start(self.old, "Export the filtered list", "ops-b", workflow="small", builds_on=earlier.id)
+        self.assertTrue((Path(later.workcopy) / "date_filter.py").is_file())
+        self.assertFalse((Path(later.workcopy) / "draft.py").exists())
+
+    def test_a_request_brings_the_main_checkout_up_to_date(self):
+        latest = self.merged("filter.py", "x = 1\n")
+        flow.start(self.old, "Change the search", "ops-a")
+        self.assertEqual((self.head(self.old), flow.behind(self.old)), (latest, ""))
+        self.merged("export.py", "y = 1\n")
+        (self.old / "app.py").write_text("print('draft')\n", encoding="utf-8")   # work in the main checkout stays
+        output = io.StringIO()
+        with patch("akasha.__main__.main_root", return_value=self.old), redirect_stdout(output):
+            self.assertEqual(command_line.run(["request", "Export the list", "--requester", "ops-a"]), 0)
+        self.assertEqual(self.head(self.old), latest)
+        self.assertIn("note — the main checkout is 1 commit(s) behind origin/main", output.getvalue())
+        self.assertIn("git show origin/main:<path>", output.getvalue())
 
 
 class SharedStateTests(unittest.TestCase):
@@ -1145,6 +1298,31 @@ class HookTests(unittest.TestCase):
             self.assertEqual(hooks.main("claude", "SessionStart"), 0)
         self.assertIn("akasha-setup", output.getvalue())
         self.assertIn(Path(sys.executable).as_posix(), output.getvalue())
+
+    def test_an_old_checkout_of_a_repository_with_akasha(self):
+        first = make_repo(PASS)
+        (first / "akasha.toml").unlink()
+        workcopy.git(first, "commit", "-qam", "no Akasha yet")
+        old = clone(add_remote(first))
+        payload = {"cwd": str(old), "tool_name": "Bash", "tool_input": {"command": "git push --force"}}
+
+        def guarded() -> int:
+            with patch("sys.stdin", io.StringIO(json.dumps(payload))), redirect_stderr(io.StringIO()):
+                return hooks.main("claude", "PreToolUse")
+
+        self.assertEqual(guarded(), 0)                                   # a repository without Akasha
+        (first / "akasha.toml").write_text('[checks]\nrequired = ["secrets"]\n', encoding="utf-8")
+        for args in (("add", "-A"), ("commit", "-q", "-m", "set up Akasha"), ("push", "-q", "origin", "main")):
+            workcopy.git(first, *args)                                   # the setup pull request merged
+        report = setup.run(old, "")
+        self.assertIn("Pull the default branch first: git pull origin main", report[0])
+        self.assertFalse((old / "akasha.toml").exists())                 # no second setup pull request
+        output = io.StringIO()
+        with patch("akasha.engine.hooks._server_notice", return_value=[]), redirect_stdout(output):
+            hooks.session_start(old)
+        self.assertIn("Do each change as an Akasha task", output.getvalue())
+        self.assertIn("this checkout is old and has no akasha.toml", output.getvalue())
+        self.assertEqual(guarded(), 2)                                   # the guard runs before the pull
 
     def test_session_start_shows_the_team_context(self):
         root = make_repo(PASS)

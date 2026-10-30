@@ -2,6 +2,8 @@
 
 The validators change each rule that a machine can examine into a check. They operate at two places: in the hooks of the agent engine during the work, and in the required checks.
 
+The hooks operate in a repository when its checkout has `akasha.toml`. They also operate when only the default branch on the server has it, for example after the setup pull request merged and before the person pulls it. For this test, the hooks use no network: they read the default branch as git fetched it last.
+
 ## The guard
 
 The guard examines each shell command and each edit before it runs. It stops these commands:
