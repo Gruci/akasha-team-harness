@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" viewBox="0 0 900 260" role="img" aria-labelledby="title desc">
+  <title id="title">Akasha</title>
+  <desc id="desc">Akasha lets any person on your team make features with an AI agent. Each task goes through six stages: request, specification, build, checks, inspection, and handover.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e1b4b"/>
+      <stop offset="1" stop-color="#4c1d95"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="260" rx="24" fill="url(#background)"/>
+  <circle cx="820" cy="40" r="120" fill="none" stroke="#a78bfa" stroke-opacity="0.18" stroke-width="2"/>
+  <circle cx="820" cy="40" r="80" fill="none" stroke="#a78bfa" stroke-opacity="0.12" stroke-width="2"/>
+  <g font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+    <text x="48" y="86" font-size="54" font-weight="700" fill="#ffffff">Akasha</text>
+    <text x="50" y="116" font-size="14" font-weight="600" letter-spacing="2" fill="#c4b5fd">TEAM HARNESS · V1.0.0</text>
+    <text x="48" y="150" font-size="21" fill="#ede9fe">Let any person on your team make features with an AI agent.</text>
+    <g fill="#ffffff" fill-opacity="0.1" stroke="#a78bfa" stroke-width="1.5">
+      <rect x="48" y="178" width="122" height="36" rx="18"/>
+      <rect x="184.4" y="178" width="122" height="36" rx="18"/>
+      <rect x="320.8" y="178" width="122" height="36" rx="18"/>
+      <rect x="457.2" y="178" width="122" height="36" rx="18"/>
+      <rect x="593.6" y="178" width="122" height="36" rx="18"/>
+      <rect x="730" y="178" width="122" height="36" rx="18"/>
+    </g>
+    <g fill="#c4b5fd">
+      <path d="M174.2 191 L180.2 196 L174.2 201 Z"/>
+      <path d="M310.6 191 L316.6 196 L310.6 201 Z"/>
+      <path d="M447 191 L453 196 L447 201 Z"/>
+      <path d="M583.4 191 L589.4 196 L583.4 201 Z"/>
+      <path d="M719.8 191 L725.8 196 L719.8 201 Z"/>
+    </g>
+    <g font-size="14" font-weight="600" fill="#f5f3ff" text-anchor="middle">
+      <text x="109" y="201">Request</text>
+      <text x="245.4" y="201">Specification</text>
+      <text x="381.8" y="201">Build</text>
+      <text x="518.2" y="201">Checks</text>
+      <text x="654.6" y="201">Inspection</text>
+      <text x="791" y="201">Handover</text>
+    </g>
+    <text x="48" y="242" font-size="14" fill="#c4b5fd">Requester asks · Akasha guides and verifies · Developer merges</text>
+  </g>
+</svg>
