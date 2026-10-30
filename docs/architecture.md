@@ -54,8 +54,9 @@ flowchart LR
 | Server files | `.github/workflows/akasha.yml`, `akasha-merge.yml`, `akasha-watch.yml`, the Akasha block of CODEOWNERS, `.github/pull_request_template.md` | Yes |
 | Branch protection and repository settings | GitHub | No |
 | Shared task board | GitHub issues with the label `akasha` | No |
-| Task state | `.akasha/state/tasks/<task>.json` | No |
-| Work copies | `.akasha/work/<task>/`, on the branch `akasha/<task>` | No |
+| Task state | The issue of the task on the shared task board. Each computer also keeps the task in `.akasha/state/tasks/<task>.json`, with its work copy folder | No |
+| The person and the copy of the repository | `.akasha/state/me.json` (the GitHub name, for one hour) and `.akasha/state/machine.json` (the random mark of this copy) | No |
+| Work copies | `.akasha/work/<task>/`, on the branch `akasha/<task>`. A handoff pushes the work to `akasha-wip/<task>` | No |
 
 ## Three enforcement layers
 
@@ -75,18 +76,20 @@ The agent engine runs these commands. People do not have to remember them. The s
 |:--|:--|
 | `setup` | Writes `akasha.toml`, the product map, and the files that Codex reads. With the approval of an administrator, it also changes the GitHub settings |
 | `request` | Records a new task and shows overlaps. `--builds-on` stacks it on an earlier task |
-| `specify` | Adds completion conditions, open questions, or file patterns of the scope |
+| `specify` | Adds completion conditions, open questions, or file patterns of the scope. `--builds-on ""` stops building on the earlier task |
 | `impact` | Records the impact analysis, a reason why the product map does not change, or a change of behavior that an earlier requester accepted |
 | `approve` | Records the approval of a requester or of a gate role |
 | `advance` | Moves the task to the next stage, or shows what blocks it |
-| `show` | Shows one task: stage, risk, scope, conditions, impact, approvals, checks, and preview values |
+| `show` | Shows one task: stage, risk, holder, scope, conditions, impact, approvals, checks, and preview values. It only reads |
 | `check` | Runs the required checks in the work copy |
 | `accept` | Records the inspection of the requester |
 | `brief` | Examines and records the briefing |
 | `handover` | Checks the change again on the latest default branch, opens the pull request, and turns on auto-merge |
 | `resume` | Opens a stopped task again after a developer examined it |
 | `cancel` | Stops a task for good |
-| `board` | Shows the tasks of all requesters |
+| `handoff` | Saves the work so far on the server and frees the task, so that another person can take it over |
+| `takeover` | Holds a task that another person handed off, and makes its work copy on this computer |
+| `board` | Shows the tasks of all requesters, with the holder and the feature key of each task |
 | `infra` | Shows the GitHub settings that are not correct. With `--apply`, it corrects them |
 | `hook` | The entry point for the hooks of the agent engine |
 | `server` | The merge and watch helpers run this on GitHub. People and the agent engine do not run it |

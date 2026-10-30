@@ -43,6 +43,8 @@ class GuardTests(unittest.TestCase):
     def test_edits_go_into_the_work_copy_of_an_active_task(self):
         work = self.root / ".akasha" / "work" / "t-1"
         task = Task(id="t-1", title="x", workflow="feature", stage="build", workcopy=str(work))
+        self.assertIsNone(guard.check_edit(self.root / "src" / "a.py", self.root, [task]))     # handed off: no copy
+        work.mkdir(parents=True)
         self.assertIsNotNone(guard.check_edit(self.root / "src" / "a.py", self.root, [task]))
         self.assertIsNone(guard.check_edit(work / "src" / "a.py", self.root, [task]))
         self.assertIsNone(guard.check_edit(self.root / "src" / "a.py", self.root, []))

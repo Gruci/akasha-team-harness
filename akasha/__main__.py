@@ -23,7 +23,8 @@ def _root() -> Path:
 def _show(task: tasks.Task) -> None:
     print(f"{task.id} · {task.title}\n  workflow {task.workflow} · stage {task.stage} · status {task.status} · "
           f"risk {task.risk}" + (f"\n  work copy {task.workcopy}" if task.workcopy else "")
-          + (f"\n  board {task.board}" if task.board else ""))
+          + (f"\n  board {task.board}" if task.board else "")
+          + (f"\n  holder {task.holder} ({task.holder_host})" if task.holder else ""))
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -45,6 +46,7 @@ def _parser() -> argparse.ArgumentParser:
     specify.add_argument("--question", nargs="*", default=[])
     specify.add_argument("--clear-questions", action="store_true")
     specify.add_argument("--scope", nargs="*", default=[])
+    specify.add_argument("--builds-on", metavar='""', help='stop building on the earlier task: --builds-on ""')
     impact = commands.add_parser("impact", help="record the impact analysis of the agent engine")
     impact.add_argument("task")
     for name in ("features", "data", "contracts", "tasks", "rollback"):
@@ -66,7 +68,9 @@ def _parser() -> argparse.ArgumentParser:
     cancel.add_argument("task")
     cancel.add_argument("--by", required=True, help="the person who withdrew the request")
     for name, text in (("advance", "move the task to its next stage"), ("show", "show one task"),
-                       ("handover", "open the pull request and turn on auto-merge")):
+                       ("handover", "open the pull request and turn on auto-merge"),
+                       ("handoff", "save the work on the server and free the task for another person"),
+                       ("takeover", "hold a task that another person handed off, and continue it here")):
         commands.add_parser(name, help=text).add_argument("task")
     check = commands.add_parser("check", help="run the required checks")
     check.add_argument("task", nargs="?")
@@ -143,7 +147,8 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(f"- {item}" for item in problems) or "Akasha recorded the briefing.")
         return 1 if problems else 0
     if args.command == "specify":
-        task, found = flow.specify(root, args.task, args.condition, args.question, args.clear_questions, args.scope)
+        task, found = flow.specify(root, args.task, args.condition, args.question, args.clear_questions, args.scope,
+                                   args.builds_on)
         _show(task)
         for item in found:
             print(f"  overlap — {item.message()}")
@@ -157,14 +162,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cancel":
         _show(flow.cancel(root, args.task, args.by))
         return 0
+    if args.command in ("handoff", "takeover"):
+        _show(getattr(flow, args.command)(root, args.task))
+        return 0
     if args.command == "advance":
         blocked = flow.advance(root, args.task)
-        _show(tasks.load(root, args.task))
+        _show(flow.load(root, args.task, write=False))
         for reason in blocked:
             print(f"  blocked — {reason}")
         return 1 if blocked else 0
     if args.command == "show":
-        task = tasks.load(root, args.task)
+        task = flow.load(root, args.task, write=False)
         _show(task)
         preview = config.load(root).preview
         for name, template in preview.items():
@@ -186,10 +194,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  inspection: {'yes' if result else 'no'} — {condition}")
         for name, status in task.checks.items():
             print(f"  check {name}: {status}")
+        if task.setup_output:
+            print(f"  setup command output on this computer:\n{task.setup_output}")
         return 0
     if args.command == "check":
         result = flow.check(root, args.task)
-        task = tasks.load(root, args.task)
+        task = flow.load(root, args.task, write=False)
         for name, status in result.status.items():
             print(f"[{status}] {name}" + (f"\n{result.details[name]}" if status != "PASS" and result.details[name] else ""))
         if task.status == "stopped":
@@ -208,8 +218,9 @@ def main(argv: list[str] | None = None) -> int:
         listed, source = board.read(root)
         print(f"Shared task board ({source}): {len(listed)} task(s)")
         for task in listed:
-            print(f"- {task.id} · {task.status} · {task.stage} · risk {task.risk} · {task.requester or 'unknown'} · "
-                  f"{task.title}")
+            held = f" · holder {task.holder or 'nobody'}" if source == "github" else ""
+            print(f"- {task.id} · {task.status} · {task.stage} · risk {task.risk} · {task.requester or 'unknown'}"
+                  f"{held} · feature {task.feature or 'none'} · {task.title}")
         return 0
     if args.command == "infra":
         problems = github.apply(root, args.by) if args.apply else github.status(root)

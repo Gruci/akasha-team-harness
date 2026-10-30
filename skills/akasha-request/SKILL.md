@@ -37,7 +37,9 @@ If the requester withdraws the request, run `akasha cancel <task> --by <requeste
 
 > **NOTE:** The `fix` and `small` workflows have no specification stage. For these workflows, do steps 1 to 3 of stage 2 before you advance from the build stage.
 
-> **NOTE:** If Akasha says that it cannot read or write the shared task board, do not continue without the board. Ask the user to log in with `gh auth login`. If Akasha also says that it saved the task on this computer, run the `akasha specify <task>` command that Akasha shows, and continue with that task. Do not record the task again, because that makes a second task. Else do the step again.
+> **NOTE:** If Akasha says that it cannot read or write the shared task board, do not continue without the board. Ask the user to log in with `gh auth login`. If Akasha also says that it saved or recorded the task, continue with that task. When `gh` works again, run the command that Akasha shows. Do not record the task again, because that makes a second task. Else do the step again.
+
+> **NOTE:** If Akasha says that another person or another computer holds the task, do not change the task. Tell the user who holds it. If Akasha says that another command changed the task, do the step again.
 
 ## Stage 2 — Specification and impact
 
@@ -61,6 +63,25 @@ An earlier requester accepted some behavior, and the tests of that task keep it.
 
 1. If the request changes behavior that an earlier requester accepted, ask your requester: keep both, or replace?
 2. If your requester selects to replace, record it: `akasha impact <task> --changes-task <earlier task> "<what changes>"`. Akasha tells the earlier requester on GitHub. Do not wait for an answer.
+
+## When another person continues the task
+
+With GitHub, one person on one computer holds each task. Only the holder changes it.
+
+To stop the work so that another person, or the same person on another computer, continues it:
+
+1. Make sure that the work copy has no secret key and no file outside the scope.
+2. Run `akasha handoff <task>`. Akasha saves the work on the server and frees the task. The work copy goes away.
+3. Tell the user that the task is free, and give the task name.
+
+To continue the task of another person:
+
+1. Run `akasha board`. Find the task and its holder. If a person holds the task, ask that person to hand it off. Do not continue before the handoff.
+2. Run `akasha takeover <task>`. Akasha makes the work copy from the work on the server, and you hold the task.
+3. If Akasha says that a work copy or a branch on this computer cannot go forward to the work on the server, tell the user. The user examines it and removes it. Then do step 2 again.
+4. Run `akasha show <task>`. Continue at the stage that Akasha shows.
+
+> **NOTE:** A developer can take over a stopped task without a handoff. Akasha tells the old holder on the issue.
 
 ## Stage 3 — Build
 

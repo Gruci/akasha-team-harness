@@ -35,6 +35,9 @@ After each step, run `python -m akasha advance <task>`. If Akasha shows a blocke
 
 Never record an approval or an answer for a person who did not give it.
 After three failed repairs, Akasha stops the task. Stop the work and tell a developer.
+With GitHub, one person on one computer holds each task. If Akasha says that another person holds it, do not change it.
+To let another person continue a task, run `python -m akasha handoff <task>`.
+To continue a task that another person handed off, run `python -m akasha takeover <task>`.
 Do not use a command that you cannot undo, for example a force push.
 {END}
 """

@@ -10,12 +10,23 @@ Each person talks only to their own agent engine. The agent engines align throug
 
 Each task has one GitHub issue with the label `akasha`. The title of the issue is `[akasha] <task title>`.
 
-The issue body holds a JSON block with the name `akasha-scope`. The agent engine on each computer reads these blocks. Each block contains:
+The issue holds the state of the task, so that each computer can continue the task. The top of the issue body is for people: the requester, the holder, the stage, the status, the risk level, the numbered completion conditions with their inspection results, and the approvals. Below it, a JSON block with the name `akasha-scope` holds each field of the task. The agent engine on each computer reads these blocks. Each block contains:
 
 - the task name, the requester, the workflow, the stage, and the status,
 - the feature key, the scope, the contracts, and the risk level,
-- the completion conditions and the inspection results,
-- the earlier task and the pull request.
+- the completion conditions, the open questions, the inspection results, and the approvals,
+- the impact analysis, the briefing, the checks, the count of failed repairs, and the notes,
+- the earlier task, the branch, the base commit, and the pull request,
+- the holder, the revision, the commit of the last handoff, and the format.
+
+| Field | Meaning |
+|:--|:--|
+| `holder`, `holder_host` | The GitHub name of the person who holds the task, and the mark of the copy of the repository where that person works. Each copy of the repository has a random mark in `.akasha/state/machine.json` |
+| `revision` | Goes up by one at each write. Akasha uses it to find the newer state |
+| `wip` | The commit that the last handoff pushed |
+| `format` | `2`. An issue without a format is from Akasha 1.0.0 |
+
+Three fields stay on the computer and never go on the issue: the work copy folder, the revision of the issue that this computer saw last, and the output of a setup command that failed. The output of a setup command can show paths and secret values. The issue only tells that the setup command failed. `show <task>` on the computer of the work copy shows the output.
 
 | Event | What occurs to the issue |
 |:--|:--|
@@ -24,19 +35,46 @@ The issue body holds a JSON block with the name `akasha-scope`. The agent engine
 | The pull request merges | The pull request closes the issue |
 | A task is cancelled | Akasha closes the issue |
 
+Each command reads the task from its issue, and takes only these three fields from the task file on this computer. Before a write, Akasha reads the issue again. If another computer or another command wrote the issue after this command read it, the command stops and does not write over the newer state. Do the step again. A comment does not change the revision, so a comment never stops a command.
+
+When the task file on this computer has changes that the issue did not get, and nobody wrote the issue since, the next command for the task puts them on the issue. When the computer with the task file of an Akasha 1.0.0 task runs a command for it, Akasha writes the issue in the new format, and the person on that computer holds the task. Until then, nobody can take over that task on another computer.
+
 Each task name is unique in the repository. The name has the letters a to z and the digits of the title in lower case, and eight random characters, for example `add-a-date-filter-1f3a9c0b`. A title without these letters and digits, for example a Korean title, gives `task-<random characters>`. Before a task starts, Akasha makes sure that no task file, no branch on this computer or on the server, and no issue on the board has the same name.
 
 When `origin` is a GitHub repository, the board must work. If `gh` cannot read or write the board, the command stops and tells you to examine `gh auth status`. Thus nobody works on a task that the other people cannot see. This also applies to the comments that Akasha writes on the issues.
 
-If a write fails after Akasha saved the change on this computer, the message names the task. When `gh` works again, run `specify <task>`. It puts the saved task on the board. Do not record the task again, because that makes a second task.
+If a write fails after Akasha saved the change on this computer, the message names the task. When `gh` works again, run `specify <task>`, or the next command for the task. It puts the saved task on the board. Do not record the task again, because that makes a second task.
 
-Before a request, Akasha finishes the tasks on this computer whose pull request merged. If Akasha cannot update the issue of such a task, for example because a person deleted the issue, the request continues. The request itself reads and writes the board.
+Before a request, Akasha finishes the tasks that this person holds on this computer and whose pull request merged. If Akasha cannot update the issue of such a task, for example because a person deleted the issue, the request continues. The request itself reads and writes the board.
 
 > **NOTE:** Without GitHub, the board holds only the active tasks on one computer.
 
+## The holder of a task
+
+With GitHub, one person in one copy of the repository holds each task. The person who records the task holds it. Only the holder changes the task: when another GitHub account or another copy of the repository holds the task, each command that changes the task stops. The message tells who holds the task.
+
+A task can go to another person, or to the same person on another computer.
+
+1. The holder runs `handoff <task>`. Akasha examines the work copy first. If it has a secret key or a file outside the scope, the handoff stops.
+2. Akasha saves the work as a commit and pushes it to the wip branch `akasha-wip/<task>`. Akasha never forces this push. Thus a work copy that is behind the server cannot write over newer work.
+3. Akasha removes the work copy and the local branch of the task, and frees the task: nobody holds it.
+4. The other person runs `takeover <task>` on their computer. The work copy starts from the commit of the last handoff, or from the task branch on the server when that branch has the newer work. The task keeps its branch and its base. The setup command runs in the new work copy.
+5. If that computer still has a work copy or a branch of the task, it must be able to go forward to the work on the server. A work copy with changes, a folder that is not on the branch of the task, or a branch with commits that are not on the server stops the takeover. Examine them, then remove them.
+6. Now the other person holds the task.
+
+A developer can take over a stopped task when its holder did not hand it off. `[roles] developers` names the developers. When the list is empty, each person can do it. Akasha writes a notice with an `@` mention on the issue of the task for the old holder.
+
+When the handover pushes the task branch, Akasha deletes the wip branch on the server. A cancel also deletes it.
+
+The handoff pushes to the wip branch, not to the task branch `akasha/<task>`. The task branch on the server always passed the checks, and later tasks build on it.
+
+If another person took over a task while this computer still has its work copy, each command for the task on this computer stops and tells you to examine the work copy, save what you need, and remove it.
+
+> **NOTE:** Without GitHub, nobody holds a task, and the handoff and the takeover are not available.
+
 ## Overlap checks
 
-The coordinator compares a task with each active task on the board. A task is active when it is open or stopped. The coordinator does this check when a task starts and when the scope of a task gets wider.
+The coordinator compares a task with each active task on the board. A task is active when it is open or stopped. The coordinator does this check when a task starts and when the scope of a task gets wider. A new task goes on the board before the check. Thus two tasks that start at the same time find each other.
 
 | Overlap | Test | Action |
 |:--|:--|:--|
@@ -55,7 +93,7 @@ When two people want the same feature, the second task builds on the first task.
 1. The second task starts with `request --builds-on <earlier task>`. Its work copy starts from the branch of the earlier task.
 2. Akasha pushes the branch of each task when all its checks pass. Thus the branch on the server always passed the checks.
 3. The agent engine writes a test for each completion condition. Thus the checks of the later task keep the behavior that the earlier requester accepted.
-4. The later task hands over only after the earlier task merged. Else its pull request would carry changes that the earlier requester did not accept.
+4. The later task hands over only after the earlier task merged. Else its pull request would carry changes that the earlier requester did not accept. If the earlier task is cancelled, the handover stops and tells it. Then run `specify <task> --builds-on ""`. The base of the task goes back to the default branch, and the changes of the earlier task in the work copy become changes of the later task. Remove the changes that the later task does not need.
 5. A large feature gets the feature keys `<feature>/<part>`. A part that needs another part builds on it.
 
 ## When a later request changes accepted behavior
@@ -73,6 +111,8 @@ Each task builds in its own work copy: a git worktree in `.akasha/work/<task>`, 
 - Two tasks never write in the same folder.
 - When the pull request merges, Akasha removes the work copy.
 - When a task is cancelled, the work copy stays. A person removes it after a review of the changes.
+- After a handoff, the work copy and the local branch of the task go away. A takeover makes a new work copy from the work on the server.
+- The guard and the notice at the end of each turn look only at the work copies on this computer.
 
 ## Preview resources
 

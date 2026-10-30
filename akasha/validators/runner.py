@@ -23,7 +23,8 @@ class Result:
     details: dict[str, str] = field(default_factory=dict)    # check -> the text that tells why
 
 
-def _secrets(workcopy: Path, changed: list[str]) -> tuple[str, str]:
+def secrets_status(workcopy: Path, changed: list[str]) -> tuple[str, str]:
+    """FAIL and one line for each secret key in the changed files, else PASS."""
     hits = []
     for name in changed:
         path = workcopy / name
@@ -78,7 +79,7 @@ def run(team: Team, workcopy: Path, changed: list[str]) -> Result:
     result = Result()
     for name in team.required_checks:
         if name == "secrets":
-            status, detail = _secrets(workcopy, changed)
+            status, detail = secrets_status(workcopy, changed)
         elif name in team.commands:
             status, detail = _command(team.commands[name], workcopy)
         else:

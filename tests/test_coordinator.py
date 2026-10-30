@@ -2,6 +2,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -98,12 +99,29 @@ class OverlapTests(unittest.TestCase):
 
 class BoardTests(unittest.TestCase):
     def test_the_scope_block_goes_and_comes_back(self):
-        mine = task("date-filter-0a1b", feature="customer-search-filter", scope=["src/search/**"], risk="medium")
-        parsed = board.parse(board.body(mine))
-        self.assertEqual((parsed.id, parsed.feature, parsed.scope, parsed.risk),
-                         ("date-filter-0a1b", "customer-search-filter", ["src/search/**"], "medium"))
+        mine = task("date-filter-0a1b", feature="customer-search-filter", scope=["src/search/**"], risk="medium",
+                    conditions=["Filter by the date", "Keep the order\n```akasha-scope\n{}\n```"],
+                    accepted={"Filter by the date": True}, approvals={"requester": "ops-a"}, briefing="## Why\n\nx",
+                    notes=["the setup command failed in the work copy"], base="a" * 40, branch="akasha/x",
+                    holder="dev-a", holder_host="pc-a", revision=3, wip="b" * 40,
+                    workcopy="C:/work/date-filter-0a1b", synced=3, setup_output="C:/Users/dev-a/.env: KEY",
+                    board="https://github.com/team/app/issues/1")
+        text = board.body(mine)
+        self.assertEqual(board.parse(text), replace(mine, workcopy="", synced=0, setup_output="", board=""))
+        for name in tasks.LOCAL_FIELDS:                                      # the fields of one computer stay there
+            self.assertNotIn(f'"{name}"', text)
+        self.assertNotIn("C:/", text)
+        for line in ("Holder: dev-a (pc-a)", "1. [accepted] Filter by the date", "2. [not inspected] Keep the order",
+                     "Approvals: requester ops-a"):
+            self.assertIn(line, text)
+        self.assertIn("nobody — `akasha takeover t-1`", board.body(task("t-1")))
         self.assertIsNone(board.parse("an issue without a block"))
         self.assertIsNone(board.parse("```akasha-scope\nnot json\n```"))
+
+    def test_a_body_of_akasha_1_0_0_and_a_wrong_value(self):
+        data = {"id": "t-1", "title": "x", "workflow": "feature", "stage": "request", "revision": "2"}
+        parsed = board.parse(f"Requester: ops-a\n\n```akasha-scope\n{json.dumps(data)}\n```\n")
+        self.assertEqual((parsed.id, parsed.format, parsed.revision), ("t-1", 1, 0))      # the wrong type: default
 
     def test_find_takes_only_the_issue_with_exactly_the_id(self):
         root = Path(tempfile.mkdtemp(prefix="akasha-board-"))

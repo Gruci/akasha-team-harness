@@ -1,4 +1,5 @@
-"""Task state: one JSON file for each task in .akasha/state/tasks/."""
+"""Task state. With GitHub, the issue of each task holds its state, so that each computer can continue it. Each
+computer also keeps one JSON file for each task in .akasha/state/tasks/."""
 
 from __future__ import annotations
 
@@ -12,6 +13,9 @@ from pathlib import Path
 from akasha.config import STATE_DIR
 
 STATUSES = ("open", "stopped", "done", "cancelled")
+FORMAT = 2                  # the issue holds the whole task. Akasha 1.0.0 wrote only some fields: format 1
+# The fields that stay on one computer. The issue never holds them.
+LOCAL_FIELDS = ("workcopy", "synced", "setup_output")
 
 
 @dataclass
@@ -43,6 +47,13 @@ class Task:
     board: str = ""                                            # the issue of the task on the shared task board
     pull_request: str = ""
     notes: list[str] = field(default_factory=list)
+    holder: str = ""                                           # the GitHub name of the person who holds the task
+    holder_host: str = ""                                      # the mark of the copy of the repository of the holder
+    revision: int = 0                                          # one more at each write; the higher revision is newer
+    wip: str = ""                                              # the commit that the last handoff pushed
+    format: int = FORMAT
+    synced: int = 0                                            # the revision of the issue that this computer saw last
+    setup_output: str = ""                                     # the output of a setup command that failed here
 
 
 def active(task: Task) -> bool:

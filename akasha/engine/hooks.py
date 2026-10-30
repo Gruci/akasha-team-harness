@@ -10,7 +10,8 @@ import re
 import sys
 from pathlib import Path
 
-from akasha import config, flow
+from akasha import config, flow, repo
+from akasha.coordinator import board
 from akasha.core import task as tasks
 from akasha.core import workcopy
 from akasha.infra import github
@@ -21,6 +22,7 @@ SHELL_TOOLS = ("Bash", "PowerShell", "shell")
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch")
 _PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update) File: (.+)$", re.M)
 SETUP_HINT = "This repository does not use Akasha yet. To start, use the akasha-setup skill."
+BOARD_SECONDS = 10                                     # the session start does not wait longer for the board
 
 
 def _payload() -> dict:
@@ -58,11 +60,36 @@ def session_start(root: Path) -> int:
     context = sorted(path.relative_to(root).as_posix() for path in (root / config.TEAM_CONTEXT).glob("*.md"))
     if context:
         lines.append(f"[AKASHA] Read the team context before you write a specification: {', '.join(context)}")
-    lines += [f"[AKASHA] Task {task.id}: {task.status}, stage {task.stage}, risk {task.risk}, {task.title}"
-              for task in tasks.all_tasks(root) if tasks.active(task)]
+    lines += _task_lines(root)
     lines += _server_notice(root)
     print("\n".join(lines))
     return 0
+
+
+def _task_lines(root: Path) -> list[str]:
+    """The active tasks of this person. With GitHub, the tasks on the board that this person holds or requested.
+    Without GitHub, or when gh does not answer, the tasks on this computer."""
+    found = [task for task in tasks.all_tasks(root) if tasks.active(task)]
+    listed, name = [], ""
+    if board.available(root):
+        try:
+            listed, name = board.read(root, timeout=BOARD_SECONDS)[0], repo.me(root)
+        except board.BoardError:
+            pass
+    if name:
+        found = [task for task in listed if tasks.active(task)
+                 and name in (task.holder, task.requester.lstrip("@").lower())]
+    return [f"[AKASHA] Task {task.id}: {task.status}, stage {task.stage}, risk {task.risk}{_held_by(task, name)}, "
+            f"{task.title}" for task in found]
+
+
+def _held_by(task: tasks.Task, name: str) -> str:
+    """Who holds the task, for the session start notice. Nothing without GitHub."""
+    if not name:
+        return ""
+    if task.holder == name:
+        return ", you hold it"
+    return f", {task.holder} holds it" if task.holder else ", nobody holds it"
 
 
 def _server_notice(root: Path) -> list[str]:
@@ -108,12 +135,15 @@ def after_tool(cwd: Path, tool: str, tool_input: dict) -> int:
 
 
 def turn_end(root: Path) -> int:
-    """Tell the user about each task that needs a person: a stopped task, or changes outside the task scope."""
+    """Tell the user about each task with a work copy on this computer that needs a person: a stopped task, or
+    changes outside the task scope. A task that this computer handed off has no work copy here."""
     found = []
     for task in tasks.all_tasks(root):
+        if not task.workcopy or not Path(task.workcopy).is_dir():
+            continue
         if task.status == "stopped":
             found.append(f"Task {task.id} stopped after failed repairs. A developer must examine it.")
-        elif task.status == "open" and task.workcopy and Path(task.workcopy).is_dir():
+        elif task.status == "open":
             outside = flow.outside_scope(task, workcopy.changed_files(task))
             if outside:
                 found.append(f"Task {task.id} changed files outside its scope: {', '.join(outside[:5])}.")

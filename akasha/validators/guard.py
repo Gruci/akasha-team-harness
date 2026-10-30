@@ -104,8 +104,11 @@ def check_command(line: str, cwd: Path, root: Path) -> str | None:
 
 
 def check_edit(path: Path, root: Path, tasks: Iterable[Task]) -> str | None:
-    """Stop an edit in the main checkout while a task builds in its own work copy. Task state files are free."""
-    active = [task for task in tasks if task.status == "open" and task.stage in _ACTIVE_STAGES and task.workcopy]
+    """Stop an edit in the main checkout while a task builds in its own work copy. Task state files are free.
+
+    Only a work copy on this computer counts: after a handoff, the task has no work copy here."""
+    active = [task for task in tasks if task.status == "open" and task.stage in _ACTIVE_STAGES and task.workcopy
+              and Path(task.workcopy).is_dir()]
     if not active or not _inside(path, root) or _inside(path, root / STATE_DIR):
         return None
     if any(_inside(path, Path(task.workcopy)) for task in active):

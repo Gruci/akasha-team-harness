@@ -31,6 +31,7 @@ Do not write `## Verification`. Akasha writes it from the real results of the ch
    Akasha checks the change again on the latest default branch, opens the pull request, and turns on auto-merge.
 4. If Akasha reports a conflict, do the steps in the message. Then do step 3 again.
 5. If the task builds on an earlier task, Akasha waits until the earlier task merges. Tell the requester. Do step 3 again later.
+   If Akasha says that the earlier task was cancelled, run `akasha specify <task> --builds-on ""`. Remove the changes of the earlier task that this task does not need, and run `akasha check <task>`. Then do step 3 again.
 6. Tell the requester: "GitHub merges the change when the server check passes."
 7. If the server check fails, repair the change in the work copy. Then do step 3 again. Akasha adds the repair to the same pull request.
 8. Later, run `akasha advance <task>`. When GitHub merged the pull request, the task is done.

@@ -1,7 +1,8 @@
 """The shared task board: one GitHub issue with the label `akasha` for each task.
 
-Each issue body holds a JSON block with the scope of the task, so that the Coordinator on any computer
-can compare tasks. Without GitHub, the board holds only the tasks on this computer.
+Each issue body holds a JSON block with the state of the task, so that the Coordinator on any computer can compare
+tasks and each computer can continue a task. Above the block, people read the requester, the holder, the stage, and
+the completion conditions. Without GitHub, the board holds only the tasks on this computer.
 
 When origin is a GitHub repository, the board must work. A failed read or write of the board stops the command,
 so that a person who is not logged in to gh does not work where the other people cannot see the task.
@@ -12,18 +13,19 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 from akasha import repo
-from akasha.core.task import Task, active, all_tasks, load
+from akasha.core.task import LOCAL_FIELDS, Task, active, all_tasks, load
 from akasha.repo import gh
 
 LABEL = "akasha"
 _BLOCK = re.compile(r"```akasha-scope\n(.*?)\n```", re.S)
 _COMMENT_NUMBER = re.compile(r"#issuecomment-(\d+)$")
-_FIELDS = ("id", "title", "workflow", "stage", "status", "requester", "feature", "scope", "contracts", "risk",
-           "conditions", "accepted", "builds_on", "pull_request")
+# The fields on the issue: each field except the fields of one computer and the issue address itself
+_FIELDS = tuple(item.name for item in fields(Task) if item.name not in LOCAL_FIELDS and item.name != "board")
+_EMPTY = asdict(Task(id="", title="", workflow="", stage=""))      # the type of each field
 
 
 class BoardError(RuntimeError):
@@ -59,19 +61,37 @@ def _answered(root: Path, done: subprocess.CompletedProcess, action: str) -> boo
     return False
 
 
-def body(task: Task, summary: str = "") -> str:
+def _line(text: str) -> str:
+    """One line for the part that people read. Text on one line cannot make a second JSON block."""
+    return " ".join(str(text).split())
+
+
+def body(task: Task) -> str:
+    """The issue body: the part that people read, then the JSON block with the state of the task."""
+    holder = f"{task.holder} ({task.holder_host})" if task.holder else f"nobody — `akasha takeover {task.id}`"
+    lines = [f"Requester: {_line(task.requester) or 'unknown'}", f"Holder: {_line(holder)}",
+             f"Stage: {task.stage} · Status: {task.status} · Risk: {task.risk}"]
+    if task.conditions:
+        results = {True: "accepted", False: "not accepted"}
+        lines += ["", "Completion conditions:"] + [
+            f"{number}. [{results.get(task.accepted.get(condition), 'not inspected')}] {_line(condition)}"
+            for number, condition in enumerate(task.conditions, 1)]
+    approvals = ", ".join(f"{role} {_line(person)}" for role, person in task.approvals.items())
+    lines += ["", f"Approvals: {approvals or 'none'}"]
     data = {name: getattr(task, name) for name in _FIELDS}
-    text = summary or f"Requester: {task.requester or 'unknown'}\n\nStage: {task.stage} · Risk: {task.risk}"
-    return f"{text}\n\n```akasha-scope\n{json.dumps(data, ensure_ascii=False, indent=2)}\n```\n"
+    return "\n".join(lines) + f"\n\n```akasha-scope\n{json.dumps(data, ensure_ascii=False, indent=2)}\n```\n"
 
 
 def parse(text: str) -> Task | None:
+    """The task in an issue body, or None. A field with the wrong type, for example after a person edited the body,
+    gets its default value. A body without a format is from Akasha 1.0.0."""
     found = _BLOCK.search(text or "")
     if not found:
         return None
     try:
         data = json.loads(found.group(1))
-        return Task(**{name: data[name] for name in _FIELDS if name in data})
+        values = {name: data[name] for name in _FIELDS if name in data and type(data[name]) is type(_EMPTY[name])}
+        return Task(**{"format": 1, **values})
     except (ValueError, TypeError):
         return None
 
@@ -84,22 +104,22 @@ def _issue_task(item: dict) -> Task | None:
     return task
 
 
-def _listed(root: Path, *search: str, state: str = "open") -> list[Task] | None:
+def _listed(root: Path, *search: str, state: str = "open", timeout: float = 60) -> list[Task] | None:
     """The tasks in the issues with the label akasha, or None without GitHub."""
     listed = gh(root, "issue", "list", "--label", LABEL, "--state", state, "--limit", "500", *search,
-                "--json", "body,url")
+                "--json", "body,url", timeout=timeout)
     if not _answered(root, listed, "read"):
         return None
     return [task for item in json.loads(listed.stdout or "[]") if (task := _issue_task(item)) is not None]
 
 
-def read(root: Path) -> tuple[list[Task], str]:
+def read(root: Path, timeout: float = 60) -> tuple[list[Task], str]:
     """The tasks on the board and where Akasha read them: "github" or "local".
 
     An issue stays open until the pull request of its task merges, so the board also shows the tasks that wait
     for a merge. Without GitHub, the board holds the active tasks on this computer."""
     local = [task for task in all_tasks(root) if active(task)]
-    remote = _listed(root)
+    remote = _listed(root, timeout=timeout)
     if remote is None:
         return local, "local"
     known = {task.id for task in remote}

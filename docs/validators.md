@@ -18,7 +18,7 @@ The guard examines each shell command and each edit before it runs. It stops the
 
 The default branch is `main` or `master`. The guard reads a command that goes on in the next line as one command. It reads `;`, `&`, `&&`, `|`, and `||` as separators.
 
-The guard also stops an edit in the main checkout while a task is at the build stage or at the checks stage. The agent engine must make the change in the work copy of the task. Edits of the task state in `.akasha/state/` are permitted.
+The guard also stops an edit in the main checkout while a task is at the build stage or at the checks stage and its work copy is on this computer. The agent engine must make the change in the work copy of the task. After a handoff, the task has no work copy on this computer, and the guard does not stop the edit. Edits of the task state in `.akasha/state/` are permitted.
 
 ## The secret check
 
