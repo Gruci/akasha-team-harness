@@ -35,6 +35,7 @@ class Task:
     base: str = ""
     branch: str = ""
     workcopy: str = ""
+    board: str = ""                                            # the issue of the task on the shared task board
     pull_request: str = ""
     notes: list[str] = field(default_factory=list)
 
