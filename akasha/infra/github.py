@@ -1,0 +1,69 @@
+"""Read and change the repository settings on GitHub with the gh command."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+from akasha.infra import desired
+
+
+def _gh(root: Path, *args: str, payload: dict | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(["gh", *args], cwd=root, input=json.dumps(payload) if payload is not None else None,
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+
+
+def repository(root: Path) -> tuple[str, str] | None:
+    """(owner/name, default branch) of the GitHub repository, or None without GitHub."""
+    try:
+        viewed = _gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if viewed.returncode:
+        return None
+    data = json.loads(viewed.stdout)
+    return data["nameWithOwner"], (data.get("defaultBranchRef") or {}).get("name") or "main"
+
+
+def protection(root: Path, slug: str, branch: str) -> dict | None:
+    read = _gh(root, "api", f"repos/{slug}/branches/{branch}/protection")
+    return json.loads(read.stdout) if read.returncode == 0 else None
+
+
+def status(root: Path) -> list[str]:
+    """The problems of the repository settings. An empty list means that the settings are correct."""
+    found = repository(root)
+    if found is None:
+        return ["Akasha cannot read the GitHub repository — make sure that gh is installed and logged in"]
+    slug, branch = found
+    problems = desired.drift(protection(root, slug, branch))
+    for target, text in desired.files(_team(root)).items():
+        path = root / target
+        if not path.is_file() or path.read_text(encoding="utf-8") != text:
+            problems.append(f"{target} is missing or different from akasha.toml")
+    return problems
+
+
+def apply(root: Path, approved_by: str) -> list[str]:
+    """Write the repository files and set branch protection. An administrator must approve first."""
+    if not approved_by:
+        raise PermissionError("an administrator must approve a change to the repository settings")
+    for target, text in desired.files(_team(root)).items():
+        path = root / target
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    found = repository(root)
+    if found is None:
+        return ["Akasha wrote the files, but cannot reach GitHub to set branch protection"]
+    slug, branch = found
+    done = _gh(root, "api", "--method", "PUT", f"repos/{slug}/branches/{branch}/protection", "--input", "-",
+               payload=desired.protection())
+    if done.returncode:
+        return [f"GitHub refused the branch protection: {done.stderr.strip()[:300]}"]
+    return []
+
+
+def _team(root: Path):
+    from akasha import config
+    return config.load(root)

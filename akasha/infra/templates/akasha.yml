@@ -1,0 +1,24 @@
+# Akasha installs this file. It runs the required checks of the team on each pull request.
+# The rules come from the default branch, so a pull request cannot make its own checks weaker.
+name: akasha
+on:
+  pull_request:
+  merge_group:
+permissions:
+  contents: read
+jobs:
+  akasha:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Akasha
+        run: pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"
+      - name: Take the team config from the default branch
+        run: git show "origin/${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}:akasha.toml" > "$RUNNER_TEMP/akasha.toml" || cp akasha.toml "$RUNNER_TEMP/akasha.toml"
+      - name: Required checks
+        run: python -m akasha check --ci --config "$RUNNER_TEMP/akasha.toml" --base "origin/${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}"
