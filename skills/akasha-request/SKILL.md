@@ -23,12 +23,13 @@ With GitHub, each decision of a person is a decision comment on the issue of the
 
 - If the person who decides is the GitHub account of this computer, and the person gives you the decision, run the Akasha command in the step. Akasha writes the comment with that account.
 - If the person is another account, the command stops and tells the comment. Give the person the comment and the issue address. Then wait. Run `akasha advance <task>` again later.
-- Never write a decision comment with `gh`. The guard stops it.
+- Never write a decision comment with `gh`. Do not edit, delete, or hide a comment, and do not change the body of an issue. The guard stops these commands.
 - If Akasha says that a decision comment does not count, tell the person the reason and the correct comment.
+- If Akasha says that the requester is not a GitHub account, for example in a task of Akasha 1.0.0, ask the user for the GitHub name of the requester. Then run `akasha specify <task> --requester <GitHub name>`.
 
 Without GitHub, add `--by <name>` to `approve`, `resume`, and `cancel`.
 
-If the requester withdraws the request, run `akasha cancel <task> --reason "<reason>"`. If the requester is another account, the requester writes `/cancel <reason>` on the issue. Akasha closes the pull request of the task.
+If the requester withdraws the request, run `akasha cancel <task> --reason "<reason>"`. If the requester is another account, the requester writes `/cancel <reason>` on the issue. Akasha closes the pull request of the task. If Akasha says that it cannot close the pull request, tell the user to close it on GitHub.
 
 ## Stage 1 — Request
 
@@ -98,7 +99,7 @@ To continue the task of another person:
 3. If Akasha says that a work copy or a branch on this computer cannot go forward to the work on the server, tell the user. The user examines it and removes it. Then do step 2 again.
 4. Run `akasha show <task>`. Continue at the stage that Akasha shows.
 
-> **NOTE:** A developer can take over a stopped task without a handoff. Akasha tells the old holder on the issue.
+> **NOTE:** A developer can take over a stopped task without a handoff, also after the developer wrote `/resume`. Akasha tells the old holder on the issue.
 
 ## Stage 3 — Build
 

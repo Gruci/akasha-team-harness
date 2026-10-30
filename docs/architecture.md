@@ -76,7 +76,7 @@ The agent engine runs these commands. People do not have to remember them. The s
 |:--|:--|
 | `setup` | Writes `akasha.toml`, the product map, and the files that Codex reads. With the approval of an administrator, it also changes the GitHub settings |
 | `request` | Records a new task and shows overlaps. With GitHub, the requester is your GitHub account, or the account that `--requester` names. `--builds-on` stacks it on an earlier task |
-| `specify` | Adds completion conditions, open questions, or file patterns of the scope. `--builds-on ""` stops building on the earlier task |
+| `specify` | Adds completion conditions, open questions, or file patterns of the scope. `--builds-on ""` stops building on the earlier task. `--requester <GitHub name>` gives a GitHub account to a requester that is not one, for example a name that Akasha 1.0.0 recorded |
 | `impact` | Records the impact analysis, a reason why the product map does not change, or a change of behavior that an earlier requester accepted |
 | `approve` | Records the approval of a requester or of a gate role. With GitHub, it writes the decision comment only for the GitHub account of this computer, else it tells the comment that the person must write. Without GitHub, `--by` names the person |
 | `advance` | Moves the task to the next stage, or shows what blocks it |

@@ -1,8 +1,9 @@
 """Stop commands that you cannot undo, commands that change what Akasha and GitHub share, and edits outside the work
 copy of an active task.
 
-Akasha pushes the task branches itself, GitHub merges the pull requests, and each person writes their own decision
-comments on GitHub. The agent engine does none of these in the shell."""
+Akasha pushes the task branches itself and writes the task state on the issues, GitHub merges the pull requests, and
+each person writes their own decision comments on GitHub. The agent engine does none of these in the shell, and it
+does not edit, delete, or hide a comment."""
 
 from __future__ import annotations
 
@@ -26,9 +27,18 @@ _ACTIVE_STAGES = ("build", "checks")
 _FOLDER_CHANGES = ("cd", "chdir", "pushd", "set-location", "sl")
 _DELETES = ("rm", "remove-item", "ri", "rd", "rmdir", "del", "erase")
 _GH = ("gh", "gh.exe")
+_GH_VALUES = ("-R", "--repo")                           # a gh flag with a value, also before the gh command
+_GIT_VALUES = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env")    # git flags with a value
+_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")   # a variable before a command: GH_REPO=a/b gh ...
 # A decision word at the start of a line, also after a quote of the shell or after the "\n" of JSON
 _DECISION = re.compile(r"(?:^|[\"']|\\n)\s*(?:" + "|".join(map(re.escape, DECISIONS)) + r")\b", re.I | re.M)
-_MERGE_API = re.compile(r"pulls/\d+/merge\b")
+# A merge through the REST API or through GraphQL, also the auto-merge
+_MERGE_API = re.compile(r"pulls/\d+/merge\b|\b(?:mergePullRequest|enablePullRequestAutoMerge)\b")
+_COMMENT_API = re.compile(r"issues/comments/\d+")
+_COMMENT_CHANGE = re.compile(r"\b(?:updateIssueComment|deleteIssueComment|minimizeComment)\b")
+_ISSUE_API = re.compile(r"issues/\d+/?$")
+_ISSUE_CHANGE = re.compile(r"\bupdateIssue\b")
+_BODY_FLAGS = ("--body", "-b", "--body-file", "-F")
 _TASK_PUSH = ("it pushes to or deletes a task branch on the server. Akasha pushes the task branches itself: run the "
               "Akasha command check, handoff, or handover")
 
@@ -44,6 +54,35 @@ def _commands(line: str) -> list[list[str]]:
         if tokens:
             words.append(tokens)
     return words
+
+
+def _program(args: list[str]) -> list[str]:
+    """The command without the variables before it, for example `GH_REPO=a/b gh pr merge 5` or `env X=1 git push`."""
+    rest = list(args)
+    while rest and (_ASSIGNMENT.match(rest[0]) or rest[0] == "env"):
+        rest = rest[1:]
+    return rest
+
+
+def _folder(here: Path | None, args: list[str]) -> Path | None:
+    """The folder after cd, pushd, or Set-Location, or None when Akasha cannot tell it."""
+    targets = [arg for arg in args if not arg.startswith("-")]
+    if not targets or any(mark in targets[0] for mark in "$%`"):
+        return None
+    path = Path(targets[0]).expanduser()
+    if path.is_absolute():
+        return path
+    return here / path if here is not None else None
+
+
+def _git_folder(args: list[str], folder: Path | None) -> Path | None:
+    """The folder where git works: the folder of the command, or the folder of `git -C <folder>`."""
+    number = 0
+    while number < len(args) and args[number].startswith("-"):
+        if args[number] == "-C" and number + 1 < len(args):
+            folder = _folder(folder, [args[number + 1]])
+        number += 2 if args[number] in _GIT_VALUES else 1
+    return folder
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -101,27 +140,73 @@ def _files(args: list[str]) -> list[str]:
     return found
 
 
-def _writes_decision(line: str, commands: list[list[str]], cwd: Path) -> bool:
-    """True when the command line, a value in it, or a file that gh reads has a line that starts with a decision word,
-    for example `/approve`."""
+def _texts(line: str, commands: list[list[str]], cwd: Path) -> list[str]:
+    """The command line, each value in it, and each file that gh reads for a text."""
     texts = [line] + [arg.split("=", 1)[-1] for args in commands for arg in args]
     for name in (name for args in commands for name in _files(args)):
         try:
             texts.append((cwd / name).read_text(encoding="utf-8", errors="replace")[:100_000])
         except OSError:
             continue                                  # for example "-": the text comes from the command line
-    return any(_DECISION.search(text) for text in texts)
+    return texts
+
+
+def _gh_verb(args: list[str]) -> tuple[str, ...]:
+    """The gh command, for example ("pr", "merge"). gh also reads the flag -R <repository> before the command."""
+    words, rest = [], iter(args[1:])
+    for arg in rest:
+        if arg in _GH_VALUES:
+            next(rest, None)
+        elif not arg.startswith("-"):
+            words.append(arg.lower())
+            if len(words) == 2:
+                break
+    return tuple(words)
+
+
+def _method(args: list[str]) -> str:
+    """The HTTP method that `gh api` names with -X or --method, in upper case, or ""."""
+    for number, arg in enumerate(args):
+        if arg in ("-X", "--method") and number + 1 < len(args):
+            return args[number + 1].upper()
+        if arg.startswith("--method="):
+            return arg.removeprefix("--method=").upper()
+        if arg.startswith("-X") and len(arg) > 2:
+            return arg.removeprefix("-X").upper()
+    return ""
+
+
+def _changes_comment(verb: tuple[str, ...], args: list[str], texts: list[str]) -> bool:
+    """True when gh edits, deletes, or hides a comment."""
+    if verb[1:] == ("comment",):
+        return any(arg in ("--edit-last", "--delete-last") for arg in args)
+    return verb[:1] == ("api",) and (any(_COMMENT_CHANGE.search(text) for text in texts) or (
+        _method(args) in ("PATCH", "DELETE") and any(_COMMENT_API.search(arg) for arg in args)))
+
+
+def _changes_issue(verb: tuple[str, ...], args: list[str], texts: list[str]) -> bool:
+    """True when gh gives an issue a new body, or changes an issue through the API."""
+    if verb == ("issue", "edit"):
+        return any(arg in _BODY_FLAGS or arg.startswith(("--body=", "--body-file=")) for arg in args)
+    return verb[:1] == ("api",) and (any(_ISSUE_CHANGE.search(text) for text in texts) or (
+        _method(args) == "PATCH" and any(_ISSUE_API.search(arg) for arg in args)))
 
 
 def _gh_reason(args: list[str], line: str, commands: list[list[str]], cwd: Path) -> str | None:
-    verb = tuple(arg.lower() for arg in args[1:3])
+    verb, texts = _gh_verb(args), _texts(line, commands, cwd)
     api = verb[:1] == ("api",)
-    if verb == ("pr", "merge") or (api and any(_MERGE_API.search(arg) for arg in args[2:])):
-        return ("it merges a pull request. GitHub, or the merge workflow of Akasha, merges each pull request when the "
-                "server check passes")
+    if verb == ("pr", "merge") or (api and any(_MERGE_API.search(text) for text in texts)):
+        return ("it merges a pull request or turns on its auto-merge. GitHub, or the merge workflow of Akasha, merges "
+                "each pull request when the server check passes")
+    if _changes_comment(verb, args, texts):
+        return ("it edits, deletes, or hides a comment. Then a later decision comment can stop counting, and an "
+                "earlier decision counts again")
+    if _changes_issue(verb, args, texts):
+        return ("it changes the body or the fields of an issue. The issue of an Akasha task holds the state of the "
+                "task, and Akasha writes it itself")
     commenting = verb in (("issue", "comment"), ("pr", "comment")) or \
-        (api and any("comments" in arg or "addComment" in arg for arg in args[2:]))
-    if commenting and _writes_decision(line, commands, cwd):
+        (api and any("comments" in arg or "addComment" in arg for arg in args[1:]))
+    if commenting and any(_DECISION.search(text) for text in texts):
         return ("it writes a decision comment. A decision counts only from the GitHub account of the person who "
                 "decides. Tell the person to write it on GitHub. When the person is the GitHub account of this "
                 "computer, run the Akasha command approve, accept, resume, or cancel")
@@ -152,16 +237,19 @@ def _delete_reason(args: list[str], cwd: Path, root: Path, moved: bool) -> str |
 
 
 def check_command(line: str, cwd: Path, root: Path) -> str | None:
-    """The reason to stop the shell command, or None when the command is safe to run."""
-    moved = False
-    commands = _commands(line)
-    in_work_copy = _inside(cwd, root / WORK_DIR)
+    """The reason to stop the shell command, or None when the command is safe to run.
+
+    In a work copy, a push of the current branch is a push of the task branch. The folder of git is the folder of the
+    command, the folder after a change of the folder in the same command, or the folder of `git -C`."""
+    moved, here = False, cwd
+    commands = [args for args in map(_program, _commands(line)) if args]
     for args in commands:
         if args[0].lower() in _FOLDER_CHANGES:
-            moved = True
+            moved, here = True, _folder(here, args[1:])
             continue
         if args[0] == "git":
-            reason = _git_reason(args[1:], in_work_copy)
+            folder = _git_folder(args[1:], here)
+            reason = _git_reason(args[1:], folder is not None and _inside(folder, root / WORK_DIR))
         elif args[0].lower() in _GH:
             reason = _gh_reason(args, line, commands, cwd)
         else:

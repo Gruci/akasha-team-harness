@@ -70,15 +70,16 @@ def gh(root: Path, *args: str, payload: dict | None = None, timeout: float = 60)
         return subprocess.CompletedProcess(["gh", *args], 127, "", str(error))
 
 
-def me(root: Path) -> str:
+def me(root: Path, fresh: bool = False) -> str:
     """The GitHub name of the person on this computer in lower case, or "" when gh does not answer.
 
-    Akasha asks gh once in each process. Each hook is a new process, so Akasha also keeps the name for one hour."""
-    if root in _logins:
+    Akasha asks gh once in each process. Each hook is a new process, so Akasha also keeps the name for one hour.
+    With `fresh`, Akasha asks gh and does not read the kept name: a person can edit the file."""
+    if root in _logins and not fresh:
         return _logins[root]
     path = root / _ME_FILE
     try:
-        known = json.loads(path.read_text(encoding="utf-8"))
+        known = {} if fresh else json.loads(path.read_text(encoding="utf-8"))
         login = str(known["login"]).lower() if time.time() - float(known["checked"]) < _ME_AGE else ""
     except (OSError, ValueError, KeyError, TypeError):
         login = ""

@@ -38,11 +38,11 @@ Three fields stay on the computer and never go on the issue: the work copy folde
 | A task starts | Akasha makes the issue |
 | A task changes | Akasha updates the issue |
 | The pull request merges | The pull request closes the issue |
-| A task is cancelled | Akasha closes the issue. Before that, the holder closes the open pull request of the task |
+| A task is cancelled | Akasha closes the open pull request of the task, then the issue |
 
 Each command reads the task from its issue, and takes only these three fields from the task file on this computer. Before a write, Akasha reads the issue again. If another computer or another command wrote the issue after this command read it, the command stops and does not write over the newer state. Do the step again. A comment does not change the revision, so a comment never stops a command.
 
-When the task file on this computer has changes that the issue did not get, and nobody wrote the issue since, the next command for the task puts them on the issue. When the computer with the task file of an Akasha 1.0.0 task runs a command for it, Akasha writes the issue in the new format, and the person on that computer holds the task. Until then, nobody can take over that task on another computer. The same applies to a task that has no issue, because this computer recorded it before `origin` was on GitHub, or because its first board write failed: the next command for it puts it on the board, and the person on this computer holds it. If an issue body has no format after this computer wrote the new format, for example because Akasha 1.0.0 still runs in one agent engine, the next command of the holder writes the whole task over it.
+When the task file on this computer has changes that the issue did not get, and nobody wrote the issue since, the next command for the task puts them on the issue. But such a task file does not change the result of a decision of a person: the requester stays, a stopped task stays stopped until a `/resume` counts, and a done or a cancelled task stays so. See [Roles](roles.md). When the computer with the task file of an Akasha 1.0.0 task runs a command for it, Akasha writes the issue in the new format, and the person on that computer holds the task. Until then, nobody can take over that task on another computer. The same applies to a task that has no issue, because this computer recorded it before `origin` was on GitHub, or because its first board write failed: the next command for it puts it on the board, and the person on this computer holds it. If an issue body has no format after this computer wrote the new format, for example because Akasha 1.0.0 still runs in one agent engine, the next command of the holder writes the whole task over it.
 
 Each task name is unique in the repository. The name has the letters a to z and the digits of the title in lower case, and eight random characters, for example `add-a-date-filter-1f3a9c0b`. A title without these letters and digits, for example a Korean title, gives `task-<random characters>`. Before a task starts, Akasha makes sure that no task file, no branch on this computer or on the server, and no issue on the board has the same name.
 
@@ -73,9 +73,15 @@ A task can go to another person, or to the same person on another computer. The 
 
 The holder changes the task. A decision of a person is a comment on the issue, so the person does not have to hold the task: for example, the requester approves on their own computer. A `/resume` or a `/cancel` that counted goes on the issue at the next command of the holder, or at the next command of any person when nobody holds the task.
 
-When a cancel counts, the next command of the holder turns off the auto-merge of the open pull request, removes the label `akasha-merge`, and closes the pull request. Thus the cancelled change never merges. Akasha also deletes the wip branch, and writes a notice with an `@` mention of the requester on the issue of each active task that builds on the cancelled task. The work copy stays.
+A cancel stops the open pull request of the task: Akasha turns off its auto-merge, removes the label `akasha-merge`, and closes it. Thus the cancelled change does not merge.
 
-A developer can take over a stopped task when its holder did not hand it off. `[roles] developers` names the developers. When the list is empty, each person can do it. Akasha writes a notice with an `@` mention on the issue of the task for the old holder.
+- The `cancel` command does this at once, also when another person holds the task. It uses the GitHub account of the person who cancels. If that account cannot close the pull request, the command tells it. Then close the pull request on GitHub.
+- Before the cancel goes on the issue, the command that writes it does the same steps, also a command that counts a `/cancel` late. It also deletes the wip branch, and writes a notice with an `@` mention of the requester on the issue of each active task that builds on the cancelled task.
+- A `/cancel` that a person writes on GitHub counts at the next command of the holder. Until then, GitHub can merge the pull request. Thus a person who cancels on GitHub also closes the pull request there, or uses the `cancel` command.
+
+The work copy stays.
+
+A developer can take over a stopped task when its holder did not hand it off, also after a developer wrote `/resume`. Then the takeover writes the `/resume` on the issue, and the task is open. `[roles] developers` names the developers. When the list is empty, each person can do it. Akasha writes a notice with an `@` mention on the issue of the task for the old holder.
 
 When the handover pushes the task branch, Akasha deletes the wip branch on the server. A cancel also deletes it.
 

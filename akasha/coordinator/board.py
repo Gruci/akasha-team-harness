@@ -26,9 +26,15 @@ from akasha.repo import gh
 LABEL = "akasha"
 _BLOCK = re.compile(r"```akasha-scope\n(.*?)\n```", re.S)
 _COMMENT_NUMBER = re.compile(r"#issuecomment-(\d+)$")
-_LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")      # the shape of a GitHub account name
+# The shape of a GitHub account name. An account of Enterprise Managed Users has an underscore: <name>_<enterprise>
+_LOGIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$")
 # The first word of a decision comment. Akasha counts a decision only from the account of the person who decides.
 DECISIONS = ("/approve", "/accept", "/reject", "/resume", "/cancel")
+# The authorAssociation of an account that can have write access. A member of the organization and a collaborator
+# can also have only read access, so Akasha asks GitHub for their permission.
+_MAYBE_WRITERS = ("MEMBER", "COLLABORATOR")
+_WRITE = ("admin", "maintain", "write")                         # the permissions with write access
+_writers: dict[tuple[Path, str], bool] = {}                     # one question to GitHub for each account in a process
 # The fields on the issue: each field except the fields of one computer and the issue address itself
 _FIELDS = tuple(item.name for item in fields(Task) if item.name not in LOCAL_FIELDS and item.name != "board")
 _EMPTY = asdict(Task(id="", title="", workflow="", stage=""))      # the type of each field
@@ -48,6 +54,7 @@ class Comment:
     edited: bool            # a person with write access can edit the comment of another person
     hidden: bool            # a person minimized the comment
     body: str
+    writer: bool = False    # the account has write access to the repository. Known only for a decision comment
 
 
 def available(root: Path) -> bool:
@@ -171,18 +178,30 @@ def find(root: Path, task_id: str) -> Task | None:
 
 
 def comments(root: Path, address: str) -> list[Comment]:
-    """The comments on the issue of a task, the oldest first."""
+    """The comments on the issue of a task, the oldest first. For each decision comment, Akasha also finds out if
+    its author has write access to the repository."""
     viewed = gh(root, "issue", "view", address, "--json", "comments")
     if not _answered(root, viewed, "read"):
         return []
     found = []
     for item in json.loads(viewed.stdout or "{}").get("comments") or []:
         number = _COMMENT_NUMBER.search(item.get("url") or "")
-        found.append(Comment(int(number.group(1)) if number else 0, (item.get("author") or {}).get("login") or "",
-                             item.get("authorAssociation") or "", item.get("createdAt") or "",
-                             bool(item.get("includesCreatedEdit")), bool(item.get("isMinimized")),
-                             item.get("body") or ""))
+        login, association = (item.get("author") or {}).get("login") or "", item.get("authorAssociation") or ""
+        body = item.get("body") or ""
+        decision = (body.split() or [""])[0].lower() in DECISIONS
+        writer = association == "OWNER" or (decision and association in _MAYBE_WRITERS and can_write(root, login))
+        found.append(Comment(int(number.group(1)) if number else 0, login, association, item.get("createdAt") or "",
+                             bool(item.get("includesCreatedEdit")), bool(item.get("isMinimized")), body, writer))
     return found
+
+
+def can_write(root: Path, login: str) -> bool:
+    """True when GitHub gives the account write access to the repository. False when GitHub does not tell it."""
+    key = (root, login.lower())
+    if key not in _writers and named(login):          # gh fills in {owner} and {repo} from the repository of origin
+        asked = gh(root, "api", f"repos/{{owner}}/{{repo}}/collaborators/{login}/permission")
+        _writers[key] = asked.returncode == 0 and json.loads(asked.stdout or "{}").get("permission") in _WRITE
+    return _writers.get(key, False)
 
 
 def posted(root: Path, address: str, text: str) -> int | None:
@@ -201,10 +220,15 @@ def comment(root: Path, address: str, text: str) -> bool:
     return posted(root, address, text) is not None
 
 
+def named(name: str) -> bool:
+    """True when the name has the shape of a GitHub account name. Akasha 1.0.0 recorded any name for a requester."""
+    return bool(_LOGIN.match(name.strip().lstrip("@")))
+
+
 def account(root: Path, name: str) -> str:
     """The exact name of the GitHub account, or "" when GitHub has no account with this name."""
     name = name.strip().lstrip("@")
-    if not _LOGIN.match(name):
+    if not named(name):
         return ""
     asked = gh(root, "api", f"users/{name}")
     if asked.returncode and "Not Found" in asked.stdout + asked.stderr:

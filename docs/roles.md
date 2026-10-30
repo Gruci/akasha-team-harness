@@ -37,32 +37,32 @@ A team can add a person gate for a risk level in `[approval]`, for example a dev
 
 ## Who decides what
 
-| Decision | Who |
-|:--|:--|
-| What to make, how it looks, and how people use it | Requester |
-| Approval of the specification | Requester |
-| Implementation, scope, impact, and the order of the work | The agent engine |
-| Approval of a change at a gated risk level | The roles that `[approval]` names |
-| Acceptance of the result | Requester |
-| Withdrawal of a request | Requester |
-| Opening a stopped task again | Developer |
-| Merge of the pull request | GitHub, when the server check passes and each code owner approved |
-| Change of the team rules and the GitHub settings | Administrator |
+With GitHub, each decision of a person is a decision comment on the issue of the task. GitHub shows the account that wrote each comment, so the comment tells who decided. Without GitHub, Akasha records the name that the agent engine gives, as in Akasha 1.0.0.
 
-## How Akasha records a decision of a person
-
-With GitHub, each decision of a person is a decision comment on the issue of the task. GitHub shows the account that wrote each comment, so the comment tells who decided. Akasha does not trust a name that the agent engine types, the issue body, or the task file. Each time that Akasha reads a task, it counts the approvals and the inspection results again from the decision comments only.
-
-| Decision | Decision comment | Who can write it | Without GitHub |
+| Decision | Who | With GitHub | Without GitHub |
 |:--|:--|:--|:--|
-| Approval of the specification | `/approve spec r<N>` | The requester | `approve --role requester --by <name>` |
-| Approval of a gated risk level | `/approve risk <level>` | A person with a gate role of that level in `[approval]` | `approve --role <role> --by <name>` |
-| Inspection of a completion condition | `/accept <number> r<N>` or `/reject <number> r<N> <reason>` | The requester | `accept --condition <condition> --result yes` or `no` |
-| Opening a stopped task again | `/resume` | A developer | `resume --by <developer>` |
-| Withdrawal of a request | `/cancel <reason>` | The requester or a developer | `cancel --by <name>` |
-| Change of the GitHub settings | No comment. Akasha asks GitHub who the person is | The GitHub account of the computer. It must be in `[roles] administrators` and administer the repository on GitHub | `infra --apply --by <administrator>` |
+| What to make, how it looks, and how people use it | The requester | The request and the completion conditions | The same |
+| Approval of the specification | The requester | `/approve spec r<N>` | `approve --role requester --by <name>` |
+| Implementation, scope, impact, and the order of the work | The agent engine | Akasha records them on the issue | Akasha records them in the task file |
+| Approval of a change at a gated risk level | A person with a gate role of that level in `[approval]` | `/approve risk <level>` | `approve --role <role> --by <name>` |
+| Acceptance of the result | The requester | `/accept <number> r<N>` or `/reject <number> r<N> <reason>` | `accept --condition <condition> --result yes` or `no` |
+| Withdrawal of a request | The requester or a developer | `/cancel <reason>` | `cancel --by <name>` |
+| Opening a stopped task again | A developer | `/resume` | `resume --by <developer>` |
+| Merge of the pull request | GitHub, when the server check passes and each code owner approved | No decision comment | The same |
+| Change of the team rules | An administrator | A pull request that an administrator approves as the code owner of `akasha.toml` | The same |
+| Change of the GitHub settings | An administrator | No comment. Akasha asks `gh` for the account of the computer. It must be in `[roles] administrators` and administer the repository on GitHub | `infra --apply --by <administrator>` |
 
-`[roles]` names the developers and the administrators. When a list is empty, each person with write access to the repository has that role: GitHub shows the account as an owner, a member, or a collaborator.
+`[roles]` names the developers and the administrators. When a list is empty, each person with write access to the repository has that role. Akasha asks GitHub for the permission of the account: a member of the organization or a collaborator with only read access does not have the role.
+
+## How Akasha counts a decision of a person
+
+Akasha does not trust a name that the agent engine types. Each time that Akasha reads a task, it counts the approvals and the inspection results again from the decision comments only. The issue body and the task file only carry the state of the task between computers:
+
+- The approvals and the inspection results in the issue body and in the task file do not count.
+- A task file on this computer that is newer than the issue does not change the requester. It does not open a stopped task, and it does not open a done or a cancelled task again. The revision of the specification does not go back, and changed completion conditions or open questions get a new revision.
+- The guard stops the agent engine when it changes the body of an issue with `gh`, writes a decision comment with `gh`, or edits, deletes, or hides a comment. See [Validators](validators.md).
+
+> **NOTE:** A person with write access to the repository can edit an issue body on GitHub, also the requester or the status of the task. Akasha cannot tell that edit from a write of Akasha. Give write access only to the people that the team trusts.
 
 Rules for the decision comments:
 

@@ -120,15 +120,16 @@ def _examine_administrator(root: Path, team: config.Team, approved_by: str) -> N
     """Only an administrator changes the repository settings.
 
     With GitHub, Akasha does not trust a typed name: the GitHub account of this computer must be in `[roles]
-    administrators` when the list names people, and it must administer the repository on GitHub. `approved_by` is
-    optional, and it must be that account. Without GitHub, the name as in Akasha 1.0.0."""
+    administrators` when the list names people, and it must administer the repository on GitHub. Akasha asks gh for
+    the account and does not read the name that it keeps for the hooks. `approved_by` is optional, and it must be
+    that account. Without GitHub, the name as in Akasha 1.0.0."""
     named = {person.strip().lstrip("@").lower() for person in team.administrators}
     if not repo.origin(root):
         if not approved_by or (named and approved_by.strip().lstrip("@").lower() not in named):
             raise PermissionError("an administrator that akasha.toml names must approve a change to the repository "
                                   "settings")
         return
-    name = repo.me(root)
+    name = repo.me(root, fresh=True)
     if not name:
         raise PermissionError("Akasha cannot read your GitHub name. Make sure that gh is installed and logged in: "
                               "gh auth status")

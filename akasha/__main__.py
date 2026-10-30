@@ -53,6 +53,8 @@ def _parser() -> argparse.ArgumentParser:
     specify.add_argument("--clear-questions", action="store_true")
     specify.add_argument("--scope", nargs="*", default=[])
     specify.add_argument("--builds-on", metavar='""', help='stop building on the earlier task: --builds-on ""')
+    specify.add_argument("--requester", metavar="NAME",
+                         help="the GitHub name of the requester, when the requester is not a GitHub account")
     impact = commands.add_parser("impact", help="record the impact analysis of the agent engine")
     impact.add_argument("task")
     for name in ("features", "data", "contracts", "tasks", "rollback"):
@@ -160,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if problems else 0
     if args.command == "specify":
         task, found = flow.specify(root, args.task, args.condition, args.question, args.clear_questions, args.scope,
-                                   args.builds_on)
+                                   args.builds_on, args.requester)
         _show(task)
         for item in found:
             print(f"  overlap — {item.message()}")

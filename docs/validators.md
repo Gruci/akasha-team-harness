@@ -16,10 +16,12 @@ The guard examines each shell command and each edit before it runs. It stops the
 | A recursive delete of a path with a variable, for example `$HOME` or `%USERPROFILE%` | Akasha cannot see the target |
 | A recursive delete after `cd` or `Set-Location` in the same command | Akasha cannot see the target |
 | `git push` to a task branch `akasha/<task>` or `akasha-wip/<task>`, also to delete it; `git push --all` or `--mirror`; and `git push` without a branch, or to `HEAD`, in a work copy | Akasha pushes the task branches itself, also the branch of the task of the agent engine. The task branch on the server always passed the checks |
-| `gh pr merge`, or a merge through `gh api` | GitHub, or the merge workflow of Akasha, merges each pull request when the server check passes |
+| `gh pr merge`, a merge through `gh api` (`pulls/<number>/merge`, or the GraphQL `mergePullRequest`), or the GraphQL `enablePullRequestAutoMerge` | GitHub, or the merge workflow of Akasha, merges each pull request when the server check passes |
 | `gh issue comment`, `gh pr comment`, or `gh api` on comments, with a line that starts with `/approve`, `/accept`, `/reject`, `/resume`, or `/cancel` | A decision counts only from the GitHub account of the person who decides. The guard also reads the file of `--body-file`, `--input`, or `@<file>` |
+| `gh issue comment --edit-last` or `--delete-last`, `gh api` with `PATCH` or `DELETE` on `issues/comments/<id>`, or the GraphQL `updateIssueComment`, `deleteIssueComment`, or `minimizeComment` | When a comment changes or goes away, a later decision can stop counting, and an earlier decision counts again |
+| `gh issue edit` with `--body` or `--body-file`, `gh api` with `PATCH` on `issues/<number>`, or the GraphQL `updateIssue` | The issue of an Akasha task holds the state of the task, and Akasha writes it itself |
 
-The default branch is `main` or `master`. The guard reads a command that goes on in the next line as one command. It reads `;`, `&`, `&&`, `|`, and `||` as separators.
+The default branch is `main` or `master`. The guard reads a command that goes on in the next line as one command. It reads `;`, `&`, `&&`, `|`, and `||` as separators. It also reads a command after variables, for example `GH_REPO=team/app gh pr merge 5` or `env X=1 git push`, and a `gh` command after `-R <repository>`. For `git push` without a branch, the folder is the folder of the command, the folder after `cd` or `Set-Location` in the same command, or the folder of `git -C <folder>`.
 
 A push to another branch, for example `git push origin feature-x`, and a comment that only names a decision in a sentence are permitted. When the person who decides is the GitHub account of this computer, the agent engine runs the Akasha command `approve`, `accept`, `resume`, or `cancel`. Akasha writes the decision comment in Python, so the guard does not stop it.
 

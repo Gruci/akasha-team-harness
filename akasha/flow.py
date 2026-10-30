@@ -26,8 +26,8 @@ from akasha.validators import briefing as briefing_rules, runner
 
 CONTEXT_PREFIX = config.TEAM_CONTEXT.as_posix() + "/"
 OLD_SETUP_NOTE = "the setup command failed in the work copy: "     # Akasha 1.0.0 wrote the output after it
-_WRITERS = ("OWNER", "MEMBER", "COLLABORATOR")     # the authorAssociation of a person with write access on GitHub
 _ignored: dict[str, list[tuple[board.Comment, str]]] = {}         # the decision comments that did not count, by task
+_read_status: dict[str, str] = {}             # the status of each task before the decision comments of its last read
 
 
 class HolderError(RuntimeError):
@@ -55,7 +55,10 @@ def _publish(root: Path, task: Task) -> None:
     task, the command stops and does not write over the newer state. A body without the format has no revision:
     Akasha 1.0.0 or a person wrote it, and the task file here has the whole task, so Akasha writes over it. When the
     board write fails, the task stays saved here with the higher revision, and the next command for the task puts it
-    on the board. The error names the task, so that the person does not record a second task."""
+    on the board. The error names the task, so that the person does not record a second task.
+
+    Before the cancel of a task goes on its issue, Akasha closes the pull request of the task (_withdraw). Thus each
+    command that writes the cancel closes it, also a command that counts the /cancel late, for example advance."""
     task.revision, task.format = task.revision + 1, tasks.FORMAT
     tasks.save(root, task)
     try:
@@ -63,6 +66,8 @@ def _publish(root: Path, task: Task) -> None:
         if current is not None and current.format >= tasks.FORMAT and current.revision != task.synced:
             raise HolderError(f"another computer or another command changed the task {task.id} after this command "
                               "read it. Do the step again: Akasha reads the new state first")
+        if current is not None and task.status == "cancelled" and tasks.active(current):
+            _withdraw(root, task)                     # the cancel goes on the issue now
         published = board.publish(root, task)
     except board.BoardError as error:
         raise board.BoardError(f"{error}. Akasha saved the task {task.id} on this computer. When gh works again, "
@@ -85,8 +90,9 @@ def load(root: Path, task_id: str, write: bool = True) -> Task:
     person: another person can hold that task.
 
     With GitHub, the approvals and the inspection results come only from the decision comments on the issue, not from
-    the issue body or the task file (_decide). With `write`, a /resume or a /cancel that counted goes on the issue when
-    this copy of the repository holds the task or nobody holds it. Without GitHub, Akasha reads the task file."""
+    the issue body or the task file (_decide). A newer task file does not change the result of a decision either
+    (_keep_decisions). With `write`, a /resume or a /cancel that counted goes on the issue when this copy of the
+    repository holds the task or nobody holds it. Without GitHub, Akasha reads the task file."""
     try:
         local = tasks.load(root, task_id)
     except LookupError:
@@ -101,6 +107,8 @@ def load(root: Path, task_id: str, write: bool = True) -> Task:
                                 or (shared.revision == local.synced and local.revision > shared.revision)):
         task = local
         task.board = task.board or shared.board
+        if shared.format >= tasks.FORMAT:
+            _keep_decisions(task, shared)
     else:
         task = shared
         for name in tasks.LOCAL_FIELDS if local is not None else ():
@@ -110,11 +118,26 @@ def load(root: Path, task_id: str, write: bool = True) -> Task:
     if write and newer and on_github and (not task.board if shared is None else shared.format < tasks.FORMAT):
         _adopt(root, task)                            # the first issue of the task in the new format
     decided = _decide(root, task) and write and _holds(root, task)
-    if decided and task.status == "cancelled":
-        _withdraw(root, task)
     if write and (decided or (newer and shared is not None)):
         _publish(root, task)
     return task
+
+
+def _keep_decisions(task: Task, shared: Task) -> None:
+    """A task file on this computer that is newer than the issue does not change the result of a decision of a person.
+
+    The requester stays. A stopped task stays stopped until a /resume counts (_decide), and a done or a cancelled task
+    stays so. The revision of the specification and the comments of the last stop and of the last /resume never go
+    back, and changed completion conditions or open questions get a new revision. Thus an old decision does not count
+    again."""
+    task.requester = shared.requester or task.requester
+    if shared.status != "open" and task.status != shared.status:
+        task.status, task.failures, task.resumed = shared.status, shared.failures, shared.resumed
+    if (task.conditions, task.open_questions) != (shared.conditions, shared.open_questions):
+        task.spec_rev = max(task.spec_rev, shared.spec_rev + 1)
+    task.spec_rev = max(task.spec_rev, shared.spec_rev)
+    task.stopped_comment = max(task.stopped_comment, shared.stopped_comment)
+    task.resumed = max(task.resumed, shared.resumed)
 
 
 def _name(person: str) -> str:
@@ -124,11 +147,11 @@ def _name(person: str) -> str:
 
 def _has_role(team: Team, role: str, comment: board.Comment) -> bool:
     """True when the author of the comment has the role. When akasha.toml names nobody for the role, each person with
-    write access to the repository has it."""
+    write access to the repository has it: GitHub tells the permission (board.comments)."""
     names = {"developer": team.developers, "administrator": team.administrators}.get(role, ())
     if names:
         return _name(comment.author) in {_name(name) for name in names}
-    return comment.association in _WRITERS
+    return comment.writer
 
 
 def _decide(root: Path, task: Task) -> bool:
@@ -142,7 +165,7 @@ def _decide(root: Path, task: Task) -> bool:
         found = board.comments(root, task.board) if task.board else []
     except board.BoardError:
         found = []
-    status = task.status
+    status = _read_status[task.id] = task.status
     _ignored[task.id] = _decided(config.load(root), task, found)
     return task.status != status
 
@@ -216,7 +239,7 @@ def _inspected(task: Task, comment: board.Comment, words: list[str]) -> str:
         return f"it is not for the current specification r{task.spec_rev}"
     if target == "all":
         chosen = list(task.conditions)
-    elif target.isdigit() and 1 <= int(target) <= len(task.conditions):
+    elif _number(target) and 1 <= int(target) <= len(task.conditions):
         chosen = [task.conditions[int(target) - 1]]
     else:
         return f"the task has no completion condition {target or '<number>'}"
@@ -227,6 +250,11 @@ def _inspected(task: Task, comment: board.Comment, words: list[str]) -> str:
     if not accepted and words[3:] and note not in task.notes:
         task.notes.append(note)
     return ""
+
+
+def _number(text: str) -> bool:
+    """True for a number of the digits 0 to 9. Python also reads other characters as digits, for example ①."""
+    return text.isascii() and text.isdecimal()
 
 
 def _resumed(team: Team, task: Task, comment: board.Comment) -> str:
@@ -265,24 +293,35 @@ def _holds(root: Path, task: Task) -> bool:
     return not task.holder or (task.holder, task.holder_host) == _who(root)
 
 
+def _close_pull_request(root: Path, task: Task) -> None:
+    """Turn off the auto-merge of the open pull request of a cancelled task, remove its merge label, and close it, so
+    that the cancelled change never merges."""
+    if not task.pull_request:
+        return
+    found = github.pull_request(root, task.pull_request)
+    if not found:
+        raise RuntimeError(f"Akasha cannot read the pull request {task.pull_request} of the cancelled task {task.id}. "
+                           "Make sure that gh is logged in")
+    if found.get("state") == "OPEN":
+        gh(root, "pr", "merge", task.pull_request, "--disable-auto")
+        gh(root, "pr", "edit", task.pull_request, "--remove-label", server.MERGE_LABEL)
+        closed = gh(root, "pr", "close", task.pull_request, "--comment", f"Akasha cancelled the task {task.id}")
+        if closed.returncode:
+            raise RuntimeError(f"Akasha cannot close the pull request {task.pull_request} of the cancelled task "
+                               f"{task.id}: {closed.stderr.strip()[:300]}. Close it on GitHub")
+    elif found.get("state") == "MERGED":
+        note = "the pull request merged before the cancel. To remove the change, record a new request"
+        if note not in task.notes:
+            task.notes.append(note)
+
+
 def _withdraw(root: Path, task: Task) -> None:
-    """After a cancel: close the pull request, so that the cancelled change never merges, delete the branch of the
-    last handoff, and tell the requesters of the tasks that build on this task. The work copy stays."""
-    if task.pull_request:
-        found = github.pull_request(root, task.pull_request)
-        if not found:
-            raise RuntimeError(f"Akasha cannot read the pull request {task.pull_request} of the cancelled task "
-                               f"{task.id}. Make sure that gh is logged in, then do the step again")
-        if found.get("state") == "OPEN":
-            gh(root, "pr", "merge", task.pull_request, "--disable-auto")
-            gh(root, "pr", "edit", task.pull_request, "--remove-label", server.MERGE_LABEL)
-            closed = gh(root, "pr", "close", task.pull_request, "--comment", f"Akasha cancelled the task {task.id}")
-            if closed.returncode:
-                raise RuntimeError(f"Akasha cannot close the pull request {task.pull_request} of the cancelled task "
-                                   f"{task.id}: {closed.stderr.strip()[:300]}. Close it on GitHub, then do the step "
-                                   "again")
-        elif found.get("state") == "MERGED":
-            task.notes.append("the pull request merged before the cancel. To remove the change, record a new request")
+    """Before a cancelled task goes on its issue: close the pull request, delete the branch of the last handoff, and
+    tell the requesters of the tasks that build on this task. The work copy stays."""
+    try:
+        _close_pull_request(root, task)
+    except RuntimeError as error:
+        raise RuntimeError(f"{error}, then do the step again") from error
     _drop_wip(root, task)
     for other in board.read(root)[0]:
         if other.builds_on == task.id and tasks.active(other) and other.board:
@@ -299,12 +338,26 @@ def _setup_note(task: Task) -> str:
             "shows the output")
 
 
+def _no_account(task: Task) -> str:
+    return (f"the requester {task.requester or '(unknown)'} is not a GitHub account, so the requester cannot decide. "
+            f"Ask for the GitHub name of the requester, then run: akasha specify {task.id} --requester <GitHub name>")
+
+
 def _adopt(root: Path, task: Task) -> None:
     """Prepare a task for its first issue in the new format: a task of Akasha 1.0.0, or a task without an issue. The
     person here holds it. Akasha 1.0.0 wrote the output of a failed setup in a note, and that output stays on this
-    computer."""
+    computer.
+
+    The requester decides with a GitHub account, but Akasha 1.0.0 and a repository without GitHub record any name.
+    When GitHub has an account with that name, the requester is that account. Else a note tells the holder to give
+    the GitHub name of the requester (_rename_requester)."""
     if not task.holder:
         task.holder, task.holder_host = _who(root)
+    login = board.account(root, task.requester) if task.requester else ""
+    if login:
+        task.requester = login
+    elif task.requester and _no_account(task) not in task.notes:
+        task.notes.append(_no_account(task))
     for number, note in enumerate(task.notes):
         if note.startswith(OLD_SETUP_NOTE):
             task.setup_output = note.removeprefix(OLD_SETUP_NOTE)
@@ -603,12 +656,15 @@ def _wanted(name: str, gate: list[str], task: Task) -> str:
 
 
 def specify(root: Path, task_id: str, conditions: list[str], questions: list[str], clear_questions: bool,
-            scope: list[str] | None = None, builds_on: str | None = None) -> tuple[Task, list[overlap.Overlap]]:
+            scope: list[str] | None = None, builds_on: str | None = None,
+            requester: str | None = None) -> tuple[Task, list[overlap.Overlap]]:
     """Add completion conditions, open questions, or file patterns of the scope. `builds_on=""` stops building on
-    the earlier task.
+    the earlier task. `requester` gives the GitHub account of a requester that is not a GitHub account.
 
     A wider scope can raise the risk level and touch other tasks, so Akasha compares it with the open tasks again."""
     task = _held(root, task_id)
+    if requester is not None:
+        _rename_requester(root, task, requester)
     added = task.conditions + [item for item in conditions if item not in task.conditions]
     asked = [] if clear_questions else task.open_questions + questions
     if (added, asked) != (task.conditions, task.open_questions):
@@ -648,6 +704,21 @@ def _respecify(root: Path, task: Task) -> None:
         task.stage = approval
         task.notes.append(f"the specification changed to r{task.spec_rev}, so the task went back to the {approval} "
                           "stage. The requester approves the new specification")
+
+
+def _rename_requester(root: Path, task: Task, person: str) -> None:
+    """With GitHub, give the GitHub account of the requester to a task whose requester is not a GitHub account, for
+    example a name that Akasha 1.0.0 recorded. The requester of each other task stays: another requester needs a new
+    request."""
+    if not board.available(root) or board.account(root, task.requester):
+        raise ValueError(f"the requester of the task {task.id} is {task.requester or 'unknown'}, and it does not "
+                         "change. For another requester, record a new request")
+    if not person.strip():
+        raise ValueError("give the GitHub name of the requester: --requester <GitHub name>")
+    old = task.requester
+    task.requester, warning = _requester(root, person)
+    task.notes += [f"the requester is the GitHub account {task.requester} now, in place of {old}"] + \
+        ([warning] if warning else [])
 
 
 def _unstack(root: Path, task: Task, builds_on: str) -> None:
@@ -738,6 +809,13 @@ def _decide_here(root: Path, task: Task, text: str, deciders: tuple[str, ...] | 
     return task
 
 
+def _requester_account(task: Task) -> tuple[str]:
+    """The requester, who decides with a GitHub account. A name that is not a GitHub name cannot decide (_adopt)."""
+    if not board.named(task.requester):
+        raise ValueError(_no_account(task))
+    return (task.requester,)
+
+
 def approve(root: Path, task_id: str, role: str, person: str = "") -> Task:
     """Record an approval: of the specification for the role requester, else of the risk level for a gate role.
 
@@ -754,7 +832,7 @@ def approve(root: Path, task_id: str, role: str, person: str = "") -> Task:
         return task
     task = _on_issue(root, task_id)
     if role == "requester":
-        return _decide_here(root, task, f"/approve spec r{task.spec_rev}", (task.requester,), person)
+        return _decide_here(root, task, f"/approve spec r{task.spec_rev}", _requester_account(task), person)
     names = {"developer": team.developers, "administrator": team.administrators}[role]
     return _decide_here(root, task, f"/approve risk {task.risk}", names or None, person)
 
@@ -791,12 +869,22 @@ def cancel(root: Path, task_id: str, person: str = "", reason: str = "") -> Task
     """Stop a task for good, for example when the requester withdraws the request. The work copy stays.
 
     With GitHub, the requester or a developer writes `/cancel <reason>` on the issue, also when another person holds
-    the task. The next read of the holder closes the pull request (_withdraw)."""
+    the task. When this copy of the repository or nobody holds the task, the cancel goes on the issue at once
+    (_withdraw). Else the command closes the pull request at once with the GitHub account of this computer, and the
+    next command of the holder writes the cancel on the issue."""
     team = config.load(root)
     if board.available(root):
         task = _examine_active(_on_issue(root, task_id))
         deciders = (task.requester, *team.developers) if team.developers else None
-        return _decide_here(root, task, " ".join(["/cancel", *reason.split()]), deciders, person)
+        task = _decide_here(root, task, " ".join(["/cancel", *reason.split()]), deciders, person)
+        if task.status == "cancelled" and not _holds(root, task):
+            try:
+                _close_pull_request(root, task)
+            except RuntimeError as error:
+                raise RuntimeError(f"Akasha counted the cancel of the task {task.id}. But {error}. Until the pull "
+                                   "request closes, GitHub can merge the cancelled change. The next Akasha command of "
+                                   f"{task.holder} for the task also closes it") from error
+        return task
     _given(person)
     task = _examine_active(_held(root, task_id))
     task.status = "cancelled"
@@ -810,7 +898,7 @@ def _condition(task: Task, condition: str) -> str:
     """The completion condition with this text, or with this number from 1."""
     if condition in task.conditions:
         return condition
-    if condition.strip().isdigit() and 1 <= int(condition) <= len(task.conditions):
+    if _number(condition.strip()) and 1 <= int(condition) <= len(task.conditions):
         return task.conditions[int(condition) - 1]
     raise ValueError(f"the task has no completion condition: {condition}")
 
@@ -828,7 +916,7 @@ def accept(root: Path, task_id: str, condition: str | None, result: bool, reason
     task = _on_issue(root, task_id)
     target = str(task.conditions.index(_condition(task, condition)) + 1) if condition else "all"
     words = ["/accept" if result else "/reject", target, f"r{task.spec_rev}", *([] if result else reason.split())]
-    return _decide_here(root, task, " ".join(words), (task.requester,))
+    return _decide_here(root, task, " ".join(words), _requester_account(task))
 
 
 def check(root: Path, task_id: str) -> runner.Result:
@@ -1102,7 +1190,8 @@ def takeover(root: Path, task_id: str) -> Task:
     The work copy starts from the work of the last handoff, or from the task branch on the server, and keeps the base
     of the task. The holder is a person in one copy of the repository: when the same person holds the task in another
     copy, that copy must hand it off first, else its work that is not on the server stays there. A developer can also
-    take over a stopped task that its holder did not hand off. Then Akasha tells the old holder on the issue."""
+    take over a stopped task that its holder did not hand off, also after a /resume that only the holder can write on
+    the issue: the takeover writes it. Then Akasha tells the old holder on the issue."""
     if not board.available(root):
         raise RuntimeError("the takeover needs the shared task board on GitHub")
     team, task = config.load(root), load(root, task_id)
@@ -1117,7 +1206,8 @@ def takeover(root: Path, task_id: str) -> Task:
         return task                                   # this copy holds the task already
     previous = task.holder
     forced = bool(previous) and (previous, task.holder_host) != (name, host)
-    if forced and task.status != "stopped":
+    stopped = "stopped" in (task.status, _read_status.get(task.id))      # also when a /resume of this read opened it
+    if forced and not stopped:
         if previous == name:
             raise HolderError(f"you hold the task {task.id} in another copy of the repository. Hand it off there with "
                               f"akasha handoff {task.id}, then take it over here")

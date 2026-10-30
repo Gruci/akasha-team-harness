@@ -38,7 +38,10 @@ class GuardTests(unittest.TestCase):
                      "python -m pytest -q", "git branch -D akasha/old-task", "echo push --force",
                      "git push -u origin feature-x", "git push", "cd src && ls", "npm test 2>&1",
                      "gh pr view 7", "gh issue comment 5 --body 'Write /approve spec r2 when the plan is correct'",
-                     "gh issue create --title x --body '/approve'", "gh api repos/team/app/pulls/7"):
+                     "gh issue create --title x --body '/approve'", "gh api repos/team/app/pulls/7",
+                     "cd src && git push", "git -C src push", "GH_REPO=team/app gh pr view 7", "env CI=1 npm test",
+                     "gh issue edit 5 --add-label bug", "gh api repos/team/app/issues/comments/123",
+                     "gh api repos/team/app/issues/5"):
             with self.subTest(line=line):
                 self.assertIsNone(self.stop(line))
 
@@ -54,7 +57,19 @@ class GuardTests(unittest.TestCase):
                      "gh issue comment 5 --body-file note.md", "gh issue comment 5 -F - <<'EOF'\n/resume\nEOF",
                      'echo "/cancel not needed" | gh issue comment 5 -F -',
                      "gh api repos/team/app/issues/5/comments -f body='/Reject 1 r2 too slow'",
-                     "gh api repos/team/app/issues/5/comments -F body=@note.md"):
+                     "gh api repos/team/app/issues/5/comments -F body=@note.md",
+                     "cd .akasha/work/t-1 && git push", "git -C .akasha/work/t-1 push -u origin HEAD",
+                     'GH_REPO=o/r gh issue comment 5 --body "/approve spec r2"', "GH_REPO=team/app gh pr merge 5",
+                     "gh -R team/app pr merge 5 --squash", "env GH_REPO=team/app gh pr merge 5",
+                     'gh --repo team/app issue comment 5 --body "/approve spec r1"',
+                     "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"x\"}) { x } }'",
+                     "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {}) { x } }'",
+                     "gh api -X DELETE repos/team/app/issues/comments/123",
+                     "gh api --method PATCH repos/team/app/issues/comments/123 -f body=ok",
+                     "gh api graphql -f query='mutation { minimizeComment(input: {subjectId: \"x\"}) { x } }'",
+                     "gh api graphql -f query='mutation { updateIssue(input: {id: \"x\", body: \"\"}) { x } }'",
+                     "gh issue comment 5 --edit-last --body ok", "gh issue edit 5 --body-file note.md",
+                     "gh issue edit 5 -b x", "gh api -X PATCH repos/team/app/issues/5 -f state=closed"):
             with self.subTest(line=line):
                 self.assertIsNotNone(self.stop(line))
         for line in ("git push", "git push origin", "git push -u origin HEAD"):        # in the work copy of a task

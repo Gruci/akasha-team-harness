@@ -119,10 +119,11 @@ def advance(task: Task, workflow: Workflow, context: Context) -> list[str]:
 
 
 def record_failure(task: Task, reason: str) -> bool:
-    """Count one failed repair. After MAX_FAILURES, stop the task so that a developer can examine it."""
+    """Count one failed repair. After MAX_FAILURES, stop the task so that a developer can examine it. True only when
+    the task stops now: a failure of a task that is stopped already does not stop it again."""
     task.failures += 1
     task.notes.append(f"repair {task.failures} failed: {reason}")
-    if task.failures >= MAX_FAILURES:
+    if task.failures >= MAX_FAILURES and task.status == "open":
         task.status = "stopped"
         task.notes.append(f"Stopped after {MAX_FAILURES} failed repairs. A developer must examine the problem: {reason}")
         return True

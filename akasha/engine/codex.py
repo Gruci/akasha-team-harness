@@ -39,6 +39,9 @@ After each step, run `python -m akasha advance <task>`. If Akasha shows a blocke
 With GitHub, each decision of a person is a comment on the issue from the GitHub account of that person. If the
 person is another account, Akasha tells the exact comment: give it to the person and wait.
 Never record an approval or an answer for a person who did not give it. Never write a decision comment with gh.
+Do not edit, delete, or hide a comment, and do not change the body of an issue.
+If Akasha says that the requester is not a GitHub account, ask for the GitHub name of the requester. Then run
+`python -m akasha specify <task> --requester <GitHub name>`.
 Without GitHub, add `--by <name>` to approve, resume, and cancel.
 If the requester withdraws the request, the requester writes `/cancel <reason>`. If the requester is the GitHub
 account of this computer, run `python -m akasha cancel <task> --reason "<reason>"`.

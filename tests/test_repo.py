@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -85,6 +86,11 @@ class IdentityTests(unittest.TestCase):
         repo._logins.clear()                                     # after one hour, Akasha asks again
         with patch("akasha.repo.gh", return_value=answer("dev-b\n")):
             self.assertEqual(repo.me(root), "dev-b")
+        path.write_text(json.dumps({"login": "admin-a", "checked": time.time()}), encoding="utf-8")
+        repo._logins.clear()                                     # a person edited the file
+        with patch("akasha.repo.gh", return_value=answer("dev-b\n")):
+            self.assertEqual(repo.me(root), "admin-a")
+            self.assertEqual(repo.me(root, fresh=True), "dev-b")      # for a change of the GitHub settings
 
     def test_me_is_empty_without_gh(self):
         with patch("akasha.repo.gh", return_value=answer("", 1)):

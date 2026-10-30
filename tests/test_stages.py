@@ -69,6 +69,8 @@ class StageTests(unittest.TestCase):
         self.assertTrue(stages.record_failure(self.task, "test_orders failed"))
         self.assertEqual(self.task.status, "stopped")
         self.assertIn("A developer must examine the problem", self.task.notes[-1])
+        self.assertFalse(stages.record_failure(self.task, "test_orders failed"))    # it stopped before
+        self.assertEqual((self.task.status, self.task.failures), ("stopped", 4))
 
     def test_task_files(self):
         with tempfile.TemporaryDirectory() as folder:

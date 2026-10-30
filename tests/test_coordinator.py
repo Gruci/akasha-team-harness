@@ -30,7 +30,8 @@ class FakeBoard:
         self.issues: dict[str, dict] = {}
         self.calls: list[tuple[str, ...]] = []
         self.accounts: dict[str, str] | None = None      # lower case -> the exact name. None: GitHub has each account
-        self.private, self.members = False, set()        # the repository, and the accounts with access to it
+        self.private = False
+        self.permissions: dict[str, str] = {}            # lower case -> the permission. Each other account: write
 
     def add(self, text: str, state: str = "OPEN", comments: list[dict] | None = None) -> str:
         address = f"https://github.com/team/app/issues/{len(self.issues) + 1}"
@@ -59,8 +60,7 @@ class FakeBoard:
             login = name if self.accounts is None else self.accounts.get(name.lower(), "")
             return answer({"login": login}) if login else answer("", 1, "gh: Not Found (HTTP 404)")
         if args[:1] == ("api",) and args[1].endswith("/permission"):
-            login = args[1].split("/")[-2]
-            return answer({"permission": "read" if login.lower() in self.members else "none"})
+            return answer({"permission": self.permissions.get(args[1].split("/")[-2].lower(), "write")})
         if args[:1] == ("api",):
             return answer({"private": self.private})
         if verb == ("issue", "create"):
@@ -203,16 +203,36 @@ class BoardTests(unittest.TestCase):
             first, second = board.comments(root, address)
         self.assertEqual(first, board.Comment(123456, "Ops-A", "NONE", "2026-10-31T01:00:00Z", True, False,
                                               "/approve spec r1"))
-        self.assertEqual((second.number, second.author, second.edited, second.body),
-                         (101, "dev-a", False, "/approve risk high"))
+        self.assertEqual((second.number, second.author, second.edited, second.body, second.writer),
+                         (101, "dev-a", False, "/approve risk high", True))
+
+    def test_github_tells_who_has_write_access(self):
+        root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
+        fake = FakeBoard()
+        fake.permissions = {"reader-a": "read", "member-a": "read"}
+        address = fake.add("body")
+        for login, association, text in (("owner-a", "OWNER", "/resume"), ("dev-c", "COLLABORATOR", "/resume"),
+                                         ("reader-a", "COLLABORATOR", "/resume"), ("member-a", "MEMBER", "/cancel"),
+                                         ("dev-c", "MEMBER", "Looks good"), ("guest-a", "NONE", "/resume")):
+            fake.say(address, login, text, association)
+        with patch("akasha.coordinator.board.gh", fake):
+            found = board.comments(root, address)
+            self.assertEqual([comment.writer for comment in found], [True, True, False, False, False, False])
+            board.comments(root, address)
+        asked = [call[1] for call in fake.calls if call[0] == "api"]      # only for a decision comment, and only once
+        self.assertEqual(asked, [f"repos/{{owner}}/{{repo}}/collaborators/{login}/permission"
+                                 for login in ("dev-c", "reader-a", "member-a")])
 
     def test_an_account_is_the_name_that_github_gives(self):
         root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
         fake = FakeBoard()
-        fake.accounts, fake.members = {"ops-a": "Ops-A", "ops-b": "ops-b"}, {"ops-a"}
+        fake.accounts = {"ops-a": "Ops-A", "ops-b": "ops-b", "kim_acme": "kim_acme"}
+        fake.permissions = {"ops-a": "read", "ops-b": "none"}
         with patch("akasha.coordinator.board.gh", fake), patch("akasha.repo.gh_repo", return_value="team/app"):
             self.assertEqual((board.account(root, "@OPS-A"), board.account(root, "nobody")), ("Ops-A", ""))
+            self.assertEqual(board.account(root, "kim_acme"), "kim_acme")      # Enterprise Managed Users
             self.assertEqual(board.account(root, "a/../../repos"), "")          # not the shape of a GitHub name
+            self.assertEqual(board.account(root, "Kim Minsu"), "")
             self.assertTrue(board.can_comment(root, "ops-b"))                    # a public repository
             fake.private = True
             self.assertEqual((board.can_comment(root, "ops-a"), board.can_comment(root, "ops-b")), (True, False))

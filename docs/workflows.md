@@ -44,7 +44,7 @@ Each decision of a person, and who can write it, is in [Roles](roles.md).
 
 Each failed check counts as one failed repair. After three failed repairs, Akasha stops the task.
 
-1. The agent engine stops the work and tells the requester in simple words. With GitHub, Akasha writes a comment on the issue of the task for the developers.
+1. The agent engine stops the work and tells the requester in simple words. With GitHub, Akasha writes a comment on the issue of the task for the developers. Akasha writes it once, when the task stops: a check of the stopped task counts one more failed repair, but writes no comment.
 2. A developer examines the problem.
 3. The developer writes the decision comment `/resume` on the issue, after the comment of Akasha. When the developer is the GitHub account of the computer, the agent engine runs `resume`, and Akasha writes the comment. Without GitHub, the agent engine runs `resume --by <developer>`. The count starts again at zero.
 
