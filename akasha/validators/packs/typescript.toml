@@ -1,0 +1,4 @@
+name = "typescript"
+extensions = [".ts", ".tsx", ".js", ".jsx"]
+tests = "npm test --silent"
+lint = "npx eslint ."

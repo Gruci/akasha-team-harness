@@ -1,0 +1,33 @@
+"""Language packs: the file extensions and the usual test and lint commands of each language."""
+
+from __future__ import annotations
+
+import subprocess
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+PACKS = Path(__file__).parent / "packs"
+
+
+@dataclass(frozen=True)
+class Pack:
+    name: str
+    extensions: tuple[str, ...]
+    tests: str
+    lint: str
+
+
+def packs() -> list[Pack]:
+    found = []
+    for path in sorted(PACKS.glob("*.toml")):
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        found.append(Pack(data["name"], tuple(data["extensions"]), data.get("tests", ""), data.get("lint", "")))
+    return found
+
+
+def detect(root: Path) -> list[Pack]:
+    """The packs whose extensions occur in the files that git tracks in the repository."""
+    listed = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True, encoding="utf-8")
+    suffixes = {Path(name).suffix for name in listed.stdout.splitlines()}
+    return [pack for pack in packs() if suffixes.intersection(pack.extensions)]

@@ -1,0 +1,4 @@
+name = "go"
+extensions = [".go"]
+tests = "go test ./..."
+lint = "go vet ./..."
