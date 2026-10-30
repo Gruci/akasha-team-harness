@@ -26,7 +26,7 @@ The issue holds the state of the task, so that each computer can continue the ta
 | `wip` | The commit that the last handoff pushed |
 | `format` | `2`. An issue without a format is from Akasha 1.0.0 |
 
-Three fields stay on the computer and never go on the issue: the work copy folder, the revision of the issue that this computer saw last, and the output of a setup command that failed. The output of a setup command can show paths and secret values. The issue only tells that the setup command failed. `show <task>` on the computer of the work copy shows the output.
+Three fields stay on the computer and never go on the issue: the work copy folder, the revision of the issue that this computer saw last, and the output of a setup command that failed. The output of a setup command can show paths and secret values. The issue only tells that the setup command failed. `show <task>` on the computer of the work copy shows the output. Akasha 1.0.0 wrote this output in a note. Before such a task goes on its issue in the new format, the output moves from the note to this computer. A setup command that passes later removes the old output.
 
 | Event | What occurs to the issue |
 |:--|:--|
@@ -37,13 +37,17 @@ Three fields stay on the computer and never go on the issue: the work copy folde
 
 Each command reads the task from its issue, and takes only these three fields from the task file on this computer. Before a write, Akasha reads the issue again. If another computer or another command wrote the issue after this command read it, the command stops and does not write over the newer state. Do the step again. A comment does not change the revision, so a comment never stops a command.
 
-When the task file on this computer has changes that the issue did not get, and nobody wrote the issue since, the next command for the task puts them on the issue. When the computer with the task file of an Akasha 1.0.0 task runs a command for it, Akasha writes the issue in the new format, and the person on that computer holds the task. Until then, nobody can take over that task on another computer.
+When the task file on this computer has changes that the issue did not get, and nobody wrote the issue since, the next command for the task puts them on the issue. When the computer with the task file of an Akasha 1.0.0 task runs a command for it, Akasha writes the issue in the new format, and the person on that computer holds the task. Until then, nobody can take over that task on another computer. The same applies to a task that has no issue, because this computer recorded it before `origin` was on GitHub, or because its first board write failed: the next command for it puts it on the board, and the person on this computer holds it. If an issue body has no format after this computer wrote the new format, for example because Akasha 1.0.0 still runs in one agent engine, the next command of the holder writes the whole task over it.
 
 Each task name is unique in the repository. The name has the letters a to z and the digits of the title in lower case, and eight random characters, for example `add-a-date-filter-1f3a9c0b`. A title without these letters and digits, for example a Korean title, gives `task-<random characters>`. Before a task starts, Akasha makes sure that no task file, no branch on this computer or on the server, and no issue on the board has the same name.
 
 When `origin` is a GitHub repository, the board must work. If `gh` cannot read or write the board, the command stops and tells you to examine `gh auth status`. Thus nobody works on a task that the other people cannot see. This also applies to the comments that Akasha writes on the issues.
 
 If a write fails after Akasha saved the change on this computer, the message names the task. When `gh` works again, run `specify <task>`, or the next command for the task. It puts the saved task on the board. Do not record the task again, because that makes a second task.
+
+For a new task at the build stage, Akasha finds the start commit of the work copy before it records the task. If the branch of the earlier task is not there yet, the request stops, and Akasha records nothing. If Akasha recorded the task but cannot make its work copy, the message names the task. When the cause is repaired, run `advance <task>`. It makes the work copy.
+
+With GitHub, the board shows the open issues, and the active tasks on this computer that have no issue yet. A task file of a task that has a closed issue is old, for example after this computer handed off the task and another computer finished it. That task file does not go on the board, and the overlap checks do not use it.
 
 Before a request, Akasha finishes the tasks that this person holds on this computer and whose pull request merged. If Akasha cannot update the issue of such a task, for example because a person deleted the issue, the request continues. The request itself reads and writes the board.
 
@@ -53,11 +57,11 @@ Before a request, Akasha finishes the tasks that this person holds on this compu
 
 With GitHub, one person in one copy of the repository holds each task. The person who records the task holds it. Only the holder changes the task: when another GitHub account or another copy of the repository holds the task, each command that changes the task stops. The message tells who holds the task.
 
-A task can go to another person, or to the same person on another computer.
+A task can go to another person, or to the same person on another computer. The same person in another copy of the repository also needs the handoff. Else the work that the first copy did not push stays there.
 
-1. The holder runs `handoff <task>`. Akasha examines the work copy first. If it has a secret key or a file outside the scope, the handoff stops.
+1. The holder runs `handoff <task>` in the main checkout, not in the work copy. The handoff removes the work copy, and on Windows a program cannot remove the folder that it works in. Akasha examines the work copy first. If it has a secret key or a file outside the scope, the handoff stops.
 2. Akasha saves the work as a commit and pushes it to the wip branch `akasha-wip/<task>`. Akasha never forces this push. Thus a work copy that is behind the server cannot write over newer work.
-3. Akasha removes the work copy and the local branch of the task, and frees the task: nobody holds it.
+3. Akasha frees the task, so that nobody holds it, and writes the commit and the free task on the issue. Then it removes the work copy and the local branch of the task. If the removal fails, for example because a program uses the folder, the task is free all the same. Close the program, then remove the folder.
 4. The other person runs `takeover <task>` on their computer. The work copy starts from the commit of the last handoff, or from the task branch on the server when that branch has the newer work. The task keeps its branch and its base. The setup command runs in the new work copy.
 5. If that computer still has a work copy or a branch of the task, it must be able to go forward to the work on the server. A work copy with changes, a folder that is not on the branch of the task, or a branch with commits that are not on the server stops the takeover. Examine them, then remove them.
 6. Now the other person holds the task.
@@ -112,6 +116,7 @@ Each task builds in its own work copy: a git worktree in `.akasha/work/<task>`, 
 - When the pull request merges, Akasha removes the work copy.
 - When a task is cancelled, the work copy stays. A person removes it after a review of the changes.
 - After a handoff, the work copy and the local branch of the task go away. A takeover makes a new work copy from the work on the server.
+- A folder that is not on the branch of the task is not its work copy, for example an empty folder after a failed removal. In such a folder, git works on the main checkout. Thus `check`, `handover`, and `handoff` stop there and do not save or push the changes of the main checkout.
 - The guard and the notice at the end of each turn look only at the work copies on this computer.
 
 ## Preview resources

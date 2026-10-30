@@ -39,6 +39,8 @@ If the requester withdraws the request, run `akasha cancel <task> --by <requeste
 
 > **NOTE:** If Akasha says that it cannot read or write the shared task board, do not continue without the board. Ask the user to log in with `gh auth login`. If Akasha also says that it saved or recorded the task, continue with that task. When `gh` works again, run the command that Akasha shows. Do not record the task again, because that makes a second task. Else do the step again.
 
+> **NOTE:** If Akasha says that it recorded the task but cannot make its work copy, continue with that task. Do not record the task again, because that makes a second task. Repair the cause that Akasha shows, then run `akasha advance <task>`. It makes the work copy.
+
 > **NOTE:** If Akasha says that another person or another computer holds the task, do not change the task. Tell the user who holds it. If Akasha says that another command changed the task, do the step again.
 
 ## Stage 2 — Specification and impact
@@ -71,12 +73,13 @@ With GitHub, one person on one computer holds each task. Only the holder changes
 To stop the work so that another person, or the same person on another computer, continues it:
 
 1. Make sure that the work copy has no secret key and no file outside the scope.
-2. Run `akasha handoff <task>`. Akasha saves the work on the server and frees the task. The work copy goes away.
-3. Tell the user that the task is free, and give the task name.
+2. Run `akasha handoff <task>` in the main checkout, not in the work copy. Akasha saves the work on the server and frees the task. The work copy goes away.
+3. If Akasha says that it handed off the task but cannot remove the work copy, tell the user to close the programs that use the folder, then remove it.
+4. Tell the user that the task is free, and give the task name.
 
 To continue the task of another person:
 
-1. Run `akasha board`. Find the task and its holder. If a person holds the task, ask that person to hand it off. Do not continue before the handoff.
+1. Run `akasha board`. Find the task and its holder. If a person holds the task, ask that person to hand it off. If you hold it in another copy of the repository, hand it off there first. Do not continue before the handoff.
 2. Run `akasha takeover <task>`. Akasha makes the work copy from the work on the server, and you hold the task.
 3. If Akasha says that a work copy or a branch on this computer cannot go forward to the work on the server, tell the user. The user examines it and removes it. Then do step 2 again.
 4. Run `akasha show <task>`. Continue at the stage that Akasha shows.

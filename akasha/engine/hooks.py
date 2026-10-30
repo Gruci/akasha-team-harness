@@ -79,16 +79,20 @@ def _task_lines(root: Path) -> list[str]:
     if name:
         found = [task for task in listed if tasks.active(task)
                  and name in (task.holder, task.requester.lstrip("@").lower())]
-    return [f"[AKASHA] Task {task.id}: {task.status}, stage {task.stage}, risk {task.risk}{_held_by(task, name)}, "
-            f"{task.title}" for task in found]
+    here = repo.host(root) if name else ""
+    return [f"[AKASHA] Task {task.id}: {task.status}, stage {task.stage}, risk {task.risk}"
+            f"{_held_by(task, name, here)}, {task.title}" for task in found]
 
 
-def _held_by(task: tasks.Task, name: str) -> str:
-    """Who holds the task, for the session start notice. Nothing without GitHub."""
+def _held_by(task: tasks.Task, name: str, here: str) -> str:
+    """Who holds the task, for the session start notice. The holder is a person in one copy of the repository.
+    Nothing without GitHub."""
     if not name:
         return ""
-    if task.holder == name:
+    if (task.holder, task.holder_host) == (name, here):
         return ", you hold it"
+    if task.holder == name:
+        return ", you hold it in another copy: hand it off there, then take it over here"
     return f", {task.holder} holds it" if task.holder else ", nobody holds it"
 
 

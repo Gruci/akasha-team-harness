@@ -117,13 +117,15 @@ def read(root: Path, timeout: float = 60) -> tuple[list[Task], str]:
     """The tasks on the board and where Akasha read them: "github" or "local".
 
     An issue stays open until the pull request of its task merges, so the board also shows the tasks that wait
-    for a merge. Without GitHub, the board holds the active tasks on this computer."""
+    for a merge. With GitHub, the board also holds the active tasks on this computer that have no issue yet, because
+    their first board write failed. A task file with an issue that is not open is old: for example, this computer
+    handed off the task, and another computer finished it. Without GitHub, the board holds the active tasks on this
+    computer."""
     local = [task for task in all_tasks(root) if active(task)]
     remote = _listed(root, timeout=timeout)
     if remote is None:
         return local, "local"
-    known = {task.id for task in remote}
-    return remote + [task for task in local if task.id not in known], "github"
+    return remote + [task for task in local if not task.board], "github"
 
 
 def _known_address(root: Path, task_id: str) -> str:

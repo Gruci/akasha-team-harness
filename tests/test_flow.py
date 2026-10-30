@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -274,6 +275,25 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(later.builds_on, "")
         self.assertEqual(workcopy.changed_files(later), ["date_filter.py", "export.py"])     # now changes of this task
 
+    def test_a_work_copy_that_cannot_start_names_the_recorded_task(self):
+        root = make_repo(PASS)
+        earlier, _ = flow.start(root, "Add a date filter", "ops-a")          # its branch is not there yet
+        with self.assertRaises(RuntimeError) as stopped:
+            flow.start(root, "Use the date filter", "ops-b", workflow="small", builds_on=earlier.id)
+        self.assertIn("not on this computer or on the server yet", str(stopped.exception))
+        self.assertEqual([item.id for item in tasks.all_tasks(root)], [earlier.id])     # nothing recorded, as in 1.0.0
+        fake = FakeBoard()
+        with person(fake=fake):
+            with patch("akasha.flow.workcopy.create", side_effect=RuntimeError("git worktree add failed: disk full")), \
+                    self.assertRaises(RuntimeError) as stopped:
+                flow.start(root, "Export the filtered list", "ops-b", workflow="small")
+            [recorded] = [item for item in tasks.all_tasks(root) if item.id != earlier.id]
+            self.assertIn(f"Akasha recorded the task {recorded.id}: continue with it", str(stopped.exception))
+            self.assertIn(f"run `akasha advance {recorded.id}`", str(stopped.exception))
+            self.assertIn(recorded.board, fake.issues)
+            flow.advance(root, recorded.id)                                   # it makes the work copy
+        self.assertTrue(Path(tasks.load(root, recorded.id).workcopy).is_dir())
+
     def test_a_change_of_accepted_behavior_is_told_to_the_earlier_requester(self):
         root = make_repo(PASS)
         earlier, _ = flow.start(root, "Add a date filter", "ops-a")
@@ -522,10 +542,28 @@ class SharedTaskTests(unittest.TestCase):
             flow.advance(self.second, task.id)
         self.assertIn(f"dev-a holds the task {task.id}", str(stopped.exception))
 
+    def test_the_same_person_hands_off_in_the_other_copy_first(self):
+        task = self.started()
+        with person("dev-a", "pc-a", self.fake):
+            flow.check(self.first, task.id)                             # search.py is on the server
+        (Path(task.workcopy) / "export.py").write_text("y = 2\n", encoding="utf-8")      # not on the server yet
+        with person("dev-a", "pc-b", self.fake), self.assertRaises(flow.HolderError) as stopped:
+            flow.takeover(self.second, task.id)
+        self.assertIn(f"in another copy of the repository. Hand it off there with akasha handoff {task.id}",
+                      str(stopped.exception))
+        with person("dev-a", "pc-a", self.fake):
+            flow.handoff(self.first, task.id)
+        with person("dev-a", "pc-b", self.fake):
+            moved = flow.takeover(self.second, task.id)
+        self.assertEqual(workcopy.changed_files(moved), ["export.py", "search.py"])
+
     def test_an_old_work_copy_on_this_computer_only_goes_forward(self):
         task = self.started()
         with person("dev-a", "pc-a", self.fake):
             flow.check(self.first, task.id)                             # the checks pass: the task branch is pushed
+            stopped_task = flow.load(self.first, task.id)
+            stopped_task.status = "stopped"                             # a developer can take it over without a handoff
+            flow._publish(self.first, stopped_task)
         with person("dev-a", "pc-b", self.fake):                        # the same person in another copy
             moved = flow.takeover(self.second, task.id)
             (Path(moved.workcopy) / "export.py").write_text("y = 2\n", encoding="utf-8")
@@ -585,6 +623,60 @@ class SharedTaskTests(unittest.TestCase):
             (work / "notes.txt").unlink()
             flow.handoff(self.first, task.id)
         self.assertNotEqual(self.on_server(f"akasha-wip/{task.id}"), "")
+
+    def test_a_handoff_keeps_the_main_checkout_safe(self):
+        task = self.started()
+        work = Path(task.workcopy)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(work)                                                  # a shell in the work copy
+        with person("dev-a", "pc-a", self.fake), self.assertRaises(RuntimeError) as stopped:
+            flow.handoff(self.first, task.id)
+        os.chdir(self.first)
+        self.assertIn(f"run the handoff in the main checkout {self.first}", str(stopped.exception))
+        self.assertEqual(self.on_server(f"akasha-wip/{task.id}"), "")      # nothing went to the server
+        refused = RuntimeError("git worktree remove failed: Permission denied")
+        with person("dev-a", "pc-a", self.fake):
+            with patch("akasha.flow.workcopy.remove", side_effect=refused), self.assertRaises(RuntimeError) as stopped:
+                flow.handoff(self.first, task.id)                       # a program uses the work copy
+            self.assertIn(f"Akasha handed off the task {task.id}", str(stopped.exception))
+            shared = board.parse(self.fake.issues[task.board]["body"])
+            self.assertEqual((shared.holder, shared.wip), ("", self.on_server(f"akasha-wip/{task.id}")))
+            flow.takeover(self.first, task.id)
+        workcopy.git(self.first, "worktree", "remove", "--force", str(work))
+        work.mkdir()                                                    # an empty folder that a failed removal left
+        (self.first / "draft.txt").write_text("not for the task\n", encoding="utf-8")
+        main = workcopy.git(self.first, "rev-parse", "HEAD").stdout.strip()
+        with person("dev-a", "pc-a", self.fake):
+            for command in (flow.check, flow.handoff):
+                with self.assertRaises(RuntimeError) as stopped:
+                    command(self.first, task.id)
+                self.assertIn("is not the work copy of the task", str(stopped.exception))
+        self.assertEqual(workcopy.git(self.first, "rev-parse", "HEAD").stdout.strip(), main)    # main did not move
+
+    def test_a_task_that_another_computer_cancelled_is_not_on_the_board_here(self):
+        task = self.started(scope=["search.py"])
+        with person("dev-a", "pc-a", self.fake):
+            flow.handoff(self.first, task.id)
+        with person("dev-b", "pc-b", self.fake):
+            flow.takeover(self.second, task.id)
+            flow.cancel(self.second, task.id, "ops-a")
+        comments = len(self.fake.issues[task.board]["comments"])
+        self.assertEqual(tasks.load(self.first, task.id).status, "open")       # the task file here is old
+        with person("dev-a", "pc-a", self.fake):
+            new, found = flow.start(self.first, "Add a date filter", "ops-b", scope=["search.py"])
+            listed = board.read(self.first)[0]
+        self.assertEqual((found, [item.id for item in listed]), ([], [new.id]))
+        self.assertEqual(len(self.fake.issues[task.board]["comments"]), comments)
+
+    def test_a_setup_that_passes_clears_the_old_output(self):
+        with patch("akasha.flow.runner.prepare", return_value=("FAIL", "npm ERR! C:/Users/kim/app")):
+            task = self.started()
+        self.assertEqual(tasks.load(self.first, task.id).setup_output, "npm ERR! C:/Users/kim/app")
+        self.assertNotIn("C:/Users/kim", self.fake.issues[task.board]["body"])
+        with person("dev-a", "pc-a", self.fake):
+            flow.handoff(self.first, task.id)
+            flow.takeover(self.first, task.id)                          # the setup passes in the new work copy
+        self.assertEqual(tasks.load(self.first, task.id).setup_output, "")
 
     def test_a_developer_takes_over_a_stopped_task(self):
         with (self.second / "akasha.toml").open("a", encoding="utf-8") as file:
@@ -650,7 +742,8 @@ class SharedStateTests(unittest.TestCase):
         root, other = make_repo(PASS), make_repo(PASS)
         fake = FakeBoard()
         old = tasks.Task(id="date-filter-0a1b", title="Add a date filter", workflow="feature", stage="request",
-                         requester="ops-a")
+                         requester="ops-a", notes=["the setup command failed in the work copy: pip install "
+                                                   "--index-url https://kim:token-1@pypi.example C:/Users/kim/app"])
         data = {name: getattr(old, name) for name in ("id", "title", "workflow", "stage", "status", "requester",
                                                       "feature", "scope", "contracts", "risk", "conditions",
                                                       "accepted", "builds_on", "pull_request")}
@@ -663,6 +756,41 @@ class SharedStateTests(unittest.TestCase):
             flow.specify(root, old.id, ["Filter by the date"], [], False)
         shared = board.parse(fake.issues[old.board]["body"])
         self.assertEqual((shared.format, shared.holder, shared.conditions), (2, "dev-a", ["Filter by the date"]))
+        self.assertNotIn("token-1", fake.issues[old.board]["body"])        # the old setup output stays here
+        self.assertEqual(shared.notes, [flow._setup_note(old)])
+        self.assertIn("token-1", tasks.load(root, old.id).setup_output)
+
+    def test_a_body_without_the_format_does_not_stop_the_holder(self):
+        root = make_repo(PASS)
+        fake = FakeBoard()
+        with person(fake=fake):
+            task, _ = flow.start(root, "Add a date filter", "ops-a")
+            data = {"id": task.id, "title": task.title, "workflow": "feature", "stage": "request"}
+            fake.issues[task.board]["body"] = f"Requester: ops-a\n\n```akasha-scope\n{json.dumps(data)}\n```\n"
+            flow.specify(root, task.id, ["Filter by the date"], [], False)      # Akasha 1.0.0 wrote the issue
+        shared = board.parse(fake.issues[task.board]["body"])
+        self.assertEqual((shared.format, shared.holder, shared.conditions), (2, "dev-a", ["Filter by the date"]))
+
+    def test_a_task_without_an_issue_goes_to_the_person_here(self):
+        root = make_repo(PASS)
+        recorded, _ = flow.start(root, "Add a date filter", "ops-a", workflow="small")    # origin is not GitHub yet
+        self.assertEqual((recorded.holder, recorded.board), ("", ""))
+        old = tasks.Task(id="export-0a1b", title="Export the list", workflow="feature", stage="request")
+        tasks.save(root, old)                                   # Akasha 1.0.0, and its board write failed
+        add_remote(root)
+        fake = FakeBoard()
+        with person(fake=fake):
+            for task_id in (recorded.id, old.id):
+                flow.specify(root, task_id, ["Filter by the date"], [], False)
+                shared = board.parse(fake.issues[tasks.load(root, task_id).board]["body"])
+                self.assertEqual((shared.holder, shared.holder_host), ("dev-a", "pc-a"))
+            handed = flow.handoff(root, recorded.id)            # the holder can hand it off
+            broken = tasks.Task(id="import-0a1b", title="Import", workflow="feature", stage="request",
+                                board=fake.add("A person damaged the body"), revision=4, synced=4)
+            tasks.save(root, broken)                            # handed off here; another person can hold it
+            with self.assertRaises(flow.HolderError):
+                flow.specify(root, broken.id, ["Import a file"], [], False)
+        self.assertEqual((handed.holder, Path(recorded.workcopy).exists()), ("", False))
 
 
 class HookTests(unittest.TestCase):
@@ -705,16 +833,20 @@ class HookTests(unittest.TestCase):
     def test_session_start_shows_the_tasks_of_this_person_from_the_board(self):
         root = make_repo(PASS)
         fake = FakeBoard()
-        for task_id, holder, requester in (("held-1", "dev-a", "ops-x"), ("asked-1", "dev-b", "@Dev-A"),
-                                           ("free-1", "", "dev-a"), ("other-1", "dev-b", "ops-x")):
+        for task_id, holder, host, requester in (("held-1", "dev-a", "pc-a", "ops-x"),
+                                                 ("elsewhere-1", "dev-a", "pc-b", "ops-x"),
+                                                 ("asked-1", "dev-b", "pc-b", "@Dev-A"), ("free-1", "", "", "dev-a"),
+                                                 ("other-1", "dev-b", "pc-b", "ops-x")):
             fake.add(board.body(tasks.Task(id=task_id, title=f"Task {task_id}", workflow="small", stage="build",
-                                           holder=holder, requester=requester)))
+                                           holder=holder, holder_host=host, requester=requester)))
         output = io.StringIO()
         with person(fake=fake), patch("akasha.engine.hooks._server_notice", return_value=[]), redirect_stdout(output):
             hooks.session_start(root)
         text = output.getvalue()
-        for line in ("Task held-1: open, stage build, risk low, you hold it", "Task asked-1: open, stage build, "
-                     "risk low, dev-b holds it", "Task free-1: open, stage build, risk low, nobody holds it"):
+        for line in ("Task held-1: open, stage build, risk low, you hold it, Task held-1",
+                     "Task elsewhere-1: open, stage build, risk low, you hold it in another copy: hand it off there",
+                     "Task asked-1: open, stage build, risk low, dev-b holds it",
+                     "Task free-1: open, stage build, risk low, nobody holds it"):
             self.assertIn(line, text)
         self.assertNotIn("other-1", text)
         with patch("akasha.coordinator.board.gh", FakeBoard(broken=True)), \

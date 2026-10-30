@@ -87,7 +87,7 @@ The agent engine runs these commands. People do not have to remember them. The s
 | `handover` | Checks the change again on the latest default branch, opens the pull request, and turns on auto-merge |
 | `resume` | Opens a stopped task again after a developer examined it |
 | `cancel` | Stops a task for good |
-| `handoff` | Saves the work so far on the server and frees the task, so that another person can take it over |
+| `handoff` | Saves the work so far on the server and frees the task, so that another person can take it over. Run it in the main checkout |
 | `takeover` | Holds a task that another person handed off, and makes its work copy on this computer |
 | `board` | Shows the tasks of all requesters, with the holder and the feature key of each task |
 | `infra` | Shows the GitHub settings that are not correct. With `--apply`, it corrects them |
