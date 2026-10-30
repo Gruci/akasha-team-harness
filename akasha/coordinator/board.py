@@ -76,11 +76,11 @@ def comment(root: Path, address: str, text: str) -> None:
 def publish(root: Path, task: Task) -> str:
     """Put the task on the shared board, or update its issue. Return the issue address, or "" without GitHub.
 
-    The pull request closes the issue when it merges. Akasha closes the issue only when the task is cancelled."""
+    The issue stays open until the pull request merges. Akasha closes it when the task is done or cancelled."""
     title = f"[akasha] {task.title}"
     if task.board:
         gh(root, "issue", "edit", task.board, "--title", title, "--body", body(task))
-        if task.status == "cancelled":
+        if task.status in ("done", "cancelled"):
             gh(root, "issue", "close", task.board)
         return task.board
     gh(root, "label", "create", LABEL, "--color", "6d28d9", "--description", "Akasha task", "--force")

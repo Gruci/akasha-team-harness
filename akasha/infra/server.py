@@ -8,6 +8,7 @@ GitHub protection stops a change before it merges. The watch undoes a change rig
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -60,7 +61,13 @@ def merge(root: Path, slug: str, head_sha: str) -> str:
             return f"pull request #{number} is behind {pull['base']['ref']}"
         done = gh(root, "pr", "merge", number, "--repo", slug, "--squash", "--match-head-commit", head_sha,
                   "--subject", f"{pull['title']} (#{number})", "--body", commit_body(pull.get("body") or ""))
-        return f"merged #{number}" if done.returncode == 0 else f"GitHub refused the merge: {done.stderr.strip()[:300]}"
+        if done.returncode:
+            return f"GitHub refused the merge: {done.stderr.strip()[:300]}"
+        # GitHub does not close the linked issues after a merge with the workflow token, so Akasha closes them.
+        for issue in re.findall(r"(?m)^Closes #(\d+)", pull.get("body") or ""):
+            gh(root, "issue", "close", issue, "--repo", slug, "--reason", "completed",
+               "--comment", f"Akasha merged pull request #{number}.")
+        return f"merged #{number}"
     return "no open pull request has this commit as its head"
 
 

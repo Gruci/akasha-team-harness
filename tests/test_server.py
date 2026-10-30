@@ -58,6 +58,7 @@ class MergeTests(unittest.TestCase):
         self.assertIn("--match-head-commit", merged)
         self.assertEqual(merged[merged.index("--subject") + 1], "Add a date filter (#7)")
         self.assertEqual(merged[merged.index("--body") + 1], "## Why\n\nA reason.\n")
+        self.assertTrue(fake.did("issue", "close", "3"))             # the workflow token does not close it
 
     def test_steps_aside_or_waits(self):
         cases = {"has no akasha-merge label": FakeGitHub(pulls=self.pull(labeled=False)),
