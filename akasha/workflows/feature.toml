@@ -1,0 +1,26 @@
+# The feature workflow: six stages from a request to a merged pull request.
+name = "feature"
+
+[[stages]]
+id = "request"
+exit = ["conditions_clear"]
+
+[[stages]]
+id = "specification"
+exit = ["requester_approved", "risk_approvals"]
+
+[[stages]]
+id = "build"
+exit = ["scope_respected"]
+
+[[stages]]
+id = "checks"
+exit = ["checks_pass"]
+
+[[stages]]
+id = "inspection"
+exit = ["accepted"]
+
+[[stages]]
+id = "handover"
+exit = ["infra_ready", "pull_request_open"]

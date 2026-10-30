@@ -1,0 +1,14 @@
+# The small workflow: a small change with clear conditions. It has no specification stage.
+name = "small"
+
+[[stages]]
+id = "build"
+exit = ["scope_respected"]
+
+[[stages]]
+id = "checks"
+exit = ["checks_pass"]
+
+[[stages]]
+id = "handover"
+exit = ["infra_ready", "pull_request_open"]

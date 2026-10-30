@@ -1,0 +1,22 @@
+# The fix workflow: find the cause of a defect, repair it, and prove the repair.
+name = "fix"
+
+[[stages]]
+id = "request"
+exit = ["conditions_clear"]
+
+[[stages]]
+id = "build"
+exit = ["scope_respected"]
+
+[[stages]]
+id = "checks"
+exit = ["checks_pass"]
+
+[[stages]]
+id = "inspection"
+exit = ["accepted"]
+
+[[stages]]
+id = "handover"
+exit = ["infra_ready", "pull_request_open"]
