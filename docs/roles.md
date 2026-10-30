@@ -33,7 +33,7 @@ The requester is any person in the team: a developer, or a person in operations,
 
 ## Optional gates and developers
 
-A team can add a person gate for a risk level in `[approval]`, for example a developer approval for data changes. The names of the gate people go in `[roles]`. A developer also opens a task again after three failed repairs.
+A team can add a person gate for a risk level in `[approval]`, for example a developer approval for data changes. The names of the gate people go in `[roles]`. A developer also opens a task again after three failed repairs, with the decision comment `/resume`.
 
 ## Who decides what
 
@@ -51,9 +51,35 @@ A team can add a person gate for a risk level in `[approval]`, for example a dev
 
 ## How Akasha records a decision of a person
 
-The agent engine records each decision of a person with a command: `approve`, `accept`, `resume`, or `cancel`. Each record contains the name of the person.
+With GitHub, each decision of a person is a decision comment on the issue of the task. GitHub shows the account that wrote each comment, so the comment tells who decided. Akasha does not trust a name that the agent engine types, the issue body, or the task file. Each time that Akasha reads a task, it counts the approvals and the inspection results again from the decision comments only.
 
-- A gate decision and a `resume` must come from a name in `[roles] developers`.
-- A change of the GitHub settings must come from a name in `[roles] administrators`.
+| Decision | Decision comment | Who can write it | Without GitHub |
+|:--|:--|:--|:--|
+| Approval of the specification | `/approve spec r<N>` | The requester | `approve --role requester --by <name>` |
+| Approval of a gated risk level | `/approve risk <level>` | A person with a gate role of that level in `[approval]` | `approve --role <role> --by <name>` |
+| Inspection of a completion condition | `/accept <number> r<N>` or `/reject <number> r<N> <reason>` | The requester | `accept --condition <condition> --result yes` or `no` |
+| Opening a stopped task again | `/resume` | A developer | `resume --by <developer>` |
+| Withdrawal of a request | `/cancel <reason>` | The requester or a developer | `cancel --by <name>` |
+| Change of the GitHub settings | No comment. Akasha asks GitHub who the person is | The GitHub account of the computer. It must be in `[roles] administrators` and administer the repository on GitHub | `infra --apply --by <administrator>` |
 
-> **CAUTION:** The agent engine must never record a decision that a person did not give. Akasha cannot verify a person on the local computer. GitHub verifies the code owner reviews with GitHub accounts.
+`[roles]` names the developers and the administrators. When a list is empty, each person with write access to the repository has that role: GitHub shows the account as an owner, a member, or a collaborator.
+
+Rules for the decision comments:
+
+- The comment starts with the decision. Write each decision as a new comment.
+- `r<N>` is the revision of the specification. It goes up each time that the completion conditions or the open questions change. A decision for an older revision does not count. `show` and the issue body show the current revision.
+- `<number>` is the number of a completion condition, from 1. `all` in place of the number inspects all conditions. For the same condition, the later comment wins.
+- `/approve risk <level>` counts when the level is the current risk level of the task or higher. When the real changes raise the risk level, the gate needs a new approval. When `[approval]` names the role `requester`, the approval of the specification is the approval of the requester for the gate.
+- A `/resume` counts only when it comes after the comment of Akasha that stopped the task, and only once.
+- Akasha does not count an edited comment or a hidden comment. A person with write access can edit the comment of another person, and GitHub still shows the first author.
+- The `@` and upper case or lower case do not change a name.
+- `advance` and `show` tell each decision comment that does not count, and why.
+- When Akasha cannot read the comments, no approval and no acceptance counts.
+
+### The same-computer exception
+
+When the person who decides is the GitHub account of this computer, the agent engine runs the Akasha command, for example `approve <task> --role requester`. Akasha writes the decision comment with that account, and counts it like each other comment. For the decision of another person, the command stops and tells the exact comment that the person must write on the issue. The guard stops a decision comment that the agent engine writes with `gh` in the shell.
+
+> **CAUTION:** The agent engine must never record a decision that a person did not give. Each requester needs a GitHub account that can write comments in the repository. In a private repository, the account needs access to the repository. A person who uses the same-computer exception must be the GitHub account of `gh` on that computer.
+
+> **NOTE:** A requester can approve on GitHub from any computer or phone. To accept, the requester examines the preview. The preview runs on the computer with the work copy, so a requester on another computer needs access to that preview.

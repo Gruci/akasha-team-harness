@@ -37,10 +37,10 @@ flowchart LR
 2. The agent engine records the task. The coordinator compares it with the tasks of all requesters.
 3. The agent engine asks questions until the completion conditions are clear.
 4. The agent engine reads the product map, finds the effects of the change, and records the impact analysis.
-5. The requester approves the specification in simple words.
+5. The requester approves the specification in simple words. With GitHub, the requester writes a decision comment on the issue of the task.
 6. The core makes a work copy. The agent engine builds the change and a test for each completion condition.
 7. The validators run the required checks. When all checks pass, Akasha saves the work and pushes the task branch.
-8. The requester examines the result in a preview and accepts it.
+8. The requester examines the result in a preview and accepts it, with GitHub also in a decision comment.
 9. The agent engine updates the product map and writes the briefing.
 10. Akasha opens the pull request and turns on auto-merge. GitHub merges it as one squash commit when the server check passes.
 
@@ -75,22 +75,22 @@ The agent engine runs these commands. People do not have to remember them. The s
 | Command | Function |
 |:--|:--|
 | `setup` | Writes `akasha.toml`, the product map, and the files that Codex reads. With the approval of an administrator, it also changes the GitHub settings |
-| `request` | Records a new task and shows overlaps. `--builds-on` stacks it on an earlier task |
+| `request` | Records a new task and shows overlaps. With GitHub, the requester is your GitHub account, or the account that `--requester` names. `--builds-on` stacks it on an earlier task |
 | `specify` | Adds completion conditions, open questions, or file patterns of the scope. `--builds-on ""` stops building on the earlier task |
 | `impact` | Records the impact analysis, a reason why the product map does not change, or a change of behavior that an earlier requester accepted |
-| `approve` | Records the approval of a requester or of a gate role |
+| `approve` | Records the approval of a requester or of a gate role. With GitHub, it writes the decision comment only for the GitHub account of this computer, else it tells the comment that the person must write. Without GitHub, `--by` names the person |
 | `advance` | Moves the task to the next stage, or shows what blocks it |
-| `show` | Shows one task: stage, risk, holder, scope, conditions, impact, approvals, checks, and preview values. It only reads |
+| `show` | Shows one task: stage, risk, holder, scope, the revision of the specification, the numbered conditions, impact, approvals, checks, preview values, and the decision comments that do not count. It only reads |
 | `check` | Runs the required checks in the work copy |
-| `accept` | Records the inspection of the requester |
+| `accept` | Records the inspection of the requester, of one condition by its text or number, or of all conditions. With GitHub, the same rule as `approve` |
 | `brief` | Examines and records the briefing |
 | `handover` | Checks the change again on the latest default branch, opens the pull request, and turns on auto-merge |
-| `resume` | Opens a stopped task again after a developer examined it |
-| `cancel` | Stops a task for good |
+| `resume` | Opens a stopped task again after a developer examined it. With GitHub, the same rule as `approve` |
+| `cancel` | Stops a task for good. With GitHub, the same rule as `approve`, and the holder also closes the pull request |
 | `handoff` | Saves the work so far on the server and frees the task, so that another person can take it over. Run it in the main checkout |
 | `takeover` | Holds a task that another person handed off, and makes its work copy on this computer |
 | `board` | Shows the tasks of all requesters, with the holder and the feature key of each task |
-| `infra` | Shows the GitHub settings that are not correct. With `--apply`, it corrects them |
+| `infra` | Shows the GitHub settings that are not correct. With `--apply`, it corrects them when the GitHub account of this computer is an administrator |
 | `hook` | The entry point for the hooks of the agent engine |
 | `server` | The merge and watch helpers run this on GitHub. People and the agent engine do not run it |
 

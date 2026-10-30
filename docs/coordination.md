@@ -10,14 +10,15 @@ Each person talks only to their own agent engine. The agent engines align throug
 
 Each task has one GitHub issue with the label `akasha`. The title of the issue is `[akasha] <task title>`.
 
-The issue holds the state of the task, so that each computer can continue the task. The top of the issue body is for people: the requester, the holder, the stage, the status, the risk level, the numbered completion conditions with their inspection results, and the approvals. Below it, a JSON block with the name `akasha-scope` holds each field of the task. The agent engine on each computer reads these blocks. Each block contains:
+The issue holds the state of the task, so that each computer can continue the task. The top of the issue body is for people: the requester, the holder, the stage, the status, the risk level, the revision of the specification, the numbered completion conditions with their inspection results, the approvals that Akasha counted, and the decision comments to copy. Below it, a JSON block with the name `akasha-scope` holds each field of the task. The agent engine on each computer reads these blocks. Each block contains:
 
 - the task name, the requester, the workflow, the stage, and the status,
 - the feature key, the scope, the contracts, and the risk level,
 - the completion conditions, the open questions, the inspection results, and the approvals,
 - the impact analysis, the briefing, the checks, the count of failed repairs, and the notes,
 - the earlier task, the branch, the base commit, and the pull request,
-- the holder, the revision, the commit of the last handoff, and the format.
+- the holder, the revision, the commit of the last handoff, and the format,
+- the revision of the specification, and the comments of the last stop and of the last `/resume`.
 
 | Field | Meaning |
 |:--|:--|
@@ -25,6 +26,10 @@ The issue holds the state of the task, so that each computer can continue the ta
 | `revision` | Goes up by one at each write. Akasha uses it to find the newer state |
 | `wip` | The commit that the last handoff pushed |
 | `format` | `2`. An issue without a format is from Akasha 1.0.0 |
+| `spec_rev` | The revision of the specification. It goes up when the completion conditions or the open questions change. Each decision comment names it |
+| `stopped_comment`, `resumed` | The number of the comment of Akasha that stopped the task, and of the last `/resume` that opened it again. Only a later `/resume` counts |
+
+The approvals and the inspection results in the body only show what Akasha counted. They are not proof of a decision: each time that Akasha reads a task, it counts them again from the decision comments on the issue. See [Roles](roles.md).
 
 Three fields stay on the computer and never go on the issue: the work copy folder, the revision of the issue that this computer saw last, and the output of a setup command that failed. The output of a setup command can show paths and secret values. The issue only tells that the setup command failed. `show <task>` on the computer of the work copy shows the output. Akasha 1.0.0 wrote this output in a note. Before such a task goes on its issue in the new format, the output moves from the note to this computer. A setup command that passes later removes the old output.
 
@@ -33,7 +38,7 @@ Three fields stay on the computer and never go on the issue: the work copy folde
 | A task starts | Akasha makes the issue |
 | A task changes | Akasha updates the issue |
 | The pull request merges | The pull request closes the issue |
-| A task is cancelled | Akasha closes the issue |
+| A task is cancelled | Akasha closes the issue. Before that, the holder closes the open pull request of the task |
 
 Each command reads the task from its issue, and takes only these three fields from the task file on this computer. Before a write, Akasha reads the issue again. If another computer or another command wrote the issue after this command read it, the command stops and does not write over the newer state. Do the step again. A comment does not change the revision, so a comment never stops a command.
 
@@ -65,6 +70,10 @@ A task can go to another person, or to the same person on another computer. The 
 4. The other person runs `takeover <task>` on their computer. The work copy starts from the commit of the last handoff, or from the task branch on the server when that branch has the newer work. The task keeps its branch and its base. The setup command runs in the new work copy.
 5. If that computer still has a work copy or a branch of the task, it must be able to go forward to the work on the server. A work copy with changes, a folder that is not on the branch of the task, or a branch with commits that are not on the server stops the takeover. Examine them, then remove them.
 6. Now the other person holds the task.
+
+The holder changes the task. A decision of a person is a comment on the issue, so the person does not have to hold the task: for example, the requester approves on their own computer. A `/resume` or a `/cancel` that counted goes on the issue at the next command of the holder, or at the next command of any person when nobody holds the task.
+
+When a cancel counts, the next command of the holder turns off the auto-merge of the open pull request, removes the label `akasha-merge`, and closes the pull request. Thus the cancelled change never merges. Akasha also deletes the wip branch, and writes a notice with an `@` mention of the requester on the issue of each active task that builds on the cancelled task. The work copy stays.
 
 A developer can take over a stopped task when its holder did not hand it off. `[roles] developers` names the developers. When the list is empty, each person can do it. Akasha writes a notice with an `@` mention on the issue of the task for the old holder.
 

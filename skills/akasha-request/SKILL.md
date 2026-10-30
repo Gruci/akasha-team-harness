@@ -17,7 +17,18 @@ The session start notice gives the Akasha command. This skill writes it as `akas
 
 Ask people only what to make, how it looks, and how they use it. Make the technical decisions yourself and record them with Akasha. Use the GitHub name of each person.
 
-If the requester withdraws the request, run `akasha cancel <task> --by <requester>`.
+## Decisions of people
+
+With GitHub, each decision of a person is a decision comment on the issue of the task, from the GitHub account of that person: `/approve spec r<N>`, `/approve risk <level>`, `/accept <number> r<N>`, `/reject <number> r<N> <reason>`, `/resume`, and `/cancel <reason>`. `akasha advance <task>` and `akasha show <task>` tell the exact comment and the issue.
+
+- If the person who decides is the GitHub account of this computer, and the person gives you the decision, run the Akasha command in the step. Akasha writes the comment with that account.
+- If the person is another account, the command stops and tells the comment. Give the person the comment and the issue address. Then wait. Run `akasha advance <task>` again later.
+- Never write a decision comment with `gh`. The guard stops it.
+- If Akasha says that a decision comment does not count, tell the person the reason and the correct comment.
+
+Without GitHub, add `--by <name>` to `approve`, `resume`, and `cancel`.
+
+If the requester withdraws the request, run `akasha cancel <task> --reason "<reason>"`. If the requester is another account, the requester writes `/cancel <reason>` on the issue. Akasha closes the pull request of the task.
 
 ## Stage 1 — Request
 
@@ -26,7 +37,8 @@ If the requester withdraws the request, run `akasha cancel <task> --by <requeste
    - `fix` for a defect.
    - `small` for a small change with clear completion conditions.
 2. Run `akasha board`. If an active task makes the same feature, the new task builds on that task.
-3. Record the task: `akasha request "<title>" --requester <name> --workflow <workflow> --feature <feature key>`.
+3. Record the task: `akasha request "<title>" --workflow <workflow> --feature <feature key>`.
+   - With GitHub, the requester is the GitHub account of this computer. If another person asked for the change, add `--requester <GitHub name>`. Without GitHub, always add `--requester <name>`. If Akasha says that the requester has no access to the repository, tell the user.
    - To build on an earlier task, add `--builds-on <earlier task>`.
    - For a part of a large feature, use the feature key `<feature>/<part>`.
 4. If Akasha shows an overlap, do the action that Akasha shows.
@@ -54,10 +66,12 @@ If the requester withdraws the request, run `akasha cancel <task> --by <requeste
    - `tasks`: each active task that touches the same feature, files, or contracts, and how the tasks combine.
    - `rollback`: how to reverse the change. A revert of the code does not restore data. For a data change, tell how to reverse the data.
 4. Tell the requester the specification in simple words: what changes, what the person will see, and what does not change. Do not explain the technical details.
-5. Ask the requester to approve it. Record the approval: `akasha approve <task> --role requester --by <name>`.
-6. Run `akasha advance <task>`. If Akasha says that a person with a gate role must approve, ask that person. Record the approval with `--role <role>`.
+5. Ask the requester to approve it. If the requester is the GitHub account of this computer and approves, run `akasha approve <task> --role requester`. Else the requester writes `/approve spec r<N>` on the issue: Akasha tells the exact comment.
+6. Run `akasha advance <task>`. If Akasha says that a person with a gate role must approve, ask that person. That person writes `/approve risk <level>` on the issue, or runs `akasha approve <task> --role <role>` on their own computer.
 
 > **CAUTION:** Never record an approval for a person who did not give it.
+
+> **NOTE:** When the completion conditions or the open questions change, the specification gets a new revision. The requester approves it again, and the task goes back to the specification stage.
 
 ## When the request changes the work of an earlier requester
 
@@ -98,7 +112,7 @@ To continue the task of another person:
 1. Run `akasha check <task>`. When all checks pass, Akasha saves the work and pushes the task branch.
 2. Repair each failure. Then run the check again.
 3. If Akasha stops the task after three failed repairs, stop the work. Tell the requester in simple words that a developer must examine the problem.
-4. When the developer tells you to continue, record it: `akasha resume <task> --by <developer>`.
+4. With GitHub, the developer writes `/resume` on the issue of the task. If the developer is the GitHub account of this computer and tells you to continue, run `akasha resume <task>`. Then run `akasha advance <task>`.
 5. Update `.akasha/context/product-map.md` in the work copy for each feature, screen, table, or API that the change adds or changes. If nothing changes, record why: `akasha impact <task> --map-unchanged "<reason>"`.
 6. When all checks pass, run `akasha advance <task>`.
 7. Continue with the akasha-inspect skill. For the `small` workflow, continue with the akasha-handover skill.

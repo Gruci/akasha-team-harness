@@ -140,13 +140,15 @@ def after_tool(cwd: Path, tool: str, tool_input: dict) -> int:
 
 def turn_end(root: Path) -> int:
     """Tell the user about each task with a work copy on this computer that needs a person: a stopped task, or
-    changes outside the task scope. A task that this computer handed off has no work copy here."""
+    changes outside the task scope. A task that this computer handed off has no work copy here. With GitHub, a
+    developer opens a stopped task again with the decision comment /resume on its issue."""
     found = []
     for task in tasks.all_tasks(root):
         if not task.workcopy or not Path(task.workcopy).is_dir():
             continue
         if task.status == "stopped":
-            found.append(f"Task {task.id} stopped after failed repairs. A developer must examine it.")
+            found.append(f"Task {task.id} stopped after failed repairs. A developer must examine it"
+                         + (f", then write /resume as a new comment on {task.board}." if task.board else "."))
         elif task.status == "open":
             outside = flow.outside_scope(task, workcopy.changed_files(task))
             if outside:

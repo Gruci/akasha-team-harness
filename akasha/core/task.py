@@ -1,5 +1,8 @@
 """Task state. With GitHub, the issue of each task holds its state, so that each computer can continue it. Each
-computer also keeps one JSON file for each task in .akasha/state/tasks/."""
+computer also keeps one JSON file for each task in .akasha/state/tasks/.
+
+With GitHub, the approvals and the inspection results are not proof of a decision: Akasha makes them again from the
+decision comments on the issue each time that it reads the task."""
 
 from __future__ import annotations
 
@@ -51,6 +54,9 @@ class Task:
     holder_host: str = ""                                      # the mark of the copy of the repository of the holder
     revision: int = 0                                          # one more at each write; the higher revision is newer
     wip: str = ""                                              # the commit that the last handoff pushed
+    spec_rev: int = 0                                          # one more at each change of the conditions or questions
+    stopped_comment: int = 0                                   # the comment of Akasha when the task stopped
+    resumed: int = 0                                           # the last /resume comment that opened the task again
     format: int = FORMAT
     synced: int = 0                                            # the revision of the issue that this computer saw last
     setup_output: str = ""                                     # the output of a setup command that failed here

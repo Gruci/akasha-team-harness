@@ -1,7 +1,11 @@
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from akasha.config import Team
-from akasha.infra import desired
+from akasha.infra import desired, github
 
 
 class InfraTests(unittest.TestCase):
@@ -63,6 +67,41 @@ class InfraTests(unittest.TestCase):
         partial = {"required_status_checks": {"contexts": ["akasha"]}, "partial": True}
         self.assertEqual(desired.drift(partial), [])                     # a person without administrator rights
         self.assertEqual(desired.drift({"unavailable": True}), [desired.NO_PLAN])     # a private repository on Free
+
+
+class ApplyTests(unittest.TestCase):
+    """Only an administrator changes the GitHub settings. With GitHub, Akasha asks GitHub who the person is."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="akasha-apply-"))
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        (self.root / "akasha.toml").write_text('[roles]\nadministrators = ["Admin-A"]\n', encoding="utf-8")
+
+    def apply(self, login: str, admin: bool = True, by: str = "", origin: str = "team/app") -> list[str]:
+        done = subprocess.CompletedProcess([], 0, "{}", "")
+        with patch("akasha.repo.origin", return_value=origin), patch("akasha.repo.me", return_value=login), \
+                patch("akasha.infra.github.repository", return_value=("team/app", "main") if origin else None), \
+                patch("akasha.infra.github.settings", return_value={"permissions": {"admin": admin}}), \
+                patch("akasha.infra.github.gh", return_value=done):
+            return github.apply(self.root, by)
+
+    def test_the_account_of_this_computer_approves(self):
+        for login, admin, by, reason in (("dev-b", True, "", "dev-b is not an administrator"),
+                                         ("admin-a", False, "", "does not administer this repository"),
+                                         ("admin-a", True, "dev-b", "dev-b must approve the change on their own"),
+                                         ("", True, "admin-a", "cannot read your GitHub name")):
+            with self.subTest(login=login, by=by), self.assertRaises(PermissionError) as refused:
+                self.apply(login, admin, by)
+            self.assertIn(reason, str(refused.exception))
+        self.assertFalse((self.root / ".github").exists())               # nothing written
+        self.assertEqual(self.apply("admin-a", by="@Admin-A"), [])
+        self.assertTrue((self.root / ".github" / "workflows" / "akasha.yml").is_file())
+
+    def test_without_github_the_name_of_the_team_config(self):
+        with self.assertRaises(PermissionError):
+            self.apply("", by="dev-b", origin="")
+        self.assertEqual(self.apply("", by="admin-a", origin=""),
+                         ["Akasha wrote the files, but cannot reach GitHub to change the settings"])
 
 
 if __name__ == "__main__":

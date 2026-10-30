@@ -8,7 +8,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from akasha import config
+from akasha import config, repo
 from akasha.core.workcopy import git
 from akasha.infra import desired, server
 from akasha.repo import gh, gh_repo
@@ -116,16 +116,42 @@ def readiness(root: Path, max_age: float = 12 * 3600) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def apply(root: Path, approved_by: str) -> list[str]:
+def _examine_administrator(root: Path, team: config.Team, approved_by: str) -> None:
+    """Only an administrator changes the repository settings.
+
+    With GitHub, Akasha does not trust a typed name: the GitHub account of this computer must be in `[roles]
+    administrators` when the list names people, and it must administer the repository on GitHub. `approved_by` is
+    optional, and it must be that account. Without GitHub, the name as in Akasha 1.0.0."""
+    named = {person.strip().lstrip("@").lower() for person in team.administrators}
+    if not repo.origin(root):
+        if not approved_by or (named and approved_by.strip().lstrip("@").lower() not in named):
+            raise PermissionError("an administrator that akasha.toml names must approve a change to the repository "
+                                  "settings")
+        return
+    name = repo.me(root)
+    if not name:
+        raise PermissionError("Akasha cannot read your GitHub name. Make sure that gh is installed and logged in: "
+                              "gh auth status")
+    if approved_by and approved_by.strip().lstrip("@").lower() != name:
+        raise PermissionError(f"{approved_by} must approve the change on their own computer: the GitHub account on "
+                              f"this computer is {name}")
+    if named and name not in named:
+        raise PermissionError(f"{name} is not an administrator in {config.CONFIG_FILE}: only "
+                              f"{', '.join(team.administrators)} can approve a change to the repository settings")
+    found = repository(root)
+    if found is None or not (settings(root, found[0]).get("permissions") or {}).get("admin"):
+        raise PermissionError(f"the GitHub account {name} does not administer this repository on GitHub. Ask an "
+                              "administrator of the repository to approve the change on their own computer")
+
+
+def apply(root: Path, approved_by: str = "") -> list[str]:
     """Write the repository files and change the GitHub settings. An administrator must approve first.
 
     Akasha turns on the branch protection and the auto-merge of GitHub. When the plan of the repository has none,
     Akasha records `[server] rules = "akasha"`, and its merge and watch workflows enforce the rules. Akasha keeps the
     CODEOWNERS lines and the pull request template that the team already has."""
     team = config.load(root)
-    named = {person.lstrip("@") for person in team.administrators}
-    if not approved_by or (named and approved_by.lstrip("@") not in named):
-        raise PermissionError("an administrator that akasha.toml names must approve a change to the repository settings")
+    _examine_administrator(root, team, approved_by)
     for target, text in desired.workflows().items():
         path = root / target
         path.parent.mkdir(parents=True, exist_ok=True)

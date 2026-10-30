@@ -15,8 +15,13 @@ The guard examines each shell command and each edit before it runs. It stops the
 | `rm -r`, `Remove-Item -Recurse`, `rd /s`, or `del /s` on the whole project, on a folder outside the project, or on `*` | It deletes data that Akasha cannot restore |
 | A recursive delete of a path with a variable, for example `$HOME` or `%USERPROFILE%` | Akasha cannot see the target |
 | A recursive delete after `cd` or `Set-Location` in the same command | Akasha cannot see the target |
+| `git push` to a task branch `akasha/<task>` or `akasha-wip/<task>`, also to delete it; `git push --all` or `--mirror`; and `git push` without a branch, or to `HEAD`, in a work copy | Akasha pushes the task branches itself, also the branch of the task of the agent engine. The task branch on the server always passed the checks |
+| `gh pr merge`, or a merge through `gh api` | GitHub, or the merge workflow of Akasha, merges each pull request when the server check passes |
+| `gh issue comment`, `gh pr comment`, or `gh api` on comments, with a line that starts with `/approve`, `/accept`, `/reject`, `/resume`, or `/cancel` | A decision counts only from the GitHub account of the person who decides. The guard also reads the file of `--body-file`, `--input`, or `@<file>` |
 
 The default branch is `main` or `master`. The guard reads a command that goes on in the next line as one command. It reads `;`, `&`, `&&`, `|`, and `||` as separators.
+
+A push to another branch, for example `git push origin feature-x`, and a comment that only names a decision in a sentence are permitted. When the person who decides is the GitHub account of this computer, the agent engine runs the Akasha command `approve`, `accept`, `resume`, or `cancel`. Akasha writes the decision comment in Python, so the guard does not stop it.
 
 The guard also stops an edit in the main checkout while a task is at the build stage or at the checks stage and its work copy is on this computer. The agent engine must make the change in the work copy of the task. After a handoff, the task has no work copy on this computer, and the guard does not stop the edit. Edits of the task state in `.akasha/state/` are permitted.
 

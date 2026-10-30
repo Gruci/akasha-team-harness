@@ -40,7 +40,9 @@ enabled = ["feature", "fix", "small"]
 | `developers` | The GitHub names of the people who can open a stopped task again and who hold the `developer` gate |
 | `administrators` | The GitHub names of the people who own the team rules and approve changes of the GitHub settings |
 
-A developer approval and a `resume` must come from a name in `developers`. A change of the GitHub settings must come from a name in `administrators`. When a list is empty, Akasha accepts each name for that role.
+A developer approval and a `resume` must come from a name in `developers`. A change of the GitHub settings must come from a name in `administrators`.
+
+With GitHub, the name is the GitHub account that wrote the decision comment, or the GitHub account of the computer for a change of the GitHub settings. When a list is empty, each person with write access to the repository has the role. A change of the GitHub settings also needs an account that administers the repository on GitHub. Without GitHub, an empty list accepts each name. [Roles](roles.md) tells each decision and its comment.
 
 ## `[risk]`
 

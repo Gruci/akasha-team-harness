@@ -3,7 +3,12 @@ hooks use it.
 
 With GitHub, the issue of each task holds its state, and one person in one copy of the repository holds each task:
 the holder. Only the holder changes the task. The holder hands off the task, and another person takes it over on
-another computer."""
+another computer.
+
+With GitHub, the decisions of people (approve, accept, reject, resume, cancel) count only as decision comments on the
+issue, from the GitHub account of the person who decides. Akasha writes such a comment only for the GitHub account of
+this computer: the same-computer exception. Without GitHub, Akasha records the decisions on this computer, as in
+Akasha 1.0.0."""
 
 from __future__ import annotations
 
@@ -21,6 +26,8 @@ from akasha.validators import briefing as briefing_rules, runner
 
 CONTEXT_PREFIX = config.TEAM_CONTEXT.as_posix() + "/"
 OLD_SETUP_NOTE = "the setup command failed in the work copy: "     # Akasha 1.0.0 wrote the output after it
+_WRITERS = ("OWNER", "MEMBER", "COLLABORATOR")     # the authorAssociation of a person with write access on GitHub
+_ignored: dict[str, list[tuple[board.Comment, str]]] = {}         # the decision comments that did not count, by task
 
 
 class HolderError(RuntimeError):
@@ -75,8 +82,11 @@ def load(root: Path, task_id: str, write: bool = True) -> Task:
     computer, and so is a task that has no issue, because this computer recorded it before origin was on GitHub or
     its first board write failed. With `write`, such a task goes to the person on that computer (_adopt), and Akasha
     puts a newer task file on the issue. A task file that knows an issue that Akasha cannot read does not go to this
-    person: another person can hold that task. The approvals and the inspection results come from the issue body.
-    Without GitHub, Akasha reads the task file."""
+    person: another person can hold that task.
+
+    With GitHub, the approvals and the inspection results come only from the decision comments on the issue, not from
+    the issue body or the task file (_decide). With `write`, a /resume or a /cancel that counted goes on the issue when
+    this copy of the repository holds the task or nobody holds it. Without GitHub, Akasha reads the task file."""
     try:
         local = tasks.load(root, task_id)
     except LookupError:
@@ -96,13 +106,191 @@ def load(root: Path, task_id: str, write: bool = True) -> Task:
         for name in tasks.LOCAL_FIELDS if local is not None else ():
             setattr(task, name, getattr(local, name))
         task.synced = task.revision
-        return task
-    first = not task.board if shared is None else shared.format < tasks.FORMAT
-    if write and on_github and first:
+    newer = task is local                             # this computer has changes that the issue did not get
+    if write and newer and on_github and (not task.board if shared is None else shared.format < tasks.FORMAT):
         _adopt(root, task)                            # the first issue of the task in the new format
-    if write and shared is not None:
+    decided = _decide(root, task) and write and _holds(root, task)
+    if decided and task.status == "cancelled":
+        _withdraw(root, task)
+    if write and (decided or (newer and shared is not None)):
         _publish(root, task)
     return task
+
+
+def _name(person: str) -> str:
+    """A GitHub name to compare: without the @, in lower case."""
+    return person.strip().lstrip("@").lower()
+
+
+def _has_role(team: Team, role: str, comment: board.Comment) -> bool:
+    """True when the author of the comment has the role. When akasha.toml names nobody for the role, each person with
+    write access to the repository has it."""
+    names = {"developer": team.developers, "administrator": team.administrators}.get(role, ())
+    if names:
+        return _name(comment.author) in {_name(name) for name in names}
+    return comment.association in _WRITERS
+
+
+def _decide(root: Path, task: Task) -> bool:
+    """With GitHub, take the decisions of people only from the decision comments on the issue of the task. True when
+    a /resume or a /cancel changed the status.
+
+    When gh cannot read the comments, no approval and no acceptance counts, so no gate opens."""
+    if not board.available(root):
+        return False
+    try:
+        found = board.comments(root, task.board) if task.board else []
+    except board.BoardError:
+        found = []
+    status = task.status
+    _ignored[task.id] = _decided(config.load(root), task, found)
+    return task.status != status
+
+
+def _decided(team: Team, task: Task, comments: list[board.Comment]) -> list[tuple[board.Comment, str]]:
+    """Make the approvals and the inspection results again from the decision comments only, the oldest first, and
+    apply /resume and /cancel. Return each decision comment that does not count, with the reason.
+
+    An edited or a hidden comment never counts: a person with write access can edit the comment of another person,
+    and GitHub still shows the first author."""
+    task.approvals, task.accepted = {}, {}
+    ignored = []
+    for comment in comments:
+        words = (comment.body.strip().splitlines() or [""])[0].split()
+        if not words or words[0].lower() not in board.DECISIONS:
+            continue
+        if comment.edited or comment.hidden:
+            reason = "somebody edited the comment" if comment.edited else "somebody hid the comment"
+        else:
+            reason = _decision(team, task, comment, words)
+        if reason:
+            ignored.append((comment, reason))
+    return ignored
+
+
+def _decision(team: Team, task: Task, comment: board.Comment, words: list[str]) -> str:
+    """Apply one decision comment. Return why it does not count, or "" when it counts."""
+    verb, rest = words[0].lower(), [word.lower() for word in words[1:]]
+    if verb == "/resume":
+        return _resumed(team, task, comment)
+    if verb == "/cancel":
+        return _cancelled(team, task, comment, words[1:])
+    if verb == "/approve" and rest[:1] == ["risk"]:
+        return _risk_approved(team, task, comment, rest[1:2])
+    if _name(comment.author) != _name(task.requester):
+        return f"only the requester {task.requester or '(unknown)'} makes this decision"
+    if verb == "/approve" and rest[:1] == ["spec"]:
+        if rest[1:2] != [f"r{task.spec_rev}"]:
+            return f"it is not for the current specification r{task.spec_rev}"
+        task.approvals["requester"] = comment.author
+        return ""
+    if verb == "/approve":
+        return f"write /approve spec r{task.spec_rev} or /approve risk {task.risk}"
+    return _inspected(task, comment, words)
+
+
+def _risk_approved(team: Team, task: Task, comment: board.Comment, level: list[str]) -> str:
+    """`/approve risk <level>`: each gate role of the current risk level that the author has approves. The level must
+    not be lower than the current risk level. The requester approves with the approval of the specification."""
+    if not level or level[0] not in RISK_LEVELS:
+        return f"write /approve risk {task.risk}"
+    if RISK_LEVELS.index(level[0]) < RISK_LEVELS.index(task.risk):
+        return f"the risk level of the task is {task.risk} now"
+    gates = team.approval.get(task.risk, ())
+    roles = [role for role in gates if role != "requester" and _has_role(team, role, comment)]
+    if not roles and "requester" in gates and _name(comment.author) == _name(task.requester):
+        return f"the requester approves with /approve spec r{task.spec_rev}"
+    if not roles:
+        return f"{comment.author} has no gate role for the {task.risk} risk level" if gates else \
+            f"the {task.risk} risk level needs no approval"
+    for role in roles:
+        task.approvals[role] = comment.author
+    return ""
+
+
+def _inspected(task: Task, comment: board.Comment, words: list[str]) -> str:
+    """`/accept <number> r<N>` or `/reject <number> r<N> <reason>` of the requester. `all` in place of the number
+    inspects all conditions. A later comment for the same condition wins."""
+    target, revision = (words[1:2] or [""])[0].lower(), (words[2:3] or [""])[0].lower()
+    if revision != f"r{task.spec_rev}":
+        return f"it is not for the current specification r{task.spec_rev}"
+    if target == "all":
+        chosen = list(task.conditions)
+    elif target.isdigit() and 1 <= int(target) <= len(task.conditions):
+        chosen = [task.conditions[int(target) - 1]]
+    else:
+        return f"the task has no completion condition {target or '<number>'}"
+    accepted = words[0].lower() == "/accept"
+    for condition in chosen:
+        task.accepted[condition] = accepted
+    note = f"{comment.author} rejected the completion condition {target}: {' '.join(words[3:])}"
+    if not accepted and words[3:] and note not in task.notes:
+        task.notes.append(note)
+    return ""
+
+
+def _resumed(team: Team, task: Task, comment: board.Comment) -> str:
+    """`/resume` of a developer opens a stopped task again. Only a comment after the stop counts, and only once."""
+    if task.status != "stopped" or comment.number <= task.resumed:
+        return ""                                     # nothing to open, or it opened the task before
+    if not _has_role(team, "developer", comment):
+        return "only a developer opens a stopped task again"
+    if comment.number <= task.stopped_comment:
+        return "it is older than the last stop of the task. Write a new /resume"
+    task.status, task.failures, task.resumed = "open", 0, comment.number
+    task.notes.append(f"{comment.author} examined the problem and opened the task again")
+    return ""
+
+
+def _cancelled(team: Team, task: Task, comment: board.Comment, reason: list[str]) -> str:
+    """`/cancel <reason>` of the requester or of a developer stops an active task for good."""
+    if not tasks.active(task):
+        return ""
+    if _name(comment.author) != _name(task.requester) and not _has_role(team, "developer", comment):
+        return "only the requester or a developer cancels the task"
+    task.status = "cancelled"
+    task.notes.append(f"{comment.author} cancelled the task" + (f": {' '.join(reason)}" if reason else ""))
+    return ""
+
+
+def ignored(task_id: str) -> list[str]:
+    """The decision comments on the issue of the task that do not count, with the reason. The last read of the task
+    in this process found them."""
+    return [f"{comment.author}: {' '.join(comment.body.split())[:80]} — {reason}"
+            for comment, reason in _ignored.get(task_id, [])]
+
+
+def _holds(root: Path, task: Task) -> bool:
+    """True when this copy of the repository holds the task, or when nobody holds it."""
+    return not task.holder or (task.holder, task.holder_host) == _who(root)
+
+
+def _withdraw(root: Path, task: Task) -> None:
+    """After a cancel: close the pull request, so that the cancelled change never merges, delete the branch of the
+    last handoff, and tell the requesters of the tasks that build on this task. The work copy stays."""
+    if task.pull_request:
+        found = github.pull_request(root, task.pull_request)
+        if not found:
+            raise RuntimeError(f"Akasha cannot read the pull request {task.pull_request} of the cancelled task "
+                               f"{task.id}. Make sure that gh is logged in, then do the step again")
+        if found.get("state") == "OPEN":
+            gh(root, "pr", "merge", task.pull_request, "--disable-auto")
+            gh(root, "pr", "edit", task.pull_request, "--remove-label", server.MERGE_LABEL)
+            closed = gh(root, "pr", "close", task.pull_request, "--comment", f"Akasha cancelled the task {task.id}")
+            if closed.returncode:
+                raise RuntimeError(f"Akasha cannot close the pull request {task.pull_request} of the cancelled task "
+                                   f"{task.id}: {closed.stderr.strip()[:300]}. Close it on GitHub, then do the step "
+                                   "again")
+        elif found.get("state") == "MERGED":
+            task.notes.append("the pull request merged before the cancel. To remove the change, record a new request")
+    _drop_wip(root, task)
+    for other in board.read(root)[0]:
+        if other.builds_on == task.id and tasks.active(other) and other.board:
+            person = f"@{other.requester.lstrip('@')} " if other.requester else ""
+            board.comment(root, other.board, f"{person}Akasha: the earlier task {task.id} ({task.title}) was "
+                          f"cancelled, so it never merges. The task {other.id} builds on it. Stop building on it with "
+                          f"akasha specify {other.id} --builds-on \"\", then remove the changes of {task.id} that "
+                          f"{other.id} does not need")
 
 
 def _setup_note(task: Task) -> str:
@@ -197,8 +385,36 @@ def _compare(root: Path, task: Task) -> list[overlap.Overlap]:
 def _examine_role(team: Team, role: str, person: str) -> None:
     """A developer or an administrator must be a person that akasha.toml names for that role."""
     names = {"developer": team.developers, "administrator": team.administrators}.get(role, ())
-    if names and person.lstrip("@").lower() not in {name.lstrip("@").lower() for name in names}:
+    if names and _name(person) not in {_name(name) for name in names}:
         raise ValueError(f"{person} is not a {role} in {config.CONFIG_FILE} — use {', '.join(names)}")
+
+
+def _given(person: str) -> str:
+    """Without GitHub, Akasha records the name that the agent engine gives, as in Akasha 1.0.0."""
+    if not person.strip():
+        raise ValueError("without GitHub, give the name of the person who decides: --by <name>")
+    return person
+
+
+def _requester(root: Path, person: str) -> tuple[str, str]:
+    """The requester, and a warning when the requester cannot write decision comments.
+
+    With GitHub, the requester is a GitHub account: by default the account of this computer, else the account with
+    the name that GitHub gives. Without GitHub, the name as the person gave it."""
+    if not board.available(root):
+        if not person.strip():
+            raise ValueError("give the requester: --requester <name>")
+        return person, ""
+    name = _who(root)[0]
+    if not person.strip() or _name(person) == name:
+        return name, ""
+    login = board.account(root, person)
+    if not login:
+        raise ValueError(f"GitHub has no account {person}. Give the GitHub name of the requester")
+    if board.can_comment(root, login):
+        return login, ""
+    return login, (f"the requester {login} has no access to this private repository, so {login} cannot approve or "
+                   f"accept with a comment on the issue. Ask an administrator to give {login} access")
 
 
 def _tidy(root: Path) -> None:
@@ -281,7 +497,7 @@ def _raise_risk(task: Task, paths: list[str], team: Team) -> None:
     task.contracts = sorted(set(task.contracts) | set(assessed.contracts))
 
 
-def start(root: Path, title: str, requester: str, workflow: str = "feature", feature: str = "",
+def start(root: Path, title: str, requester: str = "", workflow: str = "feature", feature: str = "",
           scope: list[str] | None = None, contracts: list[str] | None = None,
           builds_on: str = "") -> tuple[Task, list[overlap.Overlap]]:
     """Record a new task, put it on the shared board, and compare it with the active tasks of all requesters.
@@ -289,17 +505,18 @@ def start(root: Path, title: str, requester: str, workflow: str = "feature", fea
     The task goes on the board before the comparison, so that two tasks that start at the same time see each other.
     The work copy comes after the comparison. Akasha finds its start commit before it records the task, so that a
     missing branch of the earlier task stops the request before the task exists. The person who records the task
-    holds it in this copy of the repository."""
+    holds it in this copy of the repository. With GitHub, the requester is a GitHub account (_requester)."""
     team = config.load(root)
     _tidy(root)
     if workflow not in team.workflows:
         raise ValueError(f"the workflow {workflow} is not enabled — use {', '.join(team.workflows)}")
     if builds_on and _find(root, builds_on) is None:
         raise ValueError(f"no task {builds_on} on this computer or on the shared task board")
+    requester, warning = _requester(root, requester)
     flow = team.workflows[workflow]
     task = Task(id=_unique_id(root, title), title=title, workflow=workflow, stage=flow.stages[0].id,
                 requester=requester, feature=feature, scope=list(scope or []), contracts=list(contracts or []),
-                builds_on=builds_on)
+                builds_on=builds_on, notes=[warning] if warning else [])
     task.holder, task.holder_host = _who(root)
     _raise_risk(task, task.scope, team)
     begin = _start_ref(root, task) if task.stage == "build" else ""
@@ -338,7 +555,10 @@ def context(root: Path, team: Team, task: Task) -> stages.Context:
 def advance(root: Path, task_id: str) -> list[str]:
     """Move the task to its next stage. Return the reasons that block it, in simple words."""
     team, task = config.load(root), _held(root, task_id)
+    risk = task.risk
     measured = context(root, team, task)
+    if task.risk != risk:
+        _decide(root, task)                           # an approval of a lower risk level does not count now
     gate = [role for role in measured.approval_roles if role not in task.approvals]
     if gate and task.workcopy and task.status == "open":      # the real changes raised the risk after the specification
         blocked = ["risk_approvals"]
@@ -356,12 +576,30 @@ def advance(root: Path, task_id: str) -> list[str]:
 
 
 def _explain(root: Path, name: str, gate: list[str], task: Task) -> str:
-    if name == "risk_approvals":
-        return f"a {' and a '.join(gate)} must approve the {task.risk} risk level"
+    """The reason in simple words. With GitHub, a reason that waits for a person names the decision comment."""
     if name == "infra_ready":                         # the examination of this advance names the real cause
         problems = github.readiness(root)["problems"]
         return f"the server rules are not on: {problems[0]}" if problems else stages.EXPLAIN[name]
-    return stages.EXPLAIN.get(name, name)
+    text = f"a {' and a '.join(gate)} must approve the {task.risk} risk level" if name == "risk_approvals" \
+        else stages.EXPLAIN.get(name, name)
+    wanted = _wanted(name, gate, task) if task.board and board.available(root) else ""
+    return f"{text}. {wanted} on {task.board}" if wanted else text
+
+
+def _wanted(name: str, gate: list[str], task: Task) -> str:
+    """Who writes which decision comment to remove the reason, or ""."""
+    revision, requester = f"r{task.spec_rev}", task.requester or "The requester"
+    if name == "requester_approved" or (name == "risk_approvals" and gate == ["requester"]):
+        return f"{requester} writes `/approve spec {revision}`"
+    if name == "accepted":
+        missing = [f"`/accept {number} {revision}`" for number, condition in enumerate(task.conditions, 1)
+                   if not task.accepted.get(condition)]
+        return f"{requester} writes {' and '.join(missing)} or `/accept all {revision}`" if missing else ""
+    if name == "risk_approvals":
+        return f"A person with that role writes `/approve risk {task.risk}`"
+    if name == "the task is stopped":
+        return "A developer examines the problem, then writes `/resume`"
+    return ""
 
 
 def specify(root: Path, task_id: str, conditions: list[str], questions: list[str], clear_questions: bool,
@@ -371,8 +609,11 @@ def specify(root: Path, task_id: str, conditions: list[str], questions: list[str
 
     A wider scope can raise the risk level and touch other tasks, so Akasha compares it with the open tasks again."""
     task = _held(root, task_id)
-    task.conditions += [item for item in conditions if item not in task.conditions]
-    task.open_questions = [] if clear_questions else task.open_questions + questions
+    added = task.conditions + [item for item in conditions if item not in task.conditions]
+    asked = [] if clear_questions else task.open_questions + questions
+    if (added, asked) != (task.conditions, task.open_questions):
+        _respecify(root, task)
+        task.conditions, task.open_questions = added, asked
     if builds_on is not None:
         _unstack(root, task, builds_on)
     added = [pattern for pattern in scope or [] if pattern not in task.scope]
@@ -383,6 +624,30 @@ def specify(root: Path, task_id: str, conditions: list[str], questions: list[str
         found = _compare(root, task)
     _publish(root, task)
     return task, found
+
+
+def _respecify(root: Path, task: Task) -> None:
+    """The completion conditions or the open questions change: the specification gets a new revision.
+
+    With GitHub, a decision comment names the revision that the person saw, and the decisions for an older revision
+    do not count. A task after its approval stage goes back to it, so that the requester approves the new
+    specification. A task with a pull request keeps its specification, because GitHub can merge the pull request at
+    any time."""
+    if task.pull_request and task.board and board.available(root):
+        raise ValueError(f"the task {task.id} has a pull request, and GitHub can merge it at any time. Record the "
+                         "change of the specification as a new request")
+    task.spec_rev += 1
+    if not task.board or not board.available(root):
+        return
+    task.approvals.pop("requester", None)             # these decisions were for the older revision
+    task.accepted = {}
+    flow = config.load(root).workflows.get(task.workflow)
+    ids = [stage.id for stage in flow.stages] if flow else []
+    approval = next((stage.id for stage in flow.stages if "requester_approved" in stage.exit), "") if flow else ""
+    if approval and task.stage in ids and ids.index(task.stage) > ids.index(approval):
+        task.stage = approval
+        task.notes.append(f"the specification changed to r{task.spec_rev}, so the task went back to the {approval} "
+                          "stage. The requester approves the new specification")
 
 
 def _unstack(root: Path, task: Task, builds_on: str) -> None:
@@ -443,49 +708,127 @@ def brief(root: Path, task_id: str, text: str) -> list[str]:
     return problems
 
 
-def approve(root: Path, task_id: str, role: str, person: str) -> Task:
+def _on_issue(root: Path, task_id: str) -> Task:
+    """The task, for a decision comment on its issue."""
+    task = load(root, task_id)
+    if not task.board:
+        raise RuntimeError(f"the task {task_id} is not on the shared task board yet. Put it there with akasha specify "
+                           f"{task_id}, then do the step again")
+    return task
+
+
+def _decide_here(root: Path, task: Task, text: str, deciders: tuple[str, ...] | None, person: str = "") -> Task:
+    """The same-computer exception: when the person who decides is the GitHub account of this computer, Akasha writes
+    the decision comment with that account and reads the task again. Another person writes the comment on GitHub.
+
+    `deciders` are the GitHub names that can make the decision. None: each person with write access, and GitHub
+    tells who has it. `person` is the person who decided, for example from --by: it must be this account."""
+    name = _who(root)[0]
+    if (person and _name(person) != name) or (deciders is not None and name not in {_name(item) for item in deciders}):
+        named = " or ".join(item for item in deciders or () if item) or "the person who decides"
+        who = person if person and _name(person) != name else named
+        raise PermissionError(f"{who} must write the comment `{text}` on {task.board} with their own GitHub account. "
+                              "Akasha counts a decision only from the account of the person who decides, and the "
+                              f"GitHub account on this computer is {name}")
+    number = board.posted(root, task.board, text)
+    task = load(root, task.id)
+    reason = next((why for comment, why in _ignored.get(task.id, []) if number and comment.number == number), "")
+    if reason:
+        raise PermissionError(f"Akasha wrote `{text}` on {task.board}, but the decision does not count: {reason}")
+    return task
+
+
+def approve(root: Path, task_id: str, role: str, person: str = "") -> Task:
+    """Record an approval: of the specification for the role requester, else of the risk level for a gate role.
+
+    With GitHub, the approval is the decision comment `/approve spec r<N>` or `/approve risk <level>` of the person
+    who approves (_decide_here)."""
     if role not in config.ROLES:
         raise ValueError(f"unknown role {role} — use {', '.join(config.ROLES)}")
-    _examine_role(config.load(root), role, person)
-    task = _held(root, task_id)
-    task.approvals[role] = person
-    _publish(root, task)
-    return task
+    team = config.load(root)
+    if not board.available(root):
+        _examine_role(team, role, _given(person))
+        task = _held(root, task_id)
+        task.approvals[role] = person
+        _publish(root, task)
+        return task
+    task = _on_issue(root, task_id)
+    if role == "requester":
+        return _decide_here(root, task, f"/approve spec r{task.spec_rev}", (task.requester,), person)
+    names = {"developer": team.developers, "administrator": team.administrators}[role]
+    return _decide_here(root, task, f"/approve risk {task.risk}", names or None, person)
 
 
-def resume(root: Path, task_id: str, developer: str) -> Task:
-    """A developer examined a stopped task. Open it again with a new count of failed repairs."""
-    _examine_role(config.load(root), "developer", developer)
-    task = _held(root, task_id)
+def _examine_stopped(task: Task) -> Task:
     if task.status != "stopped":
         raise ValueError(f"the task is {task.status}, not stopped")
-    task.status, task.failures = "open", 0
-    task.notes.append(f"{developer} examined the problem and opened the task again")
-    _publish(root, task)
     return task
 
 
-def cancel(root: Path, task_id: str, person: str) -> Task:
-    """Stop a task for good, for example when the requester withdraws the request. The work copy stays."""
-    task = _held(root, task_id)
+def resume(root: Path, task_id: str, developer: str = "") -> Task:
+    """A developer examined a stopped task. Open it again with a new count of failed repairs.
+
+    With GitHub, the developer writes `/resume` on the issue after Akasha stopped the task."""
+    team = config.load(root)
+    if not board.available(root):
+        _examine_role(team, "developer", _given(developer))
+        task = _examine_stopped(_held(root, task_id))
+        task.status, task.failures = "open", 0
+        task.notes.append(f"{developer} examined the problem and opened the task again")
+        _publish(root, task)
+        return task
+    task = _examine_stopped(_on_issue(root, task_id))
+    return _decide_here(root, task, "/resume", team.developers or None, developer)
+
+
+def _examine_active(task: Task) -> Task:
     if not tasks.active(task):
         raise ValueError(f"the task is {task.status}")
+    return task
+
+
+def cancel(root: Path, task_id: str, person: str = "", reason: str = "") -> Task:
+    """Stop a task for good, for example when the requester withdraws the request. The work copy stays.
+
+    With GitHub, the requester or a developer writes `/cancel <reason>` on the issue, also when another person holds
+    the task. The next read of the holder closes the pull request (_withdraw)."""
+    team = config.load(root)
+    if board.available(root):
+        task = _examine_active(_on_issue(root, task_id))
+        deciders = (task.requester, *team.developers) if team.developers else None
+        return _decide_here(root, task, " ".join(["/cancel", *reason.split()]), deciders, person)
+    _given(person)
+    task = _examine_active(_held(root, task_id))
     task.status = "cancelled"
-    task.notes.append(f"{person} cancelled the task")
+    task.notes.append(f"{person} cancelled the task" + (f": {reason}" if reason else ""))
     _drop_wip(root, task)
     _publish(root, task)
     return task
 
 
-def accept(root: Path, task_id: str, condition: str | None, result: bool) -> Task:
-    """Record the inspection of one completion condition, or of all conditions when condition is None."""
-    task = _held(root, task_id)
-    for item in [condition] if condition else task.conditions:
-        if item not in task.conditions:
-            raise ValueError(f"the task has no completion condition: {item}")
-        task.accepted[item] = result
-    _publish(root, task)
-    return task
+def _condition(task: Task, condition: str) -> str:
+    """The completion condition with this text, or with this number from 1."""
+    if condition in task.conditions:
+        return condition
+    if condition.strip().isdigit() and 1 <= int(condition) <= len(task.conditions):
+        return task.conditions[int(condition) - 1]
+    raise ValueError(f"the task has no completion condition: {condition}")
+
+
+def accept(root: Path, task_id: str, condition: str | None, result: bool, reason: str = "") -> Task:
+    """Record the inspection of one completion condition, or of all conditions when condition is None.
+
+    With GitHub, the requester writes `/accept <number> r<N>` or `/reject <number> r<N> <reason>` on the issue."""
+    if not board.available(root):
+        task = _held(root, task_id)
+        for item in [_condition(task, condition)] if condition else task.conditions:
+            task.accepted[item] = result
+        _publish(root, task)
+        return task
+    task = _on_issue(root, task_id)
+    target = str(task.conditions.index(_condition(task, condition)) + 1) if condition else "all"
+    words = ["/accept" if result else "/reject", target, f"r{task.spec_rev}", *([] if result else reason.split())]
+    return _decide_here(root, task, " ".join(words), (task.requester,))
 
 
 def check(root: Path, task_id: str) -> runner.Result:
@@ -500,12 +843,24 @@ def check(root: Path, task_id: str) -> runner.Result:
     task.checks = result.status
     failed = [name for name, status in result.status.items() if status == "FAIL"]
     if failed:
-        stages.record_failure(task, "the check " + ", ".join(failed) + " failed")
+        if stages.record_failure(task, "the check " + ", ".join(failed) + " failed"):
+            _tell_stop(root, team, task)
     elif result.status and all(status == "PASS" for status in result.status.values()) and not _strays(task):
         _commit(tree, task.title)
         workcopy.git(tree, "push", "-q", "-u", "origin", task.branch)      # without a server, the push fails quietly
     _publish(root, task)
     return result
+
+
+def _tell_stop(root: Path, team: Team, task: Task) -> None:
+    """With GitHub, tell the developers on the issue that the task stopped. Only a /resume after this comment opens
+    the task again. The comment goes before the stopped task, so that no older /resume counts in between."""
+    if task.board and board.available(root):
+        people = "".join(f"@{name.lstrip('@')} " for name in team.developers)
+        task.stopped_comment = board.posted(
+            root, task.board, f"{people}Akasha stopped the task {task.id} ({task.title}) after {stages.MAX_FAILURES} "
+                              "failed repairs. A developer examines the problem, then writes `/resume` as a new "
+                              "comment on this issue") or 0
 
 
 def _on_branch(tree: Path, branch: str) -> bool:

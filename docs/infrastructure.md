@@ -82,14 +82,14 @@ A plain GitHub name gets the prefix `@`.
 
 1. Run `infra`. Akasha shows each setting that is different from the team config. It reads the server files and the team config from the default branch.
 2. Ask an administrator to approve the correction.
-3. Run `infra --apply --by <administrator>`. Akasha writes the server files, sets branch protection or records the helpers, and changes the repository settings.
+3. On the computer of the administrator, run `infra --apply`. Akasha writes the server files, sets branch protection or records the helpers, and changes the repository settings. Akasha does not trust a typed name: the GitHub account of the computer must be in `[roles] administrators`, when the list names people, and must administer the repository on GitHub. `--by` is optional, and it must be that account. Without GitHub, `--by <administrator>` names the administrator.
 4. Make a new branch. Commit the server files and `akasha.toml` on it and open a pull request.
 5. Ask an administrator to merge the pull request.
 6. Run `infra` again. Make sure that it shows no problem.
 
 The `akasha-setup` skill does these steps for the first setup.
 
-> **CAUTION:** Akasha changes the GitHub settings only with the approval of an administrator that `[roles]` names.
+> **CAUTION:** Akasha changes the GitHub settings only with the approval of an administrator that `[roles]` names. With GitHub, that administrator is the GitHub account of the computer.
 
 ## When a person opens the repository
 

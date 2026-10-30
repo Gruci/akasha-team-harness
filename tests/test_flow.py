@@ -404,7 +404,7 @@ class FlowTests(unittest.TestCase):
             address = tasks.load(root, saved.id).board
             self.assertEqual(board.parse(fake.issues[address]["body"]).id, saved.id)
             with patch("akasha.coordinator.board.gh", refuse), self.assertRaises(board.BoardError) as stopped:
-                flow.cancel(root, saved.id, "ops-a")
+                flow.cancel(root, saved.id)                          # the comment goes on, the issue update not
             self.assertIn(saved.id, str(stopped.exception))
             self.assertEqual(fake.issues[address]["state"], "OPEN")
             with patch("akasha.coordinator.board.gh", fake):
@@ -659,7 +659,7 @@ class SharedTaskTests(unittest.TestCase):
             flow.handoff(self.first, task.id)
         with person("dev-b", "pc-b", self.fake):
             flow.takeover(self.second, task.id)
-            flow.cancel(self.second, task.id, "ops-a")
+            flow.cancel(self.second, task.id)                           # dev-b has write access
         comments = len(self.fake.issues[task.board]["comments"])
         self.assertEqual(tasks.load(self.first, task.id).status, "open")       # the task file here is old
         with person("dev-a", "pc-a", self.fake):
@@ -791,6 +791,234 @@ class SharedStateTests(unittest.TestCase):
             with self.assertRaises(flow.HolderError):
                 flow.specify(root, broken.id, ["Import a file"], [], False)
         self.assertEqual((handed.holder, Path(recorded.workcopy).exists()), ("", False))
+
+
+def said(number: int, author: str, text: str, association: str = "MEMBER", edited: bool = False,
+         hidden: bool = False) -> board.Comment:
+    return board.Comment(number, author, association, "2026-10-31T00:00:00Z", edited, hidden, text)
+
+
+class DecisionRuleTests(unittest.TestCase):
+    """The rules for the decision comments on the issue of a task."""
+
+    def setUp(self):
+        self.task = tasks.Task(id="t-1", title="x", workflow="feature", stage="inspection", requester="Ops-A",
+                               conditions=["Filter by the date", "Keep the order"], spec_rev=2, risk="high",
+                               approvals={"requester": "ops-a"}, accepted={"Filter by the date": True})
+
+    def reasons(self, team: config.Team, comments: list[board.Comment]) -> list[tuple[int, str]]:
+        return [(comment.number, reason) for comment, reason in flow._decided(team, self.task, comments)]
+
+    def test_the_requester_decides_for_the_current_specification(self):
+        self.assertEqual(self.reasons(config.Team(), [
+            said(1, "dev-b", "/approve spec r2"), said(2, "ops-a", "/approve spec r1"),
+            said(3, "ops-a", "/approve spec r2", edited=True), said(4, "ops-a", "/approve spec r2", hidden=True),
+            said(5, "ops-a", "/accept 1 r2"), said(6, "ops-a", "/reject 2 r2 the order is wrong"),
+            said(7, "ops-a", "/accept 3 r2"), said(8, "ops-a", "/accept 1 r1"), said(9, "ops-a", "Looks good")]), [
+            (1, "only the requester Ops-A makes this decision"), (2, "it is not for the current specification r2"),
+            (3, "somebody edited the comment"), (4, "somebody hid the comment"),
+            (7, "the task has no completion condition 3"), (8, "it is not for the current specification r2")])
+        self.assertEqual(self.task.approvals, {})                   # the value in the body or the task file is gone
+        self.assertEqual(self.task.accepted, {"Filter by the date": True, "Keep the order": False})
+        self.assertIn("ops-a rejected the completion condition 2: the order is wrong", self.task.notes)
+        self.reasons(config.Team(), [said(1, "@OPS-A", "/Approve spec R2"), said(2, "ops-a", "/reject all r2"),
+                                     said(3, "ops-a", "/accept 2 r2\nThe order is correct now")])
+        self.assertEqual((self.task.approvals, self.task.accepted),     # a later comment wins
+                         ({"requester": "@OPS-A"}, {"Filter by the date": False, "Keep the order": True}))
+
+    def test_a_gate_role_approves_its_risk_level(self):
+        team = config.Team(administrators=("admin-a",), approval={"high": ("administrator",), "medium": ("developer",)})
+        self.assertEqual(self.reasons(team, [said(1, "admin-a", "/approve risk medium"),
+                                             said(2, "dev-b", "/approve risk high"),
+                                             said(3, "admin-a", "/approve risk high")]), [
+            (1, "the risk level of the task is high now"), (2, "dev-b has no gate role for the high risk level")])
+        self.assertEqual(self.task.approvals, {"administrator": "admin-a"})
+        anyone = config.Team(approval={"high": ("developer",)})     # akasha.toml names no developer
+        self.assertEqual(self.reasons(anyone, [said(1, "ops-b", "/approve risk high", "NONE"),
+                                               said(2, "dev-c", "/approve risk high", "COLLABORATOR")]),
+                         [(1, "ops-b has no gate role for the high risk level")])
+        self.assertEqual(self.task.approvals, {"developer": "dev-c"})
+
+    def test_a_resume_counts_once_after_the_stop(self):
+        team = config.Team(developers=("dev-c",))
+        self.task.status, self.task.failures, self.task.stopped_comment = "stopped", 3, 5
+        comments = [said(4, "dev-c", "/resume"), said(6, "dev-b", "/resume"), said(7, "dev-c", "/resume")]
+        self.assertEqual(self.reasons(team, comments), [
+            (4, "it is older than the last stop of the task. Write a new /resume"),
+            (6, "only a developer opens a stopped task again")])
+        self.assertEqual((self.task.status, self.task.failures, self.task.resumed), ("open", 0, 7))
+        self.task.status, self.task.stopped_comment = "stopped", 9          # the task stops again
+        self.assertEqual(self.reasons(team, comments), [])
+        self.assertEqual(self.task.status, "stopped")
+
+    def test_only_the_requester_or_a_developer_cancels(self):
+        team = config.Team(developers=("dev-c",))
+        self.assertEqual(self.reasons(team, [said(1, "dev-b", "/cancel")]),
+                         [(1, "only the requester or a developer cancels the task")])
+        self.assertEqual(self.task.status, "open")
+        self.assertEqual(self.reasons(team, [said(1, "ops-a", "/cancel not needed now")]), [])
+        self.assertEqual(self.task.status, "cancelled")
+        self.assertIn("ops-a cancelled the task: not needed now", self.task.notes)
+
+
+class DecisionTests(unittest.TestCase):
+    """With GitHub, a decision is a comment on the issue from the GitHub account of the person who decides."""
+
+    def setUp(self):
+        self.root, self.fake = make_repo(PASS), FakeBoard()
+
+    def recorded(self, roles: str = "", workflow: str = "feature") -> tasks.Task:
+        """dev-a records a task of ops-a with two completion conditions."""
+        if roles:
+            with (self.root / "akasha.toml").open("a", encoding="utf-8") as file:
+                file.write(roles)
+        with person("dev-a", "pc-a", self.fake):
+            task, _ = flow.start(self.root, "Add a date filter", "ops-a", workflow=workflow)
+            flow.specify(self.root, task.id, ["Filter by the date", "Keep the order"], [], False)
+            return flow.load(self.root, task.id)
+
+    def comments(self, task: tasks.Task) -> list[tuple[str, str]]:
+        return [(item["author"]["login"], item["body"]) for item in self.fake.issues[task.board]["comments"]]
+
+    def test_decisions_count_only_from_the_comments_of_the_person(self):
+        task = self.recorded()
+        self.assertEqual(task.spec_rev, 1)
+        self.fake.say(task.board, "dev-b", "/approve spec r1")                   # another account
+        self.fake.say(task.board, "ops-a", "/approve spec r1", edited=True)      # dev-b edited a comment of ops-a
+        shared = board.parse(self.fake.issues[task.board]["body"])
+        shared.approvals = {"requester": "ops-a"}                                # a person edits the issue body
+        self.fake.issues[task.board]["body"] = board.body(shared)
+        with person("dev-a", "pc-a", self.fake):
+            flow.impact(self.root, task.id, IMPACT)
+            self.assertEqual(flow.advance(self.root, task.id), [])               # to the specification stage
+            blocked = flow.advance(self.root, task.id)
+            self.assertIn(f"the requester did not approve the specification. ops-a writes `/approve spec r1` on "
+                          f"{task.board}", blocked)
+            self.assertEqual([item.split(" — ")[-1] for item in flow.ignored(task.id)],
+                             ["only the requester ops-a makes this decision", "somebody edited the comment"])
+            self.fake.say(task.board, "ops-a", "/approve spec r1")
+            self.assertEqual(flow.advance(self.root, task.id), [])
+            self.assertEqual(flow.load(self.root, task.id).stage, "build")
+            task = flow.specify(self.root, task.id, ["Show the newest first"], [], False)[0]
+            self.assertEqual((task.spec_rev, task.stage, task.approvals), (2, "specification", {}))
+            self.assertIn("ops-a writes `/approve spec r2`", flow.advance(self.root, task.id)[0])
+        self.assertEqual(board.parse(self.fake.issues[task.board]["body"]).approvals, {})
+
+    def test_the_same_computer_writes_the_decision_of_its_own_account(self):
+        task = self.recorded()
+        with person("dev-a", "pc-a", self.fake):
+            for by in ("", "ops-a"):
+                with self.assertRaises(PermissionError) as refused:
+                    flow.approve(self.root, task.id, "requester", by)
+                self.assertIn(f"ops-a must write the comment `/approve spec r1` on {task.board}",
+                              str(refused.exception))
+            with self.assertRaises(PermissionError):
+                flow.accept(self.root, task.id, "1", True)
+        self.assertEqual(self.comments(task), [])
+        with person("ops-a", "pc-b", self.fake):                                  # the requester at this computer
+            self.assertEqual(flow.approve(self.root, task.id, "requester").approvals, {"requester": "ops-a"})
+            accepted = flow.accept(self.root, task.id, "Keep the order", True)
+            rejected = flow.accept(self.root, task.id, None, False, "The dates are wrong")
+        self.assertEqual(accepted.accepted, {"Keep the order": True})
+        self.assertEqual(rejected.accepted, {"Filter by the date": False, "Keep the order": False})
+        self.assertEqual(self.comments(task), [("ops-a", "/approve spec r1"), ("ops-a", "/accept 2 r1"),
+                                               ("ops-a", "/reject all r1 The dates are wrong")])
+
+    def test_a_gate_needs_a_comment_of_a_person_with_the_role(self):
+        task = self.recorded('[roles]\nadministrators = ["admin-a"]\n[risk]\nhigh = ["**/auth/**"]\n'
+                             '[approval]\nhigh = ["administrator"]\n', workflow="small")
+        (Path(task.workcopy) / "auth").mkdir()
+        (Path(task.workcopy) / "auth" / "login.py").write_text("x = 1\n", encoding="utf-8")
+        with person("dev-a", "pc-a", self.fake):
+            flow.impact(self.root, task.id, IMPACT)
+            self.assertEqual(flow.advance(self.root, task.id), [
+                "a administrator must approve the high risk level. A person with that role writes "
+                f"`/approve risk high` on {task.board}"])
+            with self.assertRaises(PermissionError) as refused:
+                flow.approve(self.root, task.id, "administrator")
+            self.assertIn("admin-a must write the comment `/approve risk high`", str(refused.exception))
+        with person("admin-a", "pc-c", self.fake):
+            flow.approve(self.root, task.id, "administrator")
+        with person("dev-a", "pc-a", self.fake):
+            self.assertEqual(flow.advance(self.root, task.id), [])
+
+    def test_a_stopped_task_waits_for_a_resume_comment(self):
+        self.root = make_repo(FAIL)
+        task = self.recorded('[roles]\ndevelopers = ["dev-c"]\n', workflow="small")
+        with person("dev-a", "pc-a", self.fake):
+            for _ in range(3):
+                flow.check(self.root, task.id)
+            stopped = flow.load(self.root, task.id)
+            self.assertIn(f"A developer examines the problem, then writes `/resume` on {task.board}",
+                          flow.advance(self.root, task.id)[0])
+        author, text = self.comments(task)[-1]
+        self.assertTrue(text.startswith(f"@dev-c Akasha stopped the task {task.id}"))
+        self.assertEqual((stopped.status, stopped.stopped_comment), ("stopped", 100))
+        with person("dev-b", "pc-b", self.fake), self.assertRaises(PermissionError):
+            flow.resume(self.root, task.id)                                      # not a developer
+        with person("dev-c", "pc-c", self.fake):
+            self.assertEqual(flow.resume(self.root, task.id).status, "open")
+        self.assertEqual(board.parse(self.fake.issues[task.board]["body"]).status, "stopped")    # dev-a holds it
+        with person("dev-a", "pc-a", self.fake):
+            self.assertEqual(flow.check(self.root, task.id).status["tests"], "FAIL")      # a new count of repairs
+            shared = board.parse(self.fake.issues[task.board]["body"])
+            self.assertEqual((shared.status, shared.failures, shared.resumed), ("open", 1, 101))
+            for _ in range(2):
+                flow.check(self.root, task.id)
+            self.assertEqual(flow.load(self.root, task.id).status, "stopped")    # the old /resume does not count
+
+    def test_a_cancel_closes_the_pull_request_and_tells_the_later_tasks(self):
+        task = self.recorded('[roles]\ndevelopers = ["dev-c"]\n', workflow="small")
+        with person("dev-a", "pc-a", self.fake):
+            later, _ = flow.start(self.root, "Export the filtered list", "ops-b", workflow="small", builds_on=task.id)
+            held = flow.load(self.root, task.id)
+            held.stage, held.pull_request = "handover", PULL_REQUEST
+            flow._publish(self.root, held)
+        self.fake.say(task.board, "dev-b", "/cancel")                             # not the requester or a developer
+        with person("dev-b", "pc-b", self.fake), self.assertRaises(PermissionError) as refused:
+            flow.cancel(self.root, task.id)
+        self.assertIn("ops-a or dev-c must write the comment `/cancel`", str(refused.exception))
+        with person("ops-a", "pc-b", self.fake):                                  # the requester, on any computer
+            self.assertEqual(flow.cancel(self.root, task.id, reason="not needed now").status, "cancelled")
+        self.assertEqual(self.fake.issues[task.board]["state"], "OPEN")           # the holder closes the rest
+        opened = {"url": PULL_REQUEST, "state": "OPEN"}
+        with person("dev-a", "pc-a", self.fake), patch("akasha.flow.github.pull_request", return_value=opened), \
+                patch("akasha.flow.gh", return_value=answer()) as gh:
+            self.assertIn("dev-b: /cancel — only the requester or a developer cancels the task",
+                          flow.ignored(flow.load(self.root, task.id).id))
+        self.assertEqual([call.args[1:3] for call in gh.call_args_list],
+                         [("pr", "merge"), ("pr", "edit"), ("pr", "close")])
+        self.assertIn("--disable-auto", gh.call_args_list[0].args)
+        self.assertEqual(self.fake.issues[task.board]["state"], "CLOSED")
+        shared = board.parse(self.fake.issues[task.board]["body"])
+        self.assertIn("ops-a cancelled the task: not needed now", shared.notes)
+        told = self.fake.issues[later.board]["comments"][-1]["body"]
+        self.assertTrue(told.startswith(f"@ops-b Akasha: the earlier task {task.id}"))
+
+    def test_the_requester_is_a_github_account(self):
+        self.fake.accounts = {"ops-a": "Ops-A"}
+        with person("dev-a", "pc-a", self.fake):
+            self.assertEqual(flow.start(self.root, "Add a date filter")[0].requester, "dev-a")    # by default, you
+            self.assertEqual(flow.start(self.root, "Export", "@ops-a")[0].requester, "Ops-A")
+            with self.assertRaises(ValueError) as refused:
+                flow.start(self.root, "Import", "nobody-x")
+            self.assertIn("GitHub has no account nobody-x", str(refused.exception))
+            with patch("akasha.coordinator.board.can_comment", return_value=False):
+                warned, _ = flow.start(self.root, "Print", "ops-a")
+        self.assertIn("Ops-A has no access to this private repository", warned.notes[0])
+        with self.assertRaises(ValueError):
+            flow.start(make_repo(PASS), "Add a date filter")                     # without GitHub, a name is necessary
+
+    def test_show_numbers_the_conditions_and_tells_what_does_not_count(self):
+        task = self.recorded()
+        self.fake.say(task.board, "dev-b", "/approve spec r1")
+        output = io.StringIO()
+        with person("dev-a", "pc-a", self.fake), patch("akasha.__main__.main_root", return_value=self.root), \
+                redirect_stdout(output):
+            self.assertEqual(command_line.run(["show", task.id]), 0)
+        for line in ("  specification: r1", "  condition 1: Filter by the date", "  condition 2: Keep the order",
+                     "  not counted — dev-b: /approve spec r1 — only the requester ops-a makes this decision"):
+            self.assertIn(line, output.getvalue().splitlines())
 
 
 class HookTests(unittest.TestCase):

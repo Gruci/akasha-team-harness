@@ -12,7 +12,8 @@ RULES = f"""{START}
 This repository uses Akasha. Do each change as an Akasha task. The Akasha command is `python -m akasha`.
 Ask people only what to make, how it looks, and how they use it. Make the technical decisions yourself and record them.
 
-1. Record the task: `python -m akasha request "<title>" --requester <GitHub name> --feature <feature key>`.
+1. Record the task: `python -m akasha request "<title>" --feature <feature key>`. With GitHub, the requester is the
+   GitHub account of this computer. For another requester, add `--requester <GitHub name>`.
    If an earlier task makes the same feature, add `--builds-on <earlier task>`.
 2. Ask the requester questions until the completion conditions are clear. Record each condition:
    `python -m akasha specify <task> --condition "<condition>"`.
@@ -20,12 +21,14 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
    Record the scope: `python -m akasha specify <task> --scope <file patterns>`.
 4. Record the impact analysis: `python -m akasha impact <task> --features "<text>" --data "<text>"
    --contracts "<text>" --tasks "<text>" --rollback "<text>"`.
-5. Tell the requester the specification in simple words. Record the approval:
-   `python -m akasha approve <task> --role requester --by <name>`.
+5. Tell the requester the specification in simple words. The requester approves it with the comment
+   `/approve spec r<N>` on the issue of the task. If the requester is the GitHub account of this computer and approves,
+   run `python -m akasha approve <task> --role requester`. Akasha writes the comment.
 6. Make the change only in the work copy of the task. Write an automated test for each completion condition.
 7. Run `python -m akasha check <task>`. Repair each failure.
-8. Show the result to the requester. Record each answer:
-   `python -m akasha accept <task> --condition "<condition>" --result yes`.
+8. Show the result to the requester. The requester writes `/accept <number> r<N>` or `/reject <number> r<N> <reason>`
+   on the issue. If the requester is the GitHub account of this computer, run
+   `python -m akasha accept <task> --condition <number> --result yes`.
 9. Update the product map in the work copy, or record why it does not change:
    `python -m akasha impact <task> --map-unchanged "<reason>"`.
 10. Write the briefing with the sections Why, What changed, Scope, Tradeoffs, and Blast Radius. Record it:
@@ -33,8 +36,13 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
 
 After each step, run `python -m akasha advance <task>`. If Akasha shows a blocker, do the step that removes it.
 
-Never record an approval or an answer for a person who did not give it.
-After three failed repairs, Akasha stops the task. Stop the work and tell a developer.
+With GitHub, each decision of a person is a comment on the issue from the GitHub account of that person. If the
+person is another account, Akasha tells the exact comment: give it to the person and wait.
+Never record an approval or an answer for a person who did not give it. Never write a decision comment with gh.
+Without GitHub, add `--by <name>` to approve, resume, and cancel.
+If the requester withdraws the request, the requester writes `/cancel <reason>`. If the requester is the GitHub
+account of this computer, run `python -m akasha cancel <task> --reason "<reason>"`.
+After three failed repairs, Akasha stops the task. Stop the work and tell a developer. The developer writes `/resume`.
 With GitHub, one person on one computer holds each task. If Akasha says that another person holds it, do not change it.
 To let another person continue a task, run `python -m akasha handoff <task>` in the main checkout.
 To continue a task that another person handed off, run `python -m akasha takeover <task>`.

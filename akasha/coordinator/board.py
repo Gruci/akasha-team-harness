@@ -6,6 +6,9 @@ the completion conditions. Without GitHub, the board holds only the tasks on thi
 
 When origin is a GitHub repository, the board must work. A failed read or write of the board stops the command,
 so that a person who is not logged in to gh does not work where the other people cannot see the task.
+
+People decide with decision comments on the issue, for example `/approve spec r2`. GitHub shows the account that
+wrote each comment, so the comment tells who decided. The issue body only carries the state between computers.
 """
 
 from __future__ import annotations
@@ -23,6 +26,9 @@ from akasha.repo import gh
 LABEL = "akasha"
 _BLOCK = re.compile(r"```akasha-scope\n(.*?)\n```", re.S)
 _COMMENT_NUMBER = re.compile(r"#issuecomment-(\d+)$")
+_LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")      # the shape of a GitHub account name
+# The first word of a decision comment. Akasha counts a decision only from the account of the person who decides.
+DECISIONS = ("/approve", "/accept", "/reject", "/resume", "/cancel")
 # The fields on the issue: each field except the fields of one computer and the issue address itself
 _FIELDS = tuple(item.name for item in fields(Task) if item.name not in LOCAL_FIELDS and item.name != "board")
 _EMPTY = asdict(Task(id="", title="", workflow="", stage=""))      # the type of each field
@@ -49,13 +55,13 @@ def available(root: Path) -> bool:
     return bool(repo.origin(root))
 
 
-def _answered(root: Path, done: subprocess.CompletedProcess, action: str) -> bool:
+def _answered(root: Path, done: subprocess.CompletedProcess, action: str, what: str = "the shared task board") -> bool:
     """True when gh did the action. When the board must work, a failure stops the command."""
     if done.returncode == 0:
         return True
     if available(root):
         detail = (done.stderr or done.stdout).strip().splitlines()
-        raise BoardError(f"Akasha cannot {action} the shared task board"
+        raise BoardError(f"Akasha cannot {action} {what}"
                          + (f" ({detail[0][:200]})" if detail else "")
                          + ". Make sure that gh is installed and logged in: gh auth status")
     return False
@@ -66,6 +72,18 @@ def _line(text: str) -> str:
     return " ".join(str(text).split())
 
 
+def _guide(task: Task) -> list[str]:
+    """The decision comments that people copy. Each person writes them with their own GitHub account."""
+    rev = f"r{task.spec_rev}"
+    return ["To decide, write a new comment with your own GitHub account. Akasha does not count an edited comment:",
+            f"- `/approve spec {rev}`: the requester approves the specification",
+            f"- `/accept <number> {rev}` or `/reject <number> {rev} <reason>`: the requester inspects one completion "
+            "condition. `all` in place of the number inspects all conditions",
+            f"- `/approve risk {task.risk}`: a person with a gate role approves the risk level",
+            "- `/resume`: a developer opens a stopped task again",
+            "- `/cancel <reason>`: the requester or a developer cancels the task"]
+
+
 def body(task: Task) -> str:
     """The issue body: the part that people read, then the JSON block with the state of the task."""
     holder = f"{task.holder} ({task.holder_host})" if task.holder else f"nobody — `akasha takeover {task.id}`"
@@ -73,11 +91,11 @@ def body(task: Task) -> str:
              f"Stage: {task.stage} · Status: {task.status} · Risk: {task.risk}"]
     if task.conditions:
         results = {True: "accepted", False: "not accepted"}
-        lines += ["", "Completion conditions:"] + [
+        lines += ["", f"Completion conditions (specification r{task.spec_rev}):"] + [
             f"{number}. [{results.get(task.accepted.get(condition), 'not inspected')}] {_line(condition)}"
             for number, condition in enumerate(task.conditions, 1)]
     approvals = ", ".join(f"{role} {_line(person)}" for role, person in task.approvals.items())
-    lines += ["", f"Approvals: {approvals or 'none'}"]
+    lines += ["", f"Approvals: {approvals or 'none'}", ""] + _guide(task)
     data = {name: getattr(task, name) for name in _FIELDS}
     return "\n".join(lines) + f"\n\n```akasha-scope\n{json.dumps(data, ensure_ascii=False, indent=2)}\n```\n"
 
@@ -167,9 +185,44 @@ def comments(root: Path, address: str) -> list[Comment]:
     return found
 
 
+def posted(root: Path, address: str, text: str) -> int | None:
+    """Write on the issue of a task with the GitHub account of this computer. GitHub tells the people who follow the
+    issue. Return the number of the new comment, 0 when gh does not show it, or None when the comment is not on the
+    issue."""
+    done = gh(root, "issue", "comment", address, "--body", text)
+    if not _answered(root, done, "write"):
+        return None
+    number = _COMMENT_NUMBER.search(done.stdout.strip())
+    return int(number.group(1)) if number else 0
+
+
 def comment(root: Path, address: str, text: str) -> bool:
-    """Write on the issue of a task. GitHub tells the people who follow the issue. True when the comment is on it."""
-    return _answered(root, gh(root, "issue", "comment", address, "--body", text), "write")
+    """Write on the issue of a task. True when the comment is on it."""
+    return posted(root, address, text) is not None
+
+
+def account(root: Path, name: str) -> str:
+    """The exact name of the GitHub account, or "" when GitHub has no account with this name."""
+    name = name.strip().lstrip("@")
+    if not _LOGIN.match(name):
+        return ""
+    asked = gh(root, "api", f"users/{name}")
+    if asked.returncode and "Not Found" in asked.stdout + asked.stderr:
+        return ""
+    if not _answered(root, asked, "read", f"the GitHub account {name}"):
+        return ""
+    return str(json.loads(asked.stdout or "{}").get("login") or "")
+
+
+def can_comment(root: Path, login: str) -> bool:
+    """False when the repository is private and the account has no access to it: then the account cannot write a
+    comment on the issues. True when the account has access, or when Akasha cannot tell."""
+    slug = repo.gh_repo(root)
+    seen = gh(root, "api", f"repos/{slug}") if slug else None
+    if seen is None or seen.returncode or not json.loads(seen.stdout or "{}").get("private"):
+        return True
+    asked = gh(root, "api", f"repos/{slug}/collaborators/{login}/permission")
+    return asked.returncode != 0 or json.loads(asked.stdout or "{}").get("permission") != "none"
 
 
 def publish(root: Path, task: Task) -> str:

@@ -27,6 +27,12 @@ def _show(task: tasks.Task) -> None:
           + (f"\n  holder {task.holder} ({task.holder_host})" if task.holder else ""))
 
 
+def _uncounted(task_id: str) -> None:
+    """The decision comments on the issue that do not count, so that the person can write them again."""
+    for item in flow.ignored(task_id):
+        print(f"  not counted — {item}")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m akasha", description=f"Akasha {VERSION}")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -34,7 +40,7 @@ def _parser() -> argparse.ArgumentParser:
     made.add_argument("--approve-infra", metavar="ADMINISTRATOR", help="also change GitHub settings, with this approval")
     request = commands.add_parser("request", help="record a new task")
     request.add_argument("title")
-    request.add_argument("--requester", required=True)
+    request.add_argument("--requester", default="", help="the GitHub name of the requester; default: you")
     request.add_argument("--workflow", default="feature")
     request.add_argument("--feature", default="")
     request.add_argument("--scope", nargs="*", default=[])
@@ -57,16 +63,18 @@ def _parser() -> argparse.ArgumentParser:
     brief = commands.add_parser("brief", help="examine and record the pull request briefing")
     brief.add_argument("task")
     brief.add_argument("--file", type=Path, required=True)
+    by = "the person who decides. With GitHub, it must be the GitHub account of this computer"
     approve = commands.add_parser("approve", help="record an approval")
     approve.add_argument("task")
     approve.add_argument("--role", required=True, choices=config.ROLES)
-    approve.add_argument("--by", required=True)
+    approve.add_argument("--by", default="", help=by)
     resume = commands.add_parser("resume", help="open a stopped task again after a developer examined it")
     resume.add_argument("task")
-    resume.add_argument("--by", required=True, help="the developer who examined the problem")
+    resume.add_argument("--by", default="", help=by)
     cancel = commands.add_parser("cancel", help="stop a task for good, for example a withdrawn request")
     cancel.add_argument("task")
-    cancel.add_argument("--by", required=True, help="the person who withdrew the request")
+    cancel.add_argument("--by", default="", help=by)
+    cancel.add_argument("--reason", default="")
     for name, text in (("advance", "move the task to its next stage"), ("show", "show one task"),
                        ("handover", "open the pull request and turn on auto-merge"),
                        ("handoff", "save the work on the server and free the task for another person"),
@@ -79,12 +87,14 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--base", default="origin/main")
     accept = commands.add_parser("accept", help="record the inspection of the requester")
     accept.add_argument("task")
-    accept.add_argument("--condition")
+    accept.add_argument("--condition", help="the text or the number of the condition; default: all conditions")
     accept.add_argument("--result", choices=("yes", "no"), required=True)
+    accept.add_argument("--reason", default="", help="why the result is not correct, with --result no")
     commands.add_parser("board", help="show the tasks of all requesters on the shared task board")
     infra = commands.add_parser("infra", help="show or correct the GitHub settings")
     infra.add_argument("--apply", action="store_true")
-    infra.add_argument("--by", default="", help="the administrator who approves the change")
+    infra.add_argument("--by", default="", help="the administrator who approves the change: the GitHub account of "
+                                               "this computer")
     hook = commands.add_parser("hook", help="the entry point for agent hooks")
     hook.add_argument("--agent", choices=("claude", "codex"), default="claude")
     hook.add_argument("--event", required=True)
@@ -131,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         task, found = flow.start(root, args.title, args.requester, args.workflow, args.feature, args.scope,
                                  args.contract, args.builds_on)
         _show(task)
+        for note in task.notes:
+            print(f"  note — {note}")
         for item in found:
             print(f"  overlap — {item.message()}")
         return 0
@@ -160,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         _show(flow.resume(root, args.task, args.by))
         return 0
     if args.command == "cancel":
-        _show(flow.cancel(root, args.task, args.by))
+        _show(flow.cancel(root, args.task, args.by, args.reason))
         return 0
     if args.command in ("handoff", "takeover"):
         _show(getattr(flow, args.command)(root, args.task))
@@ -170,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         _show(flow.load(root, args.task, write=False))
         for reason in blocked:
             print(f"  blocked — {reason}")
+        _uncounted(args.task)
         return 1 if blocked else 0
     if args.command == "show":
         task = flow.load(root, args.task, write=False)
@@ -180,7 +193,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  preview {name}: {resources.fill(template, task.id)}")
         if task.builds_on:
             print(f"  builds on: {task.builds_on}")
-        for name in ("scope", "risk_reasons", "conditions", "open_questions", "notes"):
+        print(f"  specification: r{task.spec_rev}")
+        for number, condition in enumerate(task.conditions, 1):
+            print(f"  condition {number}: {condition}")
+        for name in ("scope", "risk_reasons", "open_questions", "notes"):
             for item in getattr(task, name):
                 print(f"  {name.replace('_', ' ').rstrip('s')}: {item}")
         for key, text in task.impact.items():
@@ -196,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  check {name}: {status}")
         if task.setup_output:
             print(f"  setup command output on this computer:\n{task.setup_output}")
+        _uncounted(task.id)
         return 0
     if args.command == "check":
         result = flow.check(root, args.task)
@@ -206,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
             print(task.notes[-1])
         return 0 if all(status == "PASS" for status in result.status.values()) else 1
     if args.command == "accept":
-        _show(flow.accept(root, args.task, args.condition, args.result == "yes"))
+        _show(flow.accept(root, args.task, args.condition, args.result == "yes", args.reason))
         return 0
     if args.command == "handover":
         address, blocked = flow.handover(root, args.task)

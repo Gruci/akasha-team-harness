@@ -34,11 +34,33 @@ class GuardTests(unittest.TestCase):
                 self.assertIsNotNone(self.stop(line))
 
     def test_usual_commands_pass(self):
-        for line in ("git push origin akasha/date-filter", "git status", "rm -rf src/build", "rm file.txt",
+        for line in ("git push origin feature-x", "git status", "rm -rf src/build", "rm file.txt",
                      "python -m pytest -q", "git branch -D akasha/old-task", "echo push --force",
-                     "git push -u origin akasha/date-filter", "cd src && ls", "npm test 2>&1"):
+                     "git push -u origin feature-x", "git push", "cd src && ls", "npm test 2>&1",
+                     "gh pr view 7", "gh issue comment 5 --body 'Write /approve spec r2 when the plan is correct'",
+                     "gh issue create --title x --body '/approve'", "gh api repos/team/app/pulls/7"):
             with self.subTest(line=line):
                 self.assertIsNone(self.stop(line))
+
+    def test_shared_state_is_for_akasha_github_and_people(self):
+        work = self.root / ".akasha" / "work" / "t-1"
+        work.mkdir(parents=True)
+        (self.root / "note.md").write_text("Looks good.\n/accept 1 r2\n", encoding="utf-8")
+        for line in ("git push origin akasha/date-filter", "git push -u origin HEAD:akasha/date-filter",
+                     "git push origin HEAD:refs/heads/akasha-wip/t-1", "git push origin --delete akasha/t-1",
+                     "git push origin :akasha-wip/t-1", "git push --all origin", "git push --mirror origin",
+                     "gh pr merge 7 --squash", "gh pr merge --auto 7", "gh api -X PUT repos/team/app/pulls/7/merge",
+                     'gh issue comment 5 --body "/approve spec r2"', "gh pr comment 7 -b '/accept all r2'",
+                     "gh issue comment 5 --body-file note.md", "gh issue comment 5 -F - <<'EOF'\n/resume\nEOF",
+                     'echo "/cancel not needed" | gh issue comment 5 -F -',
+                     "gh api repos/team/app/issues/5/comments -f body='/Reject 1 r2 too slow'",
+                     "gh api repos/team/app/issues/5/comments -F body=@note.md"):
+            with self.subTest(line=line):
+                self.assertIsNotNone(self.stop(line))
+        for line in ("git push", "git push origin", "git push -u origin HEAD"):        # in the work copy of a task
+            with self.subTest(line=line):
+                self.assertIsNotNone(guard.check_command(line, work, self.root))
+                self.assertIsNone(guard.check_command("git push origin feature-x", work, self.root))
 
     def test_edits_go_into_the_work_copy_of_an_active_task(self):
         work = self.root / ".akasha" / "work" / "t-1"

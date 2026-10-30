@@ -15,12 +15,12 @@ A workflow is a list of stages. Each stage has exit conditions. A task goes to t
 | Exit condition | What Akasha measures |
 |:--|:--|
 | `conditions_clear` | The task has one or more completion conditions and no open question |
-| `requester_approved` | The requester approved the specification |
+| `requester_approved` | The requester approved the current revision of the specification. With GitHub, the requester writes `/approve spec r<N>` on the issue of the task |
 | `impact_assessed` | The impact analysis has all five parts: features, data, contracts, tasks, and rollback |
-| `risk_approvals` | Each gate role that `[approval]` names for the risk level of the task approved |
+| `risk_approvals` | Each gate role that `[approval]` names for the risk level of the task approved. With GitHub, a person with the role writes `/approve risk <level>` |
 | `scope_respected` | Each changed file in the work copy matches the scope. The team context, for example the product map, is outside each scope. A task without a scope permits all files |
 | `checks_pass` | Each required check passed, and no check failed |
-| `accepted` | The requester accepted each completion condition |
+| `accepted` | The requester accepted each completion condition of the current revision. With GitHub, the requester writes `/accept <number> r<N>` |
 | `map_current` | The change updates the product map, or the task records why the map does not change |
 | `infra_ready` | The required check, branch protection, auto-merge, and the server files on the default branch agree with the team config |
 | `pull_request_open` | The pull request of the task is open. The built-in workflows do not use it |
@@ -32,13 +32,21 @@ Akasha sets the risk level from the scope when the task starts. Each time the ta
 
 When `[approval]` names a gate for a risk level, Akasha examines the gate at each advance after the build starts. Thus a risk that the real changes raise still needs the approval of the gate.
 
+## When the specification changes
+
+The specification has a revision, `r1`, `r2`, and so on. It goes up each time that the completion conditions or the open questions change. `show` and the issue of the task show it.
+
+With GitHub, each decision comment of the requester names the revision that the requester saw. A decision for an older revision does not count. A task after its specification stage goes back to that stage, so that the requester approves the new specification. A task with a pull request cannot change its specification, because GitHub can merge the pull request at any time. Record a new request.
+
+Each decision of a person, and who can write it, is in [Roles](roles.md).
+
 ## Failed repairs
 
 Each failed check counts as one failed repair. After three failed repairs, Akasha stops the task.
 
-1. The agent engine stops the work and tells the requester in simple words.
+1. The agent engine stops the work and tells the requester in simple words. With GitHub, Akasha writes a comment on the issue of the task for the developers.
 2. A developer examines the problem.
-3. The developer tells the agent engine to continue. The agent engine runs `resume`, and the count starts again at zero.
+3. The developer writes the decision comment `/resume` on the issue, after the comment of Akasha. When the developer is the GitHub account of the computer, the agent engine runs `resume`, and Akasha writes the comment. Without GitHub, the agent engine runs `resume --by <developer>`. The count starts again at zero.
 
 ## Change a workflow
 
