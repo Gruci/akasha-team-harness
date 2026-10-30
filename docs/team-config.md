@@ -6,7 +6,7 @@
 
 ```toml
 [roles]
-developers = ["lead-dev", "backend-dev"]
+developers = ["lead-dev"]
 administrators = ["repo-admin"]
 
 [risk]
@@ -15,7 +15,6 @@ medium = ["**/api/**"]
 
 [approval]
 high = ["developer"]
-medium = ["developer"]
 
 [checks]
 required = ["secrets", "tests", "lint"]
@@ -38,8 +37,8 @@ enabled = ["feature", "fix", "small"]
 
 | Key | Value |
 |:--|:--|
-| `developers` | The GitHub names of the developers |
-| `administrators` | The GitHub names of the administrators |
+| `developers` | The GitHub names of the people who can open a stopped task again and who hold the `developer` gate |
+| `administrators` | The GitHub names of the people who own the team rules and approve changes of the GitHub settings |
 
 A developer approval and a `resume` must come from a name in `developers`. A change of the GitHub settings must come from a name in `administrators`. When a list is empty, Akasha accepts each name for that role.
 
@@ -50,7 +49,7 @@ A developer approval and a `resume` must come from a name in `developers`. A cha
 | `high` | File patterns of high-risk code |
 | `medium` | File patterns of medium-risk code |
 
-A change is high risk when one changed file matches a `high` pattern. It is medium risk when one file matches a `medium` pattern or a contract. All other changes are low risk.
+A change is high risk when one changed file matches a `high` pattern. It is medium risk when one file matches a `medium` pattern or a contract. All other changes are low risk. The risk level goes into the impact analysis and the briefing.
 
 Pattern rules:
 
@@ -59,12 +58,16 @@ Pattern rules:
 
 ## `[approval]`
 
+By default, no person gate exists. The agent engine makes the technical decisions and records them.
+
+To add a person gate, name the roles that must approve each risk level:
+
 | Key | Value |
 |:--|:--|
 | `high` | The roles that must approve a high-risk change |
 | `medium` | The roles that must approve a medium-risk change |
 
-The roles are `requester`, `developer`, and `administrator`. Without this section, a high-risk change needs the approval of a developer. Akasha also writes these rules into CODEOWNERS.
+The roles are `requester`, `developer`, and `administrator`. Akasha also writes each gate into CODEOWNERS. Then GitHub also requires the review of these people before the merge.
 
 ## `[checks]`
 
@@ -98,9 +101,11 @@ A change that matches a contract pattern is medium risk or higher. The coordinat
 |:--|:--|
 | `enabled` | The workflows that tasks can use. The default is all workflows |
 
-## Team context
+## Product map and team context
 
-Put the decisions and the lessons of your team in `.akasha/context/` as Markdown files. The session start notice shows these files. The agent engine reads them before it writes a specification.
+`.akasha/context/product-map.md` tells how the features, screens, data, and APIs connect. `setup` writes an empty map. The agent engine reads it before each impact analysis and updates it before each handover.
+
+Put the other decisions and lessons of your team in `.akasha/context/` as Markdown files. The session start notice shows all these files.
 
 ## How Akasha examines this file
 

@@ -1,7 +1,7 @@
 {
   "name": "akasha",
   "version": "1.0.0",
-  "description": "Akasha: let any person on your team make features with an AI agent. Your developers get pull requests that they can merge.",
+  "description": "Akasha: let any person on your team build one product with an AI agent. The AI makes the technical decisions; people decide what to make.",
   "author": {"name": "Daehyun Kim", "url": "https://github.com/Gruci"},
   "homepage": "https://github.com/Gruci/akasha-team-harness",
   "repository": "https://github.com/Gruci/akasha-team-harness",

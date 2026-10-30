@@ -7,13 +7,14 @@ The infrastructure manager keeps the GitHub settings of the repository the same 
 | Item | Location | Function |
 |:--|:--|:--|
 | Required check `akasha` | `.github/workflows/akasha.yml` | Runs the required checks of the team on each pull request |
-| CODEOWNERS | `.github/CODEOWNERS` | Sets who must approve the changes in each area |
-| Pull request template | `.github/pull_request_template.md` | Gives the sections of the handover document |
-| Branch protection | The GitHub settings of the default branch | Stops a merge without the required check and the approvals |
+| CODEOWNERS block | The CODEOWNERS file of the repository | Gives the team rules to the administrators, and each gate to its people |
+| Pull request template | `.github/pull_request_template.md` | Gives the sections of the briefing to people who open a pull request by hand. Akasha keeps a template that the team already has |
+| Branch protection | The GitHub settings of the default branch | Stops a merge without the required check |
+| Repository settings | The GitHub settings of the repository | Permit auto-merge and squash merges, and delete a merged branch |
 
 ## The required check
 
-The check runs on each pull request:
+The check runs on each pull request and on each merge queue run:
 
 1. It installs Akasha.
 2. It takes `akasha.toml` from the default branch.
@@ -22,32 +23,38 @@ The check runs on each pull request:
 
 The rules come from the default branch. Thus a pull request that makes the checks weaker cannot pass with its own rules.
 
-## CODEOWNERS
-
-Akasha writes CODEOWNERS from `[risk]`, `[approval]`, and `[roles]`:
-
-- Each `high` and `medium` risk pattern gets the people who have the roles that `[approval]` names for that level.
-- `akasha.toml`, `.akasha/`, and `.github/` belong to the administrators.
-
-A plain GitHub name gets the prefix `@`.
-
-## Branch protection
+## Branch protection and auto-merge
 
 | Setting | Value |
 |:--|:--|
 | Required status check | `akasha` |
 | The branch must be up to date before a merge | Yes |
-| Approvals | One or more |
+| Approvals | None, except the code owners below |
 | Code owner review | Required |
 | Force push | Not permitted |
 | Deletion of the default branch | Not permitted |
 | Administrators can go around the rules | Yes |
+| Auto-merge, squash merge, deletion of merged branches | On |
+
+A pull request that changes no file with a code owner merges when the required check passes. Each merge is one squash commit with the briefing as its body.
+
+## CODEOWNERS
+
+Akasha writes its lines between `# akasha:start` and `# akasha:end`, at the end of the CODEOWNERS file. It keeps the other lines of the team.
+
+- `akasha.toml`, `.akasha/workflows/`, `.github/`, and the CODEOWNERS file belong to the administrators.
+- Each gate in `[approval]` gives the risk patterns of its level to the people with the gate roles.
+- `.akasha/context/` has no owner, so that an update of the product map does not stop a merge.
+
+A plain GitHub name gets the prefix `@`.
+
+> **NOTE:** In CODEOWNERS, the last matching line wins. A line of the team for all files, for example `* @team-leads`, makes each pull request wait for that review.
 
 ## Procedure: examine and correct the settings
 
-1. Run `infra`. Akasha shows each setting that is different from the team config. It reads the server files from the default branch.
+1. Run `infra`. Akasha shows each setting that is different from the team config. It reads the server files and the team config from the default branch.
 2. Ask an administrator to approve the correction.
-3. Run `infra --apply --by <administrator>`. Akasha writes the server files and sets branch protection.
+3. Run `infra --apply --by <administrator>`. Akasha writes the server files, sets branch protection, and changes the repository settings.
 4. Make a new branch. Commit the server files on it and open a pull request.
 5. Ask an administrator to merge the pull request.
 6. Run `infra` again. Make sure that it shows no problem.
@@ -58,10 +65,12 @@ The `akasha-setup` skill does these steps for the first setup.
 
 ## When a person changes a setting
 
-A person can change a setting on GitHub. Each handover examines the settings again. A task cannot complete the handover stage while a setting is not correct. The agent engine tells an administrator, and the administrator approves the correction.
+A person can change a setting on GitHub. Before each handover, Akasha examines the settings again. A task cannot go to the handover stage while a setting is not correct. The agent engine tells an administrator, and the administrator approves the correction.
+
+A person without administrator rights cannot read all of branch protection. For that person, Akasha examines the required check and the settings that GitHub shows.
 
 ## Requirements
 
-- The `gh` command line, logged in with an account that can read the repository.
-- To set branch protection, an account with administrator rights on the repository.
+- The `gh` command line, logged in with an account that can write to the repository.
+- To set branch protection and the repository settings, an account with administrator rights on the repository.
 - For a private repository, a GitHub plan that supports branch protection.

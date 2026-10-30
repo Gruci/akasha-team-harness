@@ -6,7 +6,7 @@
     {
       "name": "akasha",
       "source": "./",
-      "description": "Requests, risk levels, checks, inspection, and pull request handover for the whole team.",
+      "description": "Requests, AI impact analysis, checks, inspection, and auto-merge with a one-minute briefing for the whole team.",
       "version": "1.0.0"
     }
   ]

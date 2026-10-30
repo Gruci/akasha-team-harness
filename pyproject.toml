@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "akasha-team-harness"
 version = "1.0.0"
-description = "Let any person on your team make features with an AI agent. Your developers get pull requests that they can merge."
+description = "Let any person on your team build one product with an AI agent. The AI makes the technical decisions; people decide what to make."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
