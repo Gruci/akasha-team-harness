@@ -85,17 +85,15 @@ Akasha is a team harness. Each person on the team installs it. In Claude Code, t
 /plugin install akasha@akasha
 ```
 
-One person sets up each repository one time:
+Then open the team repository. Akasha first examines the repository on GitHub:
 
-1. Open the repository.
-2. Say "Set up Akasha."
-3. Answer the questions about the administrators, the high-risk areas, and the preview command.
-
-Akasha writes `akasha.toml` and the product map, configures GitHub, and writes the files that Codex reads. Then each person opens the repository and asks for features.
+- **The team rules and the server rules are on.** Akasha is ready. Ask for features. Nobody does a setup.
+- **The repository does not use Akasha yet.** Say "Set up Akasha." Akasha asks about the administrators, the high-risk areas, and the preview command. Then it writes `akasha.toml`, the product map, and the files that Codex reads.
+- **The server rules are off.** Akasha tells you. A repository administrator turns them on one time, for the whole team. Until then, you can work, but the handover waits.
 
 > **CAUTION:** Akasha changes branch protection, auto-merge, and CODEOWNERS only with the approval of a repository administrator.
 
-You need Python 3.11 or later and git. The pull request flow and the server rules need GitHub.
+You need Python 3.11 or later and git. The pull request flow and the server rules need GitHub. In a private repository, the server rules need GitHub Pro, Team, or Enterprise. GitHub Free has them only in public repositories.
 
 ## Inside Akasha
 
@@ -110,7 +108,7 @@ Akasha has eight parts in four areas.
 | Work procedure | Team config | Contains the team rules for one repository in `akasha.toml`: roles, risk rules, person gates, workflows, checks, and the preview command |
 | Agent engine | Agent engine | Operates Claude Code or Codex with the session rules, hooks, and skills of Akasha |
 | Coordination | Coordinator | Keeps the shared task board on GitHub and finds overlaps before a task starts. Stacks the tasks of one feature, and gives each task its own preview resources |
-| Infrastructure control | Infrastructure manager | Keeps the required check, branch protection, auto-merge, and CODEOWNERS the same as the team config, and offers to restore a changed setting |
+| Infrastructure control | Infrastructure manager | Examines the server rules when a person opens the repository. Keeps the required check, branch protection, auto-merge, and CODEOWNERS the same as the team config |
 
 ## What your team can change
 

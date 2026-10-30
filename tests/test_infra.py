@@ -57,6 +57,7 @@ class InfraTests(unittest.TestCase):
         self.assertIn("code owners do not have to approve", problems)
         partial = {"required_status_checks": {"contexts": ["akasha"]}, "partial": True}
         self.assertEqual(desired.drift(partial), [])                     # a person without administrator rights
+        self.assertEqual(desired.drift({"unavailable": True}), [desired.NO_PLAN])     # a private repository on Free
 
 
 if __name__ == "__main__":

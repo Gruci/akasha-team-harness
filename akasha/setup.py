@@ -6,7 +6,7 @@ from pathlib import Path
 
 from akasha import config
 from akasha.engine import codex
-from akasha.infra import github
+from akasha.infra import desired, github
 from akasha.validators import langs
 
 IGNORED = (".akasha/state/", ".akasha/work/")
@@ -47,8 +47,12 @@ def _team_config(root: Path) -> str:
 
 
 def run(root: Path, approved_by: str) -> list[str]:
-    report = []
+    """Examine the repository first. A repository with the team rules and the server rules on needs nothing."""
     path = root / config.CONFIG_FILE
+    problems = [] if approved_by else github.status(root)
+    if path.is_file() and not approved_by and not problems:
+        return ["Akasha is ready in this repository: the team rules and the server rules are on. Nothing to set up."]
+    report = []
     if path.is_file():
         report.append(f"{config.CONFIG_FILE} is present. Akasha keeps it.")
     else:
@@ -68,10 +72,15 @@ def run(root: Path, approved_by: str) -> list[str]:
                           encoding="utf-8")
     report.append("Akasha wrote " + ", ".join(codex.write(root)) + ". Codex needs Akasha installed with pip.")
     if approved_by:
-        problems = github.apply(root, approved_by)
-        report += [f"GitHub: {item}" for item in problems] or ["GitHub settings agree with akasha.toml."]
+        refused = github.apply(root, approved_by)
+        report += [f"GitHub: {item}" for item in refused] or ["GitHub settings agree with akasha.toml."]
     else:
-        report += [f"GitHub: {item}" for item in github.status(root)]
-        report.append("To change the GitHub settings, an administrator must approve. "
-                      "Then run setup again with --approve-infra <administrator>.")
+        report += [f"GitHub: {item}" for item in problems]
+        if desired.NO_PLAN in problems:
+            report.append("The owner of the repository must change the plan or make the repository public first.")
+        elif github.readiness(root).get("admin"):
+            report.append("You administer this repository. Approve the change, then run setup again with "
+                          "--approve-infra <your GitHub name>.")
+        else:
+            report.append("An administrator of the repository must turn on the server rules. Ask an administrator.")
     return report

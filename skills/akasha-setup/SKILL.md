@@ -1,17 +1,19 @@
 ---
 name: akasha-setup
-description: Set up Akasha in a repository. Use when the user says "Set up Akasha" or "Akasha 설정해줘", or when the session start notice says that the repository has no akasha.toml.
+description: Set up Akasha in a repository, or turn on its server rules. Use when the user says "Set up Akasha" or "Akasha 설정해줘", or when the session start notice says that the repository does not use Akasha yet or that its server rules are off.
 ---
 
 # Set up Akasha
 
 The session start notice gives the Akasha command. This skill writes it as `akasha`.
 
+Akasha examines the repository first. Do only the part that the repository needs.
+
 ## Procedure
 
-1. Run `akasha setup`. Akasha writes `akasha.toml`, the product map, and the files that Codex reads.
-2. Read `akasha.toml`.
-3. Ask the user these questions. Ask one question at a time.
+1. Run `akasha setup`.
+2. If Akasha says that the repository is ready, tell the user that Akasha is ready. Stop here.
+3. If Akasha wrote `akasha.toml`, the repository did not use Akasha yet. Ask the user these questions. Ask one question at a time.
    - Which GitHub names are the administrators?
    - Which folders contain high-risk code, for example data changes, permissions, or payments?
    - Must a person approve a change in these folders before the merge? If yes, which GitHub names?
@@ -19,13 +21,13 @@ The session start notice gives the Akasha command. This skill writes it as `akas
    - Which command installs the dependencies of the project in a new copy?
    - Which command runs the tests?
 4. Write each answer into `akasha.toml`. For a person gate, write the names in `[roles] developers` and remove the `#` in `[approval]`.
-5. Run `akasha infra`. Tell the user each setting that is not correct.
-6. Ask an administrator to approve the GitHub changes.
-7. After the approval, run `akasha setup --approve-infra <administrator>`.
-   Akasha writes the server files, sets branch protection, and turns on auto-merge.
-8. Make a new branch. Commit the new files on it and open a pull request.
-   The new files are `akasha.toml`, `.akasha/context/product-map.md`, `AGENTS.md`, `.codex/hooks.json`, `.gitignore`, and the files in `.github/`.
-9. Ask an administrator to merge the pull request. Then run `akasha infra` again. Make sure that it shows no problem.
+5. Read the last lines of the output of `akasha setup`:
+   - If the owner must change the plan or make the repository public, tell the user. The server rules cannot go on before that.
+   - If the user is not an administrator, tell the user to ask an administrator. The work can start now. The handover waits for the server rules.
+   - If the user is an administrator, ask the user to approve the GitHub changes. Then run `akasha setup --approve-infra <GitHub name>`.
+6. Make a new branch. Commit the new and changed files on it and open a pull request.
+   The files are `akasha.toml`, `.akasha/context/product-map.md`, `AGENTS.md`, `.codex/hooks.json`, `.gitignore`, and the files in `.github/`.
+7. Ask an administrator to merge the pull request. Then run `akasha infra`. Make sure that it shows no problem.
 
 > **CAUTION:** Do not change the GitHub settings without the approval of an administrator.
 

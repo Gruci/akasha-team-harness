@@ -13,6 +13,8 @@ TEMPLATE_FILE = ".github/pull_request_template.md"
 CODEOWNERS_FILES = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")     # GitHub uses the first that exists
 START, END = "# akasha:start", "# akasha:end"
 SETTINGS = {"allow_auto_merge": True, "allow_squash_merge": True, "delete_branch_on_merge": True}
+NO_PLAN = ("the GitHub plan of this private repository has no branch protection — use a public repository, "
+           "or GitHub Pro, Team, or Enterprise")
 
 
 def protection() -> dict:
@@ -86,6 +88,8 @@ def drift(current: dict | None) -> list[str]:
     The branch endpoint holds only the required checks, so Akasha examines only the checks then."""
     if not current:
         return ["the default branch has no branch protection"]
+    if current.get("unavailable"):
+        return [NO_PLAN]
     problems = []
     checks = current.get("required_status_checks") or {}
     contexts = set(checks.get("contexts") or []) | {item.get("context") for item in checks.get("checks") or []}

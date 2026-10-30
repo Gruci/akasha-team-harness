@@ -84,17 +84,15 @@ Akasha 는 팀 하네스입니다. 팀원 각자가 설치합니다. Claude Code
 /plugin install akasha@akasha
 ```
 
-레포마다 한 사람이 한 번 설정합니다.
+그다음 팀 레포를 엽니다. Akasha 가 먼저 GitHub 에서 레포를 확인합니다.
 
-1. 레포를 엽니다.
-2. "Akasha 설정해줘"라고 말합니다.
-3. 관리자, 위험하게 다룰 영역, 미리보기 명령에 대한 질문에 답합니다.
-
-Akasha 가 `akasha.toml` 과 제품 지도를 쓰고, GitHub 를 설정하고, Codex 가 읽는 파일도 씁니다. 그다음 팀원 각자가 레포를 열고 기능을 요청합니다.
+- **팀 규칙과 서버 규칙이 켜져 있으면** 바로 준비된 것입니다. 기능을 요청하면 됩니다. 아무도 설정하지 않습니다.
+- **레포가 아직 Akasha 를 쓰지 않으면** "Akasha 설정해줘"라고 말합니다. Akasha 가 관리자, 위험하게 다룰 영역, 미리보기 명령을 묻고 `akasha.toml`, 제품 지도, Codex 가 읽는 파일을 씁니다.
+- **서버 규칙이 꺼져 있으면** Akasha 가 알려 줍니다. 레포 관리자가 팀 전체를 위해 한 번 켭니다. 그때까지 작업은 할 수 있지만 인계는 기다립니다.
 
 > **주의:** 브랜치 보호, 자동 병합, CODEOWNERS 는 레포 관리자가 승인할 때만 바꿉니다.
 
-Python 3.11 이상과 git 이 필요합니다. PR 흐름과 서버 규칙에는 GitHub 가 필요합니다.
+Python 3.11 이상과 git 이 필요합니다. PR 흐름과 서버 규칙에는 GitHub 가 필요합니다. 비공개 레포의 서버 규칙에는 GitHub Pro, Team, Enterprise 가 필요합니다. GitHub Free 는 공개 레포에서만 지원합니다.
 
 ## Akasha 안에 있는 것
 
@@ -109,7 +107,7 @@ Akasha 는 네 영역, 여덟 부품으로 이루어집니다.
 | 작업 절차 | Team Config | 레포 하나의 팀 규칙을 `akasha.toml` 에 둡니다 — 역할, 위험 규칙, 사람 관문, 워크플로, 검사, 미리보기 명령 |
 | 에이전트 엔진 | Agent Engine | Akasha 의 세션 규칙·훅·스킬로 Claude Code 나 Codex 를 구동합니다 |
 | 조정 | Coordinator | GitHub 에 공유 작업 보드를 두고, 작업이 시작되기 전에 겹침을 찾고, 같은 기능의 과업을 쌓고, 과업마다 미리보기 자원을 나눕니다 |
-| 인프라 관리 | Infra Manager | 필수 검사, 브랜치 보호, 자동 병합, CODEOWNERS 를 Team Config 와 같게 유지하고, 바뀐 설정은 되돌리자고 제안합니다 |
+| 인프라 관리 | Infra Manager | 누가 레포를 열 때 서버 규칙을 확인하고, 필수 검사·브랜치 보호·자동 병합·CODEOWNERS 를 Team Config 와 같게 유지합니다 |
 
 ## 팀이 바꿀 수 있는 것
 

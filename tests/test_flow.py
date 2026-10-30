@@ -13,6 +13,7 @@ from akasha import config, flow, setup
 from akasha.core import workcopy
 from akasha.core import task as tasks
 from akasha.engine import hooks
+from akasha.infra import desired, github
 from tests.test_risk import BRIEFING
 
 PASS = f'"{sys.executable}" -c "raise SystemExit(0)"'
@@ -230,6 +231,14 @@ class FlowTests(unittest.TestCase):
         self.assertIn("akasha:start", (folder / "AGENTS.md").read_text(encoding="utf-8"))
         self.assertIn(".akasha/work/", (folder / ".gitignore").read_text(encoding="utf-8"))
 
+    def test_setup_does_nothing_in_a_ready_repository(self):
+        root = make_repo(PASS)
+        with patch("akasha.setup.github.status", return_value=[]):
+            report = setup.run(root, "")
+        self.assertEqual(len(report), 1)
+        self.assertIn("ready", report[0])
+        self.assertFalse((root / "AGENTS.md").exists())             # it writes nothing
+
 
 class HookTests(unittest.TestCase):
     def test_hooks_stop_unsafe_work(self):
@@ -267,6 +276,31 @@ class HookTests(unittest.TestCase):
         with redirect_stdout(output):
             hooks.session_start(root)
         self.assertIn(".akasha/context/decisions.md", output.getvalue())
+
+    def test_session_start_examines_the_server_rules_first(self):
+        root = make_repo(PASS)
+
+        def notice(problems: list[str], admin: bool) -> str:
+            (root / github.SERVER_STATE).unlink(missing_ok=True)
+            output = io.StringIO()
+            with patch("akasha.infra.github.repository", return_value=("team/app", "main")), \
+                    patch("akasha.infra.github.settings", return_value={"permissions": {"admin": admin}}), \
+                    patch("akasha.infra.github.protection", return_value=None), \
+                    patch("akasha.infra.desired.drift", return_value=problems), \
+                    patch("akasha.infra.github._server_file", side_effect=lambda r, b, p: None), \
+                    patch("akasha.infra.desired.workflow", return_value=None), \
+                    patch("akasha.infra.desired.block", return_value=""), \
+                    patch("akasha.infra.desired.codeowners", return_value=""), redirect_stdout(output):
+                hooks.session_start(root)
+            return output.getvalue()
+
+        self.assertNotIn("server rules", notice([], admin=False))                # ready: nothing to tell
+        self.assertIn("You administer this repository", notice(["the check akasha is not required"], admin=True))
+        self.assertIn("Ask an administrator", notice(["the check akasha is not required"], admin=False))
+        self.assertIn("change the plan", notice([desired.NO_PLAN], admin=True))
+        with patch("akasha.infra.github.status") as examined, redirect_stdout(io.StringIO()):
+            hooks.session_start(root)                                            # a fresh record needs no network
+        examined.assert_not_called()
 
 
 if __name__ == "__main__":

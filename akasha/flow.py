@@ -162,8 +162,16 @@ def advance(root: Path, task_id: str) -> list[str]:
         except RuntimeError:
             pass                                      # the next request tries again
     _publish(root, task)
-    return [f"a {' and a '.join(gate)} must approve the {task.risk} risk level" if name == "risk_approvals"
-            else stages.EXPLAIN.get(name, name) for name in blocked]
+    return [_explain(root, name, gate, task) for name in blocked]
+
+
+def _explain(root: Path, name: str, gate: list[str], task: Task) -> str:
+    if name == "risk_approvals":
+        return f"a {' and a '.join(gate)} must approve the {task.risk} risk level"
+    if name == "infra_ready":                         # the examination of this advance names the real cause
+        problems = github.readiness(root)["problems"]
+        return f"the server rules are not on: {problems[0]}" if problems else stages.EXPLAIN[name]
+    return stages.EXPLAIN.get(name, name)
 
 
 def specify(root: Path, task_id: str, conditions: list[str], questions: list[str], clear_questions: bool,

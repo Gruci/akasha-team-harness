@@ -13,13 +13,14 @@ from pathlib import Path
 from akasha import config, flow
 from akasha.core import task as tasks
 from akasha.core import workcopy
+from akasha.infra import desired, github
 from akasha.repo import main_root
 from akasha.validators import guard, secrets
 
 SHELL_TOOLS = ("Bash", "PowerShell", "shell")
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch")
 _PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update) File: (.+)$", re.M)
-SETUP_HINT = "This repository has no akasha.toml. To set up Akasha, use the akasha-setup skill."
+SETUP_HINT = "This repository does not use Akasha yet. To start, use the akasha-setup skill."
 
 
 def _payload() -> dict:
@@ -59,8 +60,23 @@ def session_start(root: Path) -> int:
         lines.append(f"[AKASHA] Read the team context before you write a specification: {', '.join(context)}")
     lines += [f"[AKASHA] Task {task.id}: {task.status}, stage {task.stage}, risk {task.risk}, {task.title}"
               for task in tasks.all_tasks(root) if tasks.active(task)]
+    lines += _server_notice(root)
     print("\n".join(lines))
     return 0
+
+
+def _server_notice(root: Path) -> list[str]:
+    """Nothing when the server rules are on. Else who can turn them on: this person, or an administrator."""
+    known = github.readiness(root)
+    if not known["problems"]:
+        return []
+    if known["problems"][0] == desired.NO_PLAN:
+        who = "[AKASHA] The owner of the repository must change the plan or make the repository public first."
+    elif known.get("admin"):
+        who = "[AKASHA] You administer this repository. To turn the server rules on, use the akasha-setup skill."
+    else:
+        who = "[AKASHA] Ask an administrator of the repository to turn them on. You can work now; the handover waits."
+    return [f"[AKASHA] The server rules of this repository are off: {known['problems'][0]}.", who]
 
 
 def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict) -> int:

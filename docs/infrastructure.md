@@ -63,6 +63,19 @@ The `akasha-setup` skill does these steps for the first setup.
 
 > **CAUTION:** Akasha changes the GitHub settings only with the approval of an administrator that `[roles]` names.
 
+## When a person opens the repository
+
+Each person installs Akasha. Nobody has to do a setup in a repository that is ready. At the start of each session, Akasha examines the server rules and tells the result only when a rule is off:
+
+| Result | What Akasha tells |
+|:--|:--|
+| All rules are on | Nothing |
+| A rule is off, and the person administers the repository | Turn the rules on with the `akasha-setup` skill |
+| A rule is off, and the person does not administer the repository | Ask an administrator. Work can start now; the handover waits |
+| The repository is private on GitHub Free | The owner must change the plan or make the repository public first |
+
+Akasha keeps the result for 12 hours in `.akasha/state/server.json`, so that a session start stays fast. Each `infra` command and each examination before the handover updates it.
+
 ## When a person changes a setting
 
 A person can change a setting on GitHub. Before each handover, Akasha examines the settings again. A task cannot go to the handover stage while a setting is not correct. The agent engine tells an administrator, and the administrator approves the correction.
@@ -73,4 +86,4 @@ A person without administrator rights cannot read all of branch protection. For 
 
 - The `gh` command line, logged in with an account that can write to the repository.
 - To set branch protection and the repository settings, an account with administrator rights on the repository.
-- For a private repository, a GitHub plan that supports branch protection.
+- For a private repository, GitHub Pro, Team, or Enterprise. GitHub Free has branch protection and auto-merge only in public repositories.

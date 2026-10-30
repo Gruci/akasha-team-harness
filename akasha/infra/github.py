@@ -5,12 +5,16 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from akasha import config
 from akasha.core.workcopy import git
 from akasha.infra import desired
 from akasha.repo import gh
+
+SERVER_STATE = config.STATE_DIR / "server.json"      # the last examination of the server rules on this computer
+_NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no branch protection for private repositories
 
 
 def repository(root: Path) -> tuple[str, str] | None:
@@ -28,6 +32,8 @@ def protection(root: Path, slug: str, branch: str) -> dict | None:
     full = gh(root, "api", f"repos/{slug}/branches/{branch}/protection")
     if full.returncode == 0:
         return json.loads(full.stdout)
+    if _NO_PLAN in full.stdout + full.stderr:
+        return {"unavailable": True}
     seen = gh(root, "api", f"repos/{slug}/branches/{branch}")
     if seen.returncode:
         return None
@@ -61,12 +67,17 @@ def _server_team(root: Path, branch: str) -> config.Team:
 
 
 def status(root: Path) -> list[str]:
-    """The problems of the repository settings. An empty list means that the settings are correct."""
+    """The problems of the repository settings. An empty list means that the settings are correct.
+
+    Each examination also updates the record that the session start notice reads."""
     found = repository(root)
     if found is None:
-        return ["Akasha cannot read the GitHub repository — make sure that gh is installed and logged in"]
+        problems = ["Akasha cannot read the GitHub repository — make sure that gh is installed and logged in"]
+        _remember(root, problems, False)
+        return problems
     slug, branch = found
-    problems = desired.drift(protection(root, slug, branch)) + desired.settings_drift(settings(root, slug))
+    current = settings(root, slug)
+    problems = desired.drift(protection(root, slug, branch)) + desired.settings_drift(current)
     git(root, "fetch", "-q", "origin", branch)                        # the server uses the default branch
     if _server_file(root, branch, desired.WORKFLOW_FILE) != desired.workflow():
         problems.append(f"{desired.WORKFLOW_FILE} on {branch} is missing or different")
@@ -74,7 +85,29 @@ def status(root: Path) -> list[str]:
                    if (text := _server_file(root, branch, path)) is not None), "")
     if desired.block(owners) != desired.codeowners(_server_team(root, branch)):
         problems.append(f"the Akasha block of CODEOWNERS on {branch} is missing or different from akasha.toml")
+    _remember(root, problems, bool((current.get("permissions") or {}).get("admin")))
     return problems
+
+
+def _remember(root: Path, problems: list[str], admin: bool) -> None:
+    path = root / SERVER_STATE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"checked": time.time(), "problems": problems, "admin": admin}), encoding="utf-8")
+
+
+def readiness(root: Path, max_age: float = 12 * 3600) -> dict:
+    """The last examination of the server rules: the problems, and whether this person administers the repository.
+
+    Akasha examines GitHub again only when the record is older than max_age, so that a session start stays fast."""
+    path = root / SERVER_STATE
+    try:
+        known = json.loads(path.read_text(encoding="utf-8"))
+        if time.time() - known["checked"] < max_age:
+            return known
+    except (OSError, ValueError, KeyError):
+        pass
+    status(root)
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def apply(root: Path, approved_by: str) -> list[str]:
@@ -107,6 +140,9 @@ def apply(root: Path, approved_by: str) -> list[str]:
     changed = gh(root, "api", "--method", "PATCH", f"repos/{slug}", "--input", "-", payload=desired.SETTINGS)
     if changed.returncode:
         problems.append(f"GitHub refused the repository settings: {changed.stderr.strip()[:300]}")
+    # GitHub can accept the request and keep a setting off, for example auto-merge in a private repository on the
+    # free plan. Thus Akasha reads the settings again.
+    problems += [f"GitHub kept a setting off: {item}" for item in desired.settings_drift(settings(root, slug))]
     return problems
 
 
