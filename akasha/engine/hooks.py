@@ -23,6 +23,7 @@ EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch")
 _PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update) File: (.+)$", re.M)
 SETUP_HINT = "This repository does not use Akasha yet. To start, use the akasha-setup skill."
 BOARD_SECONDS = 10                                     # the session start does not wait longer for the board
+MAP_NAMES = 30                                         # the session start names this many feature keys at most
 
 
 def _payload() -> dict:
@@ -65,6 +66,16 @@ def _uses_akasha(root: Path) -> bool:
     return (root / config.CONFIG_FILE).is_file() or bool(_server_only(root))
 
 
+def _rules(root: Path) -> config.Team:
+    """The team rules on the default branch as git fetched it last: the hooks use no network for them. A team config
+    with a problem gives the default rules here. The commands of a task tell the problem."""
+    branch = github.known_branch(root)
+    try:
+        return config.shared(root, f"origin/{branch}" if branch else "")
+    except config.ConfigError:
+        return config.Team()
+
+
 def session_start(root: Path) -> int:
     notice = f"[AKASHA] Akasha command: {command()} <command>"
     if not _uses_akasha(root):
@@ -79,10 +90,26 @@ def session_start(root: Path) -> int:
     context = sorted(path.relative_to(root).as_posix() for path in (root / config.TEAM_CONTEXT).glob("*.md"))
     if context:
         lines.append(f"[AKASHA] Read the team context before you write a specification: {', '.join(context)}")
+    lines += _map_lines(root, _rules(root))
     lines += _task_lines(root)
     lines += _server_notice(root)
     print("\n".join(lines))
     return 0
+
+
+def _map_lines(root: Path, team: config.Team) -> list[str]:
+    """Where the map file of each feature is, and the feature keys that have a map file in this checkout. A new task
+    takes one of these keys when it fits."""
+    folder = root / team.map_dir
+    names = sorted(path.relative_to(folder).with_suffix("").as_posix() for path in folder.rglob("*.md")
+                   if path.is_file()) if folder.is_dir() else []
+    keys = [name for name in names if flow.FEATURE_KEY.fullmatch(name)]      # not the guide README.md
+    lines = [f"[AKASHA] Product map: {team.map_dir}/<feature key>.md. Read the file of the feature before the impact "
+             "analysis, and update it before the handover."]
+    if keys:
+        more = f", and {len(keys) - MAP_NAMES} more" if len(keys) > MAP_NAMES else ""
+        lines.append(f"[AKASHA] Feature keys with a map file: {', '.join(keys[:MAP_NAMES])}{more}")
+    return lines
 
 
 def _task_lines(root: Path) -> list[str]:
@@ -161,7 +188,7 @@ def turn_end(root: Path) -> int:
     """Tell the user about each task with a work copy on this computer that needs a person: a stopped task, or
     changes outside the task scope. A task that this computer handed off has no work copy here. With GitHub, a
     developer opens a stopped task again with the decision comment /resume on its issue."""
-    found = []
+    found, team = [], None
     for task in tasks.all_tasks(root):
         if not task.workcopy or not Path(task.workcopy).is_dir():
             continue
@@ -169,7 +196,8 @@ def turn_end(root: Path) -> int:
             found.append(f"Task {task.id} stopped after failed repairs. A developer must examine it"
                          + (f", then write /resume as a new comment on {task.board}." if task.board else "."))
         elif task.status == "open":
-            outside = flow.outside_scope(task, workcopy.changed_files(task))
+            team = team or _rules(root)
+            outside = flow.outside_scope(team, task, workcopy.changed_files(task))
             if outside:
                 found.append(f"Task {task.id} changed files outside its scope: {', '.join(outside[:5])}.")
     if found:

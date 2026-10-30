@@ -29,7 +29,7 @@ class Task:
     stage: str
     status: str = "open"
     requester: str = ""
-    feature: str = ""                                          # the feature key for overlap checks
+    feature: str = ""                                          # the feature key, for the map file and overlaps
     scope: list[str] = field(default_factory=list)             # file patterns that the task can change
     contracts: list[str] = field(default_factory=list)         # public contracts that the task changes
     conditions: list[str] = field(default_factory=list)        # the completion conditions
@@ -40,7 +40,7 @@ class Task:
     accepted: dict[str, bool] = field(default_factory=dict)    # condition -> result of the inspection
     checks: dict[str, str] = field(default_factory=dict)       # check -> PASS, FAIL, or SKIP
     impact: dict[str, str] = field(default_factory=dict)       # the impact analysis of the agent engine
-    map_note: str = ""                                         # why the product map does not change
+    map_note: str = ""                                         # why the map file of the feature does not change
     briefing: str = ""                                         # the pull request briefing, without Verification
     builds_on: str = ""                                        # the earlier task that this task builds on
     failures: int = 0

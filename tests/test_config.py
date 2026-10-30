@@ -40,6 +40,19 @@ class ConfigTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(config.ConfigError):
                 config.load(self.repo(text))
 
+    def test_the_map_folder_is_a_folder_in_the_repository(self):
+        self.assertEqual(config.load(self.repo()).map_dir, ".akasha/context/map")
+        for text in ('[context]\nmap = "docs/features/"\n', "[context]\nmap = 'docs\\features'\n",
+                     '[context]\nmap = "./docs/features"\n'):
+            with self.subTest(text=text):
+                self.assertEqual(config.load(self.repo(text)).map_dir, "docs/features")
+        for value in ('"/docs/features"', '"C:/docs"', '"c:docs"', '"../features"', '"docs/../../features"', '"."',
+                      '""', '" "', "1"):
+            with self.subTest(value=value), self.assertRaises(config.ConfigError):
+                config.load(self.repo(f"[context]\nmap = {value}\n"))
+        with self.assertRaises(config.ConfigError):
+            config.load(self.repo('[context]\nfolder = "docs"\n'))
+
     def test_the_setup_records_who_enforces_the_server_rules(self):
         root = self.repo('[roles]\nadministrators = ["admin"]\n')
         self.assertEqual(config.load(root).server_rules, "github")

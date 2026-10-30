@@ -19,7 +19,7 @@ class Context:
     required_checks: tuple[str, ...] = ()
     outside_scope: tuple[str, ...] = ()       # changed files that the scope does not permit
     infra_ready: bool = False
-    map_changed: bool = False                 # the change updates the product map
+    map_changed: bool = False                 # the change updates the map file of the feature of the task
     merged: bool = False                      # GitHub merged the pull request
 
 
@@ -90,7 +90,7 @@ EXPLAIN = {
     "scope_respected": "the change touches files outside the task scope",
     "checks_pass": "a required check did not pass",
     "accepted": "the requester did not accept each completion condition",
-    "map_current": "the change does not update the product map, and no reason is recorded",
+    "map_current": "the change does not update the product map of its feature, and no reason is recorded",
     "infra_ready": "the required check, branch protection, or auto-merge is not on — an administrator must correct "
                    "the GitHub settings",
     "pull_request_open": "no pull request is open",

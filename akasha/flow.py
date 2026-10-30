@@ -16,6 +16,7 @@ from it, not from the checkout of this computer, which can be old."""
 from __future__ import annotations
 
 import functools
+import re
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -32,6 +33,9 @@ from akasha.repo import gh
 from akasha.validators import briefing as briefing_rules, runner
 
 CONTEXT_PREFIX = config.TEAM_CONTEXT.as_posix() + "/"
+# A feature key: a to z, 0 to 9, and -, with / between the parts of a large feature, for example billing/invoice.
+# The key is also the path of the map file of the feature, so it must be a file name on each computer.
+FEATURE_KEY = re.compile(r"[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*")
 OLD_SETUP_NOTE = "the setup command failed in the work copy: "     # Akasha 1.0.0 wrote the output after it
 _ignored: dict[str, list[tuple[board.Comment, str]]] = {}         # the decision comments that did not count, by task
 _read_status: dict[str, str] = {}             # the status of each task before the decision comments of its last read
@@ -644,12 +648,42 @@ def _open_workcopy(root: Path, team: Team, task: Task, start: str = "") -> None:
         task.notes.append(_setup_note(task))
 
 
-def outside_scope(task: Task, changed: list[str]) -> tuple[str, ...]:
+def outside_scope(team: Team, task: Task, changed: list[str]) -> tuple[str, ...]:
     """The changed files that the task scope does not permit. A task without a scope permits all files.
 
-    The team context, for example the product map, is outside each scope, so that each task can update it."""
-    return tuple(path for path in changed if task.scope and not path.startswith(CONTEXT_PREFIX)
+    The team context and the map folder are outside each scope, so that each task can update its map file. The team
+    can put the map folder outside the team context ([context] map)."""
+    free = (CONTEXT_PREFIX, team.map_dir + "/")
+    return tuple(path for path in changed if task.scope and not path.startswith(free)
                  and not any(risk.matches(path, pattern) for pattern in task.scope))
+
+
+def _feature_key(key: str) -> str:
+    """The feature key of a new or a changed task. "" is no key. A key with another shape stops the command."""
+    key = key.strip()
+    if key and not FEATURE_KEY.fullmatch(key):
+        raise ValueError(f"the feature key {key} is not correct. Use a to z, 0 to 9, and -, and / between the parts of "
+                         "a large feature, for example billing or billing/invoice")
+    return key
+
+
+def map_file(team: Team, feature: str) -> str:
+    """The map file of the feature: the whole key selects it, so that the parts of a large feature have their own
+    files. billing gives <map folder>/billing.md, and billing/invoice gives <map folder>/billing/invoice.md. "" for
+    no key, and for a key of Akasha 1.0.0 with another shape."""
+    return f"{team.map_dir}/{feature}.md" if FEATURE_KEY.fullmatch(feature) else ""
+
+
+def _map_changed(team: Team, task: Task, changed: list[str]) -> bool:
+    """True when the change updates the product map of the task: its map file, a file of the parts of its feature,
+    or the one product map of Akasha 1.0.0. Without a feature key, each map file counts. The guide of the map folder
+    maps no feature."""
+    folder, own = team.map_dir + "/", map_file(team, task.feature)
+    if config.LEGACY_MAP.as_posix() in changed:
+        return True
+    if own:
+        return own in changed or any(path.startswith(f"{folder}{task.feature}/") for path in changed)
+    return any(path.startswith(folder) and path != folder + config.MAP_README for path in changed)
 
 
 def _raise_risk(task: Task, paths: list[str], team: Team) -> None:
@@ -671,7 +705,8 @@ def start(root: Path, title: str, requester: str = "", workflow: str = "feature"
     holds it in this copy of the repository. With GitHub, the requester is a GitHub account (_requester).
 
     The main checkout goes forward to the latest default branch when it can (_catch_up). Else `behind` tells how to
-    read the latest files."""
+    read the latest files. The feature key selects the map file of the task (map_file)."""
+    feature = _feature_key(feature)
     team = rules(root)
     _tidy(root)
     if workflow not in team.workflows:
@@ -725,7 +760,7 @@ def context(root: Path, team: Team, task: Task) -> stages.Context:
         _raise_risk(task, changed, team)
     return stages.Context(
         approval_roles=team.approval.get(task.risk, ()), required_checks=team.required_checks,
-        outside_scope=outside_scope(task, changed), map_changed=config.PRODUCT_MAP.as_posix() in changed,
+        outside_scope=outside_scope(team, task, changed), map_changed=_map_changed(team, task, changed),
         infra_ready="infra_ready" in exits and not github.status(root),
         merged="merged" in exits and bool(task.pull_request) and github.merged(root, task.pull_request))
 
@@ -751,14 +786,20 @@ def advance(root: Path, task_id: str) -> list[str]:
         except RuntimeError:
             pass                                      # the next request tries again
     _publish(root, task)
-    return [_explain(root, name, gate, task) for name in blocked]
+    return [_explain(root, team, name, gate, task) for name in blocked]
 
 
-def _explain(root: Path, name: str, gate: list[str], task: Task) -> str:
-    """The reason in simple words. With GitHub, a reason that waits for a person names the decision comment."""
+def _explain(root: Path, team: Team, name: str, gate: list[str], task: Task) -> str:
+    """The reason in simple words. With GitHub, a reason that waits for a person names the decision comment. A
+    product map that is not current names the map file that Akasha expects."""
     if name == "infra_ready":                         # the examination of this advance names the real cause
         problems = github.readiness(root)["problems"]
         return f"the server rules are not on: {problems[0]}" if problems else stages.EXPLAIN[name]
+    if name == "map_current":
+        own = map_file(team, task.feature)
+        where = f"the map file {own}" if own else f"a map file in {team.map_dir}/"
+        return (f"{stages.EXPLAIN[name]}. Update {where} in the work copy, or record why the map does not change: "
+                f"akasha impact {task.id} --map-unchanged \"<reason>\"")
     text = f"a {' and a '.join(gate)} must approve the {task.risk} risk level" if name == "risk_approvals" \
         else stages.EXPLAIN.get(name, name)
     wanted = _wanted(name, gate, task) if task.board and board.available(root) else ""
@@ -784,11 +825,14 @@ def _wanted(name: str, gate: list[str], task: Task) -> str:
 @_command
 def specify(root: Path, task_id: str, conditions: list[str], questions: list[str], clear_questions: bool,
             scope: list[str] | None = None, builds_on: str | None = None,
-            requester: str | None = None) -> tuple[Task, list[overlap.Overlap]]:
+            requester: str | None = None, feature: str | None = None) -> tuple[Task, list[overlap.Overlap]]:
     """Add completion conditions, open questions, or file patterns of the scope. `builds_on=""` stops building on
-    the earlier task. `requester` gives the GitHub account of a requester that is not a GitHub account.
+    the earlier task. `requester` gives the GitHub account of a requester that is not a GitHub account. `feature`
+    changes the feature key, and "" removes it.
 
-    A wider scope can raise the risk level and touch other tasks, so Akasha compares it with the open tasks again."""
+    A wider scope can raise the risk level and touch other tasks, and the feature key finds the tasks of the same
+    feature. So after a change of either, Akasha compares the task with the open tasks again."""
+    key = _feature_key(feature) if feature is not None else None
     task = _held(root, task_id)
     if requester is not None:
         _rename_requester(root, task, requester)
@@ -800,11 +844,13 @@ def specify(root: Path, task_id: str, conditions: list[str], questions: list[str
     if builds_on is not None:
         _unstack(root, task, builds_on)
     added = [pattern for pattern in scope or [] if pattern not in task.scope]
-    found = []
     if added:
         task.scope += added
         _raise_risk(task, added, rules(root))
-        found = _compare(root, task)
+    moved = key is not None and key != task.feature
+    if moved:
+        task.feature = key
+    found = _compare(root, task) if added or moved else []
     _publish(root, task)
     return task, found
 
@@ -1063,7 +1109,7 @@ def check(root: Path, task_id: str) -> runner.Result:
     team, task = rules(root), _held(root, task_id)
     tree = _tree(task)
     result = runner.run(team, tree, workcopy.changed_files(task))
-    if _passed(result) and not _strays(task):
+    if _passed(result) and not _strays(team, task):
         _commit(tree, task.title)
         result = _push(root, team, tree, task, result)
     task.checks = result.status
@@ -1155,9 +1201,9 @@ def _tree(task: Task) -> Path:
     return Path(task.workcopy)
 
 
-def _strays(task: Task) -> tuple[str, ...]:
+def _strays(team: Team, task: Task) -> tuple[str, ...]:
     """Files in the work copy that the scope does not permit. They must not go into a commit."""
-    return outside_scope(task, workcopy.changed_files(task))
+    return outside_scope(team, task, workcopy.changed_files(task))
 
 
 def ci_check(root: Path, config_path: Path | None, base: str) -> runner.Result:
@@ -1203,7 +1249,7 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     merge workflow of Akasha where GitHub has none. The commit body is the briefing, so a person who must revert the
     change later finds it fast. Return the pull request address and the reasons that keep the task at the handover
     stage."""
-    task = _held(root, task_id)
+    team, task = rules(root), _held(root, task_id)
     if task.stage != "handover" or task.status != "open":
         raise ValueError(f"the task is {task.status} at the {task.stage} stage — the handover needs an open task "
                          "at the handover stage")
@@ -1223,7 +1269,7 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     task.pull_request = known["url"] if known.get("state") == "OPEN" else ""
     _publish(root, task)
     tree = _tree(task)
-    strays = _strays(task)
+    strays = _strays(team, task)
     if strays:
         raise RuntimeError(f"the work copy has files outside the scope: {', '.join(strays[:5])}. Remove them, add them "
                            "to .gitignore, or widen the scope with specify --scope. Then do the handover again")
@@ -1248,7 +1294,6 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     if task.wip:                                      # the task branch has the work of the last handoff now
         _drop_wip(root, task)
         _publish(root, task)
-    team = rules(root)
     helped = team.server_rules == "akasha"            # the merge workflow of Akasha merges a pull request with the label
     if not task.pull_request:                         # a second handover only pushes the new commits
         created = gh(root, "pr", "create", "--base", branch, "--head", task.branch, "--title", task.title,
@@ -1301,7 +1346,7 @@ def handoff(root: Path, task_id: str) -> Task:
         if status == "FAIL":
             raise RuntimeError(f"the work copy has secret keys: {'; '.join(hits.splitlines())}. Remove them, then do "
                                "the handoff again")
-        strays = outside_scope(task, changed)
+        strays = outside_scope(rules(root), task, changed)
         if strays:
             raise RuntimeError(f"the work copy has files outside the scope: {', '.join(strays[:5])}. Remove them, add "
                                "them to .gitignore, or widen the scope with specify --scope. Then do the handoff again")

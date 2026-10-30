@@ -12,12 +12,17 @@ RULES = f"""{START}
 This repository uses Akasha. Do each change as an Akasha task. The Akasha command is `python -m akasha`.
 Ask people only what to make, how it looks, and how they use it. Make the technical decisions yourself and record them.
 
-1. Record the task: `python -m akasha request "<title>" --feature <feature key>`. With GitHub, the requester is the
+1. Select the feature key. The product map has one file for each key in `.akasha/context/map/`, or in the folder
+   of `[context] map` in akasha.toml. Use the name of a map file when one fits: `billing` for `billing.md`.
+   For a part of a large feature, use `<feature>/<part>`. Use only a to z, 0 to 9, and `-`.
+   Record the task: `python -m akasha request "<title>" --feature <feature key>`. With GitHub, the requester is the
    GitHub account of this computer. For another requester, add `--requester <GitHub name>`.
    If an earlier task makes the same feature, add `--builds-on <earlier task>`.
+   To change the key later, run `python -m akasha specify <task> --feature <feature key>`.
 2. Ask the requester questions until the completion conditions are clear. Record each condition:
    `python -m akasha specify <task> --condition "<condition>"`.
-3. Read `.akasha/context/product-map.md`. Find the files, data, and APIs that the change touches.
+3. Read the map file of the feature: `python -m akasha show <task>` names it. Search the map folder for the feature
+   key, and find the features that name it in "Depends on". Find the files, data, and APIs that the change touches.
    If the request said that the main checkout is behind the default branch, read the latest files with
    `git show origin/<default branch>:<path>` and `git grep <text> origin/<default branch>`.
    Record the scope: `python -m akasha specify <task> --scope <file patterns>`.
@@ -32,7 +37,7 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
 8. Show the result to the requester. The requester writes `/accept <number> r<N>` or `/reject <number> r<N> <reason>`
    on the issue. If the requester is the GitHub account of this computer, run
    `python -m akasha accept <task> --condition <number> --result yes`.
-9. Update the product map in the work copy, or record why it does not change:
+9. Update the map file of the feature in the work copy, or record why it does not change:
    `python -m akasha impact <task> --map-unchanged "<reason>"`.
 10. Write the briefing with the sections Why, What changed, Scope, Tradeoffs, and Blast Radius. Record it:
     `python -m akasha brief <task> --file <path>`. Then run `python -m akasha handover <task>`.

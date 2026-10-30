@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from akasha import __main__ as command_line
 from akasha import config, flow, setup
-from akasha.coordinator import board
+from akasha.coordinator import board, overlap
 from akasha.core import stages, workcopy
 from akasha.core import task as tasks
 from akasha.engine import hooks
@@ -150,7 +150,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(flow.advance(root, task.id), [])    # a Korean name and the product map are in order
         (work / "billing.py").write_text("x = 1\n", encoding="utf-8")
         (work / "청구.py").write_text("KEY = 'sk-" + "d" * 24 + "'\n", encoding="utf-8")
-        self.assertEqual(flow.outside_scope(tasks.load(root, task.id), workcopy.changed_files(task)),
+        self.assertEqual(flow.outside_scope(config.load(root), tasks.load(root, task.id), workcopy.changed_files(task)),
                          ("billing.py", "청구.py"))
         self.assertEqual(flow.check(root, task.id).status["secrets"], "FAIL")
         output = io.StringIO()
@@ -447,11 +447,14 @@ class FlowTests(unittest.TestCase):
     def test_setup_writes_a_team_config_that_loads(self):
         folder = Path(tempfile.mkdtemp(prefix="akasha-setup-"))
         subprocess.run(["git", "init", "-q"], cwd=folder, check=True)
+        (folder / config.TEAM_CONTEXT).mkdir(parents=True)
+        (folder / config.LEGACY_MAP).write_text("## Search\n", encoding="utf-8")        # the map of Akasha 1.0.0
         report = setup.run(folder, "")
         self.assertIn("Akasha wrote akasha.toml", report[0])
         team = config.load(folder)
         self.assertEqual((team.required_checks, team.approval), (("secrets",), {}))
-        self.assertTrue((folder / config.PRODUCT_MAP).is_file())
+        self.assertIn("one map file for each feature key", (folder / config.MAP_DIR / "README.md").read_text("utf-8"))
+        self.assertEqual((folder / config.LEGACY_MAP).read_text(encoding="utf-8"), "## Search\n")     # it stays
         self.assertIn("akasha:start", (folder / "AGENTS.md").read_text(encoding="utf-8"))
         self.assertIn(".akasha/work/", (folder / ".gitignore").read_text(encoding="utf-8"))
 
@@ -462,6 +465,148 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(len(report), 1)
         self.assertIn("ready", report[0])
         self.assertFalse((root / "AGENTS.md").exists())             # it writes nothing
+
+
+class ProductMapTests(unittest.TestCase):
+    """One map file for each feature key, so that the tasks of different features do not change the same file."""
+
+    def setUp(self):
+        board_gh = patch("akasha.coordinator.board.gh", FakeBoard(broken=True))   # origin is not on GitHub
+        board_gh.start()
+        self.addCleanup(board_gh.stop)
+
+    def started(self, feature: str = "", rules: str = "", scope: list[str] | None = None) -> tuple[Path, tasks.Task]:
+        """A small task with its work copy in a new repository. `rules` goes into akasha.toml first."""
+        root = make_repo(PASS)
+        if rules:
+            with (root / "akasha.toml").open("a", encoding="utf-8") as file:
+                file.write(rules)
+            workcopy.git(root, "commit", "-qam", "team rules")
+        task, _ = flow.start(root, "Change the search", "ops-a", workflow="small", feature=feature, scope=scope)
+        return root, task
+
+    def updates_map(self, root: Path, task: tasks.Task, path: str) -> bool:
+        """Change one file in the work copy. True when Akasha counts the change as an update of the product map."""
+        file = Path(task.workcopy) / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("# Map\n", encoding="utf-8")
+        try:
+            return flow.context(root, config.load(root), tasks.load(root, task.id)).map_changed
+        finally:
+            file.unlink()
+
+    def test_the_whole_feature_key_selects_the_map_file(self):
+        root, task = self.started("search")
+        folder = config.MAP_DIR.as_posix()
+        for path, counted in ((f"{folder}/search.md", True), (f"{folder}/search/date.md", True),
+                              (f"{folder}/billing.md", False), (f"{folder}/search-old.md", False),
+                              (f"{folder}/README.md", False), (config.LEGACY_MAP.as_posix(), True)):
+            with self.subTest(path=path):
+                self.assertEqual(self.updates_map(root, task, path), counted)
+        root, task = self.started("billing/invoice")
+        self.assertEqual(flow.map_file(config.load(root), task.feature), f"{folder}/billing/invoice.md")
+        self.assertTrue(self.updates_map(root, task, f"{folder}/billing/invoice.md"))
+        self.assertFalse(self.updates_map(root, task, f"{folder}/billing.md"))    # the other parts keep their files
+
+    def test_a_task_without_a_feature_key_updates_any_map_file(self):
+        root, task = self.started()
+        folder = config.MAP_DIR.as_posix()
+        for path, counted in ((f"{folder}/billing.md", True), (f"{folder}/billing/invoice.md", True),
+                              (config.LEGACY_MAP.as_posix(), True), (f"{folder}/README.md", False),
+                              ("docs/billing.md", False)):
+            with self.subTest(path=path):
+                self.assertEqual(self.updates_map(root, task, path), counted)
+
+    def test_the_map_folder_of_the_team_is_outside_each_scope(self):
+        root, task = self.started("search", '[context]\nmap = "docs/features"\n', scope=["src/**"])
+        self.assertTrue(self.updates_map(root, task, "docs/features/search.md"))
+        self.assertFalse(self.updates_map(root, task, ".akasha/context/map/search.md"))     # not the map folder now
+        work = Path(task.workcopy)
+        for path in ("src/search.py", "docs/features/search.md", "docs/guide.md"):
+            (work / path).parent.mkdir(parents=True, exist_ok=True)
+            (work / path).write_text("x = 1\n", encoding="utf-8")
+        self.assertEqual(flow.outside_scope(config.load(root), tasks.load(root, task.id), workcopy.changed_files(task)),
+                         ("docs/guide.md",))
+        (work / "docs" / "guide.md").unlink()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            hooks.turn_end(root)
+        self.assertEqual(output.getvalue(), "")                     # nothing outside the scope
+        flow.impact(root, task.id, IMPACT)
+        self.assertEqual(flow.advance(root, task.id), [])
+        self.assertEqual(flow.check(root, task.id).status["tests"], "PASS")
+        self.assertEqual(workcopy.git(work, "status", "--porcelain").stdout, "")    # the map file is in the commit
+        with patch("akasha.flow.github.status", return_value=[]):
+            self.assertEqual(flow.advance(root, task.id), [])
+        self.assertEqual(tasks.load(root, task.id).stage, "handover")
+
+    def test_advance_names_the_map_file_that_akasha_expects(self):
+        root, task = self.started("billing/invoice")
+        flow.impact(root, task.id, IMPACT)
+        self.assertEqual(flow.advance(root, task.id), [])
+        flow.check(root, task.id)
+        with patch("akasha.flow.github.status", return_value=[]):
+            [blocked] = flow.advance(root, task.id)
+            self.assertIn("Update the map file .akasha/context/map/billing/invoice.md in the work copy", blocked)
+            self.assertIn(f'akasha impact {task.id} --map-unchanged "<reason>"', blocked)
+            path = Path(task.workcopy) / config.MAP_DIR / "billing" / "invoice.md"
+            path.parent.mkdir(parents=True)
+            path.write_text("# Invoice\n", encoding="utf-8")
+            self.assertEqual(flow.advance(root, task.id), [])
+
+    def test_a_feature_key_has_one_shape(self):
+        root = make_repo(PASS)
+        for key in ("Billing", "billing/", "/billing", "billing//invoice", "../billing", "billing invoice", "-billing",
+                    "billing\\invoice", "청구"):
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError) as refused:
+                    flow.start(root, "Change the billing", "ops-a", feature=key)
+                self.assertIn(f"the feature key {key} is not correct", str(refused.exception))
+        self.assertEqual(tasks.all_tasks(root), [])                  # nothing recorded
+        task, _ = flow.start(root, "Change the billing", "ops-a", feature="billing/invoice-2")
+        with self.assertRaises(ValueError):
+            flow.specify(root, task.id, ["Show the total"], [], False, feature="Billing")
+        self.assertEqual((tasks.load(root, task.id).feature, tasks.load(root, task.id).conditions),
+                         ("billing/invoice-2", []))                  # nothing changed
+
+    def test_a_new_feature_key_finds_the_tasks_of_the_same_feature(self):
+        root = make_repo(PASS)
+        first, _ = flow.start(root, "Add a date filter", "ops-a", feature="search")
+        second, found = flow.start(root, "Export the list", "ops-b", feature="export")
+        self.assertEqual(found, [])
+        output = io.StringIO()
+        with patch("akasha.__main__.main_root", return_value=root), redirect_stdout(output):
+            self.assertEqual(command_line.run(["specify", second.id, "--feature", "search"]), 0)
+            self.assertEqual(command_line.run(["show", second.id]), 0)
+        lines = output.getvalue().splitlines()
+        self.assertIn(f"  overlap — {first.id}: the same feature search. {overlap.ACTIONS['stack']}", lines)
+        self.assertIn("  feature: search", lines)
+        self.assertIn("  map file: .akasha/context/map/search.md", lines)
+        task, found = flow.specify(root, second.id, [], [], False, feature="")
+        self.assertEqual((task.feature, found), ("", []))
+        with patch("akasha.__main__.main_root", return_value=root), redirect_stdout(io.StringIO()) as shown:
+            command_line.run(["show", second.id])
+        self.assertIn("  map file: any file in .akasha/context/map/", shown.getvalue().splitlines())
+
+    def test_session_start_names_the_map_folder_and_the_feature_keys(self):
+        root = make_repo(PASS)
+        folder = root / config.MAP_DIR
+        for name in ("README.md", "billing.md", "billing/invoice.md", "Old notes.md",
+                     *(f"area-{number:02}.md" for number in range(29))):
+            (folder / name).parent.mkdir(parents=True, exist_ok=True)
+            (folder / name).write_text("# Map\n", encoding="utf-8")
+        (root / config.LEGACY_MAP).write_text("# Product map\n", encoding="utf-8")
+        output = io.StringIO()
+        with patch("akasha.engine.hooks._server_notice", return_value=[]), redirect_stdout(output):
+            hooks.session_start(root)
+        lines = output.getvalue().splitlines()
+        self.assertIn("[AKASHA] Product map: .akasha/context/map/<feature key>.md. Read the file of the feature before "
+                      "the impact analysis, and update it before the handover.", lines)
+        [keys] = [line for line in lines if line.startswith("[AKASHA] Feature keys with a map file: ")]
+        self.assertTrue(keys.endswith(", area-28, billing, and 1 more"))    # 30 keys at most: billing/invoice waits
+        self.assertNotIn("README", keys)
+        self.assertNotIn("Old notes", keys)
+        self.assertIn(config.LEGACY_MAP.as_posix(), output.getvalue())       # in the team context, as before
 
 
 class SharedTaskTests(unittest.TestCase):

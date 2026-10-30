@@ -10,13 +10,17 @@ import re
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 CONFIG_FILE = "akasha.toml"
 STATE_DIR = Path(".akasha") / "state"
 TEAM_WORKFLOWS = Path(".akasha") / "workflows"
 TEAM_CONTEXT = Path(".akasha") / "context"           # the decisions and lessons of the team, as Markdown files
-PRODUCT_MAP = TEAM_CONTEXT / "product-map.md"        # how features, screens, data, and APIs connect
+# The product map tells how features, screens, data, and APIs connect: one file for each feature key in the map
+# folder, so that the tasks of different features do not change the same file. Akasha 1.0.0 had one file for all.
+MAP_DIR = TEAM_CONTEXT / "map"
+MAP_README = "README.md"                             # the guide of the map folder. It maps no feature
+LEGACY_MAP = TEAM_CONTEXT / "product-map.md"
 BUILT_IN_WORKFLOWS = Path(__file__).parent / "workflows"
 
 RISK_LEVELS = ("low", "medium", "high")
@@ -34,6 +38,7 @@ _KEYS: dict[str, set[str] | None] = {
     "contracts": None,                       # the team gives the contract names
     "workflows": {"enabled"},
     "server": {"rules"},
+    "context": {"map"},
 }
 # Who enforces the server rules: "github" (branch protection and auto-merge of GitHub) or "akasha" (the merge and
 # watch workflows of Akasha, for a plan without branch protection). The setup selects it.
@@ -80,6 +85,7 @@ class Team:
     workflows: dict[str, Workflow] = field(default_factory=dict)     # the enabled workflows, for new requests
     defined: dict[str, Workflow] = field(default_factory=dict)       # all workflows, for the tasks that started
     server_rules: str = "github"
+    map_dir: str = MAP_DIR.as_posix()                                # the map folder, with / between the parts
 
 
 def _strings(value: object, where: str) -> tuple[str, ...]:
@@ -92,6 +98,16 @@ def _text(value: object, where: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{where} must be a text value")
     return value
+
+
+def _folder(value: object, where: str) -> str:
+    """A folder in the repository, with / between the parts. An absolute path, a drive, `..`, and the top of the
+    repository are refused: Akasha puts the folder outside each task scope."""
+    path = PureWindowsPath(_text(value, where).strip())       # it reads both / and \ and finds each drive
+    if path.anchor or ".." in path.parts or not path.parts:
+        raise ConfigError(f"{CONFIG_FILE}: {where} must be a folder in the repository, for example "
+                          f"{MAP_DIR.as_posix()}. Do not use an absolute path or ..")
+    return "/".join(path.parts)
 
 
 def _examine_keys(data: dict) -> None:
@@ -199,6 +215,7 @@ def _team(data: dict, flows: dict[str, Workflow]) -> Team:
         workflows={name: flows[name] for name in enabled},
         defined=dict(flows),
         server_rules=rules,
+        map_dir=_folder(data.get("context", {}).get("map", MAP_DIR.as_posix()), "[context] map"),
     )
 
 

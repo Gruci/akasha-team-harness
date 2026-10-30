@@ -18,10 +18,10 @@ A workflow is a list of stages. Each stage has exit conditions. A task goes to t
 | `requester_approved` | The requester approved the current revision of the specification. With GitHub, the requester writes `/approve spec r<N>` on the issue of the task |
 | `impact_assessed` | The impact analysis has all five parts: features, data, contracts, tasks, and rollback |
 | `risk_approvals` | Each gate role that `[approval]` names for the risk level of the task approved. With GitHub, a person with the role writes `/approve risk <level>` |
-| `scope_respected` | Each changed file in the work copy matches the scope. The team context, for example the product map, is outside each scope. A task without a scope permits all files |
+| `scope_respected` | Each changed file in the work copy matches the scope. The team context and the map folder are outside each scope, so that each task can update its map file. A task without a scope permits all files |
 | `checks_pass` | Each required check passed, and no check failed |
 | `accepted` | The requester accepted each completion condition of the current revision. With GitHub, the requester writes `/accept <number> r<N>` |
-| `map_current` | The change updates the product map, or the task records why the map does not change |
+| `map_current` | The change updates the map file of the feature key of the task, or a file in the folder of its parts: for the key `billing`, `billing.md` or a file in `billing/` of the map folder. The product map of Akasha 1.0.0, `.akasha/context/product-map.md`, also counts. A task without a feature key, or with a key of Akasha 1.0.0 in another shape, can update each map file except `README.md`. Or the task records why the map does not change |
 | `infra_ready` | The required check, branch protection, auto-merge, and the server files on the default branch agree with the team config |
 | `pull_request_open` | The pull request of the task is open. The built-in workflows do not use it |
 | `merged` | GitHub merged the pull request of the task |

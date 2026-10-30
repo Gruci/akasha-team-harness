@@ -113,9 +113,30 @@ A change that matches a contract pattern is medium risk or higher. The coordinat
 
 The setup writes this key. Do not change it by hand. When the plan of the repository changes, run the setup again.
 
+## `[context]`
+
+| Key | Value |
+|:--|:--|
+| `map` | The map folder of the product map, relative to the top of the repository. The default is `.akasha/context/map`. Akasha refuses an absolute path, a drive, and `..` |
+
+The map folder is outside each task scope, so that each task can update its map file. Use it only for the product map.
+
+> **CAUTION:** An Akasha plugin that is not updated refuses an unknown section, also `[context]`. Make sure that each person updated the Akasha plugin before you add it.
+
 ## Product map and team context
 
-`.akasha/context/product-map.md` tells how the features, screens, data, and APIs connect. `setup` writes an empty map. The agent engine reads it before each impact analysis and updates it before each handover.
+The product map tells how the features, screens, data, and APIs connect. It has one Markdown file for each feature key in the map folder:
+
+| Feature key | Map file |
+|:--|:--|
+| `billing` | `.akasha/context/map/billing.md` |
+| `billing/invoice` | `.akasha/context/map/billing/invoice.md` |
+
+The whole feature key selects the file. Thus the tasks of different features, and the parts of one large feature, do not change the same file, and their pull requests do not conflict there. A feature key has only lower-case letters `a` to `z`, digits, and `-`, with `/` between the parts. `request --feature` and `specify --feature` refuse other keys.
+
+`setup` writes the guide of the map folder, `README.md`, with the shape of a map file. The agent engine reads the map file of its feature before each impact analysis, and finds the features that depend on it ("Depends on"). It updates its map file before each handover. The session start notice shows the map folder and the feature keys that have a map file.
+
+Akasha 1.0.0 had one map file for all features, `.akasha/context/product-map.md`. Akasha keeps it, and a change of it still updates the product map of each task. Move its sections to the map files of the features when you can.
 
 Put the other decisions and lessons of your team in `.akasha/context/` as Markdown files. The session start notice shows all these files.
 

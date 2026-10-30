@@ -27,7 +27,7 @@ Akasha examines the repository first. Do only the part that the repository needs
    - If the user is not an administrator, tell the user to ask an administrator. The work can start now. The handover waits for the server rules.
    - If the user is an administrator, ask the user to approve the GitHub changes. Then run `akasha setup --approve-infra <GitHub name>`. The name must be the GitHub account of this computer: Akasha asks GitHub, and only an administrator of the repository can change the settings.
 6. Make a new branch. Commit the new and changed files on it and open a pull request.
-   The files are `akasha.toml`, `.akasha/context/product-map.md`, `AGENTS.md`, `.codex/hooks.json`, `.gitignore`, and the files in `.github/`.
+   The files are `akasha.toml`, `.akasha/context/map/README.md`, `AGENTS.md`, `.codex/hooks.json`, `.gitignore`, and the files in `.github/`.
 7. Ask an administrator to merge the pull request. Then run `akasha infra`. Make sure that it shows no problem.
 
 > **CAUTION:** Do not change the GitHub settings without the approval of an administrator.

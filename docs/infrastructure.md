@@ -72,7 +72,7 @@ Akasha writes its lines between `# akasha:start` and `# akasha:end`, at the end 
 
 - `akasha.toml`, `.akasha/workflows/`, `.github/`, and the CODEOWNERS file belong to the administrators.
 - Each gate in `[approval]` gives the risk patterns of its level to the people with the gate roles.
-- `.akasha/context/` has no owner, so that an update of the product map does not stop a merge.
+- `.akasha/context/` and the map folder have no owner, so that an update of the product map does not stop a merge. If a line of your team owns the map folder, for example `docs/`, each update of a map file waits for that review.
 
 A plain GitHub name gets the prefix `@`.
 

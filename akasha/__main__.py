@@ -42,7 +42,8 @@ def _parser() -> argparse.ArgumentParser:
     request.add_argument("title")
     request.add_argument("--requester", default="", help="the GitHub name of the requester; default: you")
     request.add_argument("--workflow", default="feature")
-    request.add_argument("--feature", default="")
+    request.add_argument("--feature", default="", metavar="KEY",
+                         help="the feature key, for example billing or billing/invoice. It selects the map file")
     request.add_argument("--scope", nargs="*", default=[])
     request.add_argument("--contract", nargs="*", default=[])
     request.add_argument("--builds-on", default="", metavar="TASK", help="build on an earlier task of the same feature")
@@ -55,11 +56,13 @@ def _parser() -> argparse.ArgumentParser:
     specify.add_argument("--builds-on", metavar='""', help='stop building on the earlier task: --builds-on ""')
     specify.add_argument("--requester", metavar="NAME",
                          help="the GitHub name of the requester, when the requester is not a GitHub account")
+    specify.add_argument("--feature", metavar="KEY", help='change the feature key; --feature "" removes it')
     impact = commands.add_parser("impact", help="record the impact analysis of the agent engine")
     impact.add_argument("task")
     for name in ("features", "data", "contracts", "tasks", "rollback"):
         impact.add_argument(f"--{name}", default="")
-    impact.add_argument("--map-unchanged", default="", metavar="REASON", help="why the product map does not change")
+    impact.add_argument("--map-unchanged", default="", metavar="REASON",
+                        help="why the map file of the feature does not change")
     impact.add_argument("--changes-task", nargs=2, metavar=("TASK", "WHAT"),
                         help="tell the requester of an earlier task that this task changes behavior that they accepted")
     brief = commands.add_parser("brief", help="examine and record the pull request briefing")
@@ -164,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if problems else 0
     if args.command == "specify":
         task, found = flow.specify(root, args.task, args.condition, args.question, args.clear_questions, args.scope,
-                                   args.builds_on, args.requester)
+                                   args.builds_on, args.requester, args.feature)
         _show(task)
         for item in found:
             print(f"  overlap — {item.message()}")
@@ -191,10 +194,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "show":
         task = flow.load(root, args.task, write=False)
         _show(task)
-        preview = flow.rules(root).preview
-        for name, template in preview.items():
+        team = flow.rules(root)
+        for name, template in team.preview.items():
             if template:
                 print(f"  preview {name}: {resources.fill(template, task.id)}")
+        if task.feature:
+            print(f"  feature: {task.feature}")
+        print(f"  map file: {flow.map_file(team, task.feature) or f'any file in {team.map_dir}/'}")
         if task.builds_on:
             print(f"  builds on: {task.builds_on}")
         print(f"  specification: r{task.spec_rev}")

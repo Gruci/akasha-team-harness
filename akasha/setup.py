@@ -16,18 +16,20 @@ RULES_TEXT = {
     "akasha": "Server rules: GitHub has no branch protection on this plan, so the merge and watch workflows of Akasha "
               "enforce the rules. When the plan changes, set up Akasha again to use the GitHub rules.",
 }
-PRODUCT_MAP = """# Product map
+MAP_GUIDE = """# Product map
 
-Akasha keeps this map. The agent engine reads it before each impact analysis and updates it before each handover.
-Write one section for each feature, in Simplified Technical English.
+This folder has one map file for each feature key: `<feature key>.md`. A part of a large feature has the key
+`<feature>/<part>` and the file `<feature>/<part>.md`. Thus the tasks of different features do not change the same
+file. The agent engine reads the file of its feature before each impact analysis and updates it before each
+handover. Write in Simplified Technical English.
 
-<!-- The section of one feature:
-## <Feature name>
+<!-- The map file of one feature:
+# <Feature name>
 - Purpose: what the feature does for the user
 - Screens: the screens or commands that show the feature
 - Data: the tables, columns, or files that the feature reads or writes
 - APIs: the endpoints or functions that other features use
-- Depends on: the features that this feature uses
+- Depends on: the feature keys of the features that this feature uses
 -->
 """
 
@@ -81,12 +83,13 @@ def run(root: Path, approved_by: str) -> list[str]:
     else:
         path.write_text(_team_config(root), encoding="utf-8")
         report.append(f"Akasha wrote {config.CONFIG_FILE}. Ask the team for the roles and the high-risk areas.")
-    config.load(root)                                    # stop here if the team config is not correct
-    product_map = root / config.PRODUCT_MAP
-    if not product_map.is_file():
-        product_map.parent.mkdir(parents=True, exist_ok=True)
-        product_map.write_text(PRODUCT_MAP, encoding="utf-8")
-        report.append(f"Akasha wrote {config.PRODUCT_MAP.as_posix()}. The agent engine fills it during the tasks.")
+    team = config.load(root)                             # stop here if the team config is not correct
+    guide = root / team.map_dir / config.MAP_README      # the product map of Akasha 1.0.0 stays where it is
+    if not guide.is_file():
+        guide.parent.mkdir(parents=True, exist_ok=True)
+        guide.write_text(MAP_GUIDE, encoding="utf-8")
+        report.append(f"Akasha wrote {team.map_dir}/{config.MAP_README}. The agent engine writes one map file for each "
+                      "feature during the tasks.")
     ignore = root / ".gitignore"
     present = ignore.read_text(encoding="utf-8") if ignore.is_file() else ""
     made = [line for pack in langs.detect(root) for line in pack.ignore]     # files that tests and builds make

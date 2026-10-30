@@ -37,18 +37,20 @@ If the requester withdraws the request, run `akasha cancel <task> --reason "<rea
    - `feature` for a new feature or a changed feature.
    - `fix` for a defect.
    - `small` for a small change with clear completion conditions.
-2. Run `akasha board`. If an active task makes the same feature, the new task builds on that task.
-3. Record the task: `akasha request "<title>" --workflow <workflow> --feature <feature key>`.
+2. Select the feature key. The session start notice shows the map folder and the feature keys that have a map file. Use one of these keys when it fits. Else make a new key with the letters `a` to `z`, the digits, and `-`.
+   - For a part of a large feature, use the feature key `<feature>/<part>`. Each key has its own map file.
+3. Run `akasha board`. If an active task makes the same feature, the new task builds on that task.
+4. Record the task: `akasha request "<title>" --workflow <workflow> --feature <feature key>`.
    - With GitHub, the requester is the GitHub account of this computer. If another person asked for the change, add `--requester <GitHub name>`. Without GitHub, always add `--requester <name>`. If Akasha says that the requester has no access to the repository, tell the user.
    - To build on an earlier task, add `--builds-on <earlier task>`.
-   - For a part of a large feature, use the feature key `<feature>/<part>`.
-4. If Akasha shows an overlap, do the action that Akasha shows.
-5. Ask the requester questions until the completion conditions are clear. Ask what the person sees, what the person does, and which result the person expects.
-6. Record each condition: `akasha specify <task> --condition "<condition>"`.
-7. Record each question that has no answer: `akasha specify <task> --question "<question>"`. When all questions have answers, run `akasha specify <task> --clear-questions`.
-8. Run `akasha advance <task>`.
+   - To change the feature key later, run `akasha specify <task> --feature <feature key>`. Akasha compares the task with the other tasks again.
+5. If Akasha shows an overlap, do the action that Akasha shows.
+6. Ask the requester questions until the completion conditions are clear. Ask what the person sees, what the person does, and which result the person expects.
+7. Record each condition: `akasha specify <task> --condition "<condition>"`.
+8. Record each question that has no answer: `akasha specify <task> --question "<question>"`. When all questions have answers, run `akasha specify <task> --clear-questions`.
+9. Run `akasha advance <task>`.
 
-> **NOTE:** The `fix` and `small` workflows have no specification stage. For these workflows, do steps 1 to 3 of stage 2 before you advance from the build stage.
+> **NOTE:** The `fix` and `small` workflows have no specification stage. For these workflows, do steps 1 to 4 of stage 2 before you advance from the build stage.
 
 > **NOTE:** If Akasha says that it cannot read or write the shared task board, do not continue without the board. Ask the user to log in with `gh auth login`. If Akasha also says that it saved or recorded the task, continue with that task. When `gh` works again, run the command that Akasha shows. Do not record the task again, because that makes a second task. Else do the step again.
 
@@ -58,17 +60,18 @@ If the requester withdraws the request, run `akasha cancel <task> --reason "<rea
 
 ## Stage 2 — Specification and impact
 
-1. Read the product map and the team context files that the session start notice shows. If the request said that the main checkout is behind the default branch, the files of the main checkout are old. Read the latest files from the server: `git show origin/<default branch>:<path>`. Search them with `git grep <text> origin/<default branch>`.
-2. Find the files, the data, and the APIs that the change touches. Use the latest files, as in step 1. Record the scope: `akasha specify <task> --scope <file patterns>`.
-3. Do the impact analysis. Record it: `akasha impact <task> --features "<text>" --data "<text>" --contracts "<text>" --tasks "<text>" --rollback "<text>"`.
+1. Read the team context files that the session start notice shows. If the request said that the main checkout is behind the default branch, the files of the main checkout are old. Read the latest files from the server: `git show origin/<default branch>:<path>`. Search them with `git grep <text> origin/<default branch>`.
+2. Read the map file of the feature. `akasha show <task>` names it. Search the map folder for the feature key, and find the features that name it in "Depends on". The change can affect these features too. Use the latest files, as in step 1.
+3. Find the files, the data, and the APIs that the change touches. Use the latest files, as in step 1. Record the scope: `akasha specify <task> --scope <file patterns>`.
+4. Do the impact analysis. Record it: `akasha impact <task> --features "<text>" --data "<text>" --contracts "<text>" --tasks "<text>" --rollback "<text>"`.
    - `features`: the features that use the code that you change. Search for each caller.
    - `data`: each table, column, or file that changes, each reader and writer of it, and the order of the migration. Write "No data change" when there is none.
    - `contracts`: each API or function that other features or teams use, and its users.
    - `tasks`: each active task that touches the same feature, files, or contracts, and how the tasks combine.
    - `rollback`: how to reverse the change. A revert of the code does not restore data. For a data change, tell how to reverse the data.
-4. Tell the requester the specification in simple words: what changes, what the person will see, and what does not change. Do not explain the technical details.
-5. Ask the requester to approve it. If the requester is the GitHub account of this computer and approves, run `akasha approve <task> --role requester`. Else the requester writes `/approve spec r<N>` on the issue: Akasha tells the exact comment.
-6. Run `akasha advance <task>`. If Akasha says that a person with a gate role must approve, ask that person. That person writes `/approve risk <level>` on the issue, or runs `akasha approve <task> --role <role>` on their own computer.
+5. Tell the requester the specification in simple words: what changes, what the person will see, and what does not change. Do not explain the technical details.
+6. Ask the requester to approve it. If the requester is the GitHub account of this computer and approves, run `akasha approve <task> --role requester`. Else the requester writes `/approve spec r<N>` on the issue: Akasha tells the exact comment.
+7. Run `akasha advance <task>`. If Akasha says that a person with a gate role must approve, ask that person. That person writes `/approve risk <level>` on the issue, or runs `akasha approve <task> --role <role>` on their own computer.
 
 > **CAUTION:** Never record an approval for a person who did not give it.
 
@@ -116,7 +119,7 @@ To continue the task of another person:
 2. Repair each failure. Then run the check again.
 3. If Akasha stops the task after three failed repairs, stop the work. Tell the requester in simple words that a developer must examine the problem.
 4. With GitHub, the developer writes `/resume` on the issue of the task. If the developer is the GitHub account of this computer and tells you to continue, run `akasha resume <task>`. Then run `akasha advance <task>`.
-5. Update `.akasha/context/product-map.md` in the work copy for each feature, screen, table, or API that the change adds or changes. If nothing changes, record why: `akasha impact <task> --map-unchanged "<reason>"`.
+5. Update the map file of the feature in the work copy for each screen, table, or API that the change adds or changes. `akasha show <task>` names the file. If the file does not exist, make it with the shape in `README.md` of the map folder. If nothing changes, record why: `akasha impact <task> --map-unchanged "<reason>"`.
 6. When all checks pass, run `akasha advance <task>`.
 7. Continue with the akasha-inspect skill. For the `small` workflow, continue with the akasha-handover skill.
 
