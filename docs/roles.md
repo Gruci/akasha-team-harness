@@ -1,6 +1,6 @@
 # Roles
 
-People decide what to make, how it looks, and how people use it. The agent engine makes the technical decisions. Akasha asks each question only to the person who can answer it.
+People decide what to make, how it looks, and how people use it. The agent engine makes the technical decisions, and asks each question only to the person who can answer it. Akasha is the harness of the agent engine: it records each decision and stops a stage that does not meet its exit condition.
 
 ## Requester
 
