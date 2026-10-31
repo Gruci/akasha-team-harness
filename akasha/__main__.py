@@ -115,7 +115,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if checks.passed(result.status) else 1
     root = _root()
     if args.command == "setup":
-        print("\n".join(setup.run(root, args.apply)))
+        # In the work copy of a task, the setup writes there: after the first setup, a change of the rules is a task
+        top = repo.git(Path.cwd(), "rev-parse", "--show-toplevel").stdout.strip()
+        print("\n".join(setup.run(Path(top) if top else root, args.apply)))
         return 0
     if args.command == "doctor":
         found = setup.doctor(root)

@@ -79,7 +79,11 @@ that Akasha stopped, and the review rounds of the plans of the last merged tasks
 repeated problem into a new check of the team, as an Akasha task. When a new check finds problems in the existing
 code, keep a list of the existing problems that it accepts, and let the list only get shorter.
 
-## Update Akasha
+## Change the rules, or update Akasha
 
-Each release of Akasha has its own tag. To update, change the version in the plugin and in the `AKASHA_SOURCE` of the
-workflows (`akasha setup` writes them), merge, and ask each teammate to update the plugin.
+After the first setup, a change of the rules is a task like each other change: `akasha start "<title>"`, change
+`akasha.toml` in the work copy of the task, run `akasha setup` there (it writes CODEOWNERS and the workflows into the
+work copy), then check and land it. A reviewer or an administrator owns these files through CODEOWNERS.
+
+Each release of Akasha has its own tag. To update, each teammate updates the plugin, and one task runs `akasha setup`
+with the new Akasha: it writes the new version into the workflows.

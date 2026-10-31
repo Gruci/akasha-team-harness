@@ -117,7 +117,10 @@ def run(root: Path, apply: bool = False) -> list[str]:
         report += [f"GitHub: {item}" for item in problems]
     changed = write_files(root)
     report += [f"wrote {name}" for name in changed] or ["the files of Akasha are up to date"]
-    if changed:
+    in_task = repo.main_root(root) not in (None, root.resolve(), root)
+    if changed and in_task:
+        report.append("Next: these files are in the work copy of the task. Run `akasha check <task>`, then land it.")
+    elif changed:
         report.append(NEXT_STEPS if not apply else "Next: commit these files on a new branch, open a pull request, "
                       "and merge it.")
     return report

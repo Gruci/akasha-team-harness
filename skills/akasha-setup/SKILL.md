@@ -47,4 +47,11 @@ their language and in simple words.
 8. Tell the person how teammates join: install the plugin once (`/plugin install akasha@akasha`), log in with
    `gh auth login`, and open the repository. The akasha-join skill helps each of them.
 
+## Later changes of the rules
+
+After the setup merged, a change of the rules is a task (akasha-build): the preview is a short page that tells what
+changes in the rules and why. In the work copy of the task, change `akasha.toml`, run `akasha setup` there, then check
+and land. Run `akasha setup --apply` again after the merge when the change touches the GitHub settings, for example
+`[ci] required` or the reviewers.
+
 > **CAUTION:** Do not change the GitHub settings without the approval of an administrator.
