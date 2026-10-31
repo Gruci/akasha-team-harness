@@ -169,7 +169,6 @@ Each decision of a person is a comment on the issue of the task, from that perso
 | **Administrator** | Sets up the repository once: the team rules in `akasha.toml`, the GitHub settings, and the GitHub app | Configure each setting by hand |
 | **Requester** — anyone on the team | Says what to make, how it looks, and how it is used.<br>Approves the specification and accepts the result with comments | Read code or judge technical risk |
 | **Developer** — optional | Approves a gated risk level, when `[approval]` names one.<br>Opens a task again after three failed repairs | Watch each task |
-| **The AI** | Asks the questions, runs the commands, and shows the results.<br>Implementation, scope, impact, tests, the briefing, and the map file | Ask people technical questions |
 
 * * *
 
