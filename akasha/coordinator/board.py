@@ -45,6 +45,7 @@ _FIELDS = tuple(item.name for item in fields(Task) if item.name not in LOCAL_FIE
 _EMPTY = asdict(Task(id="", title="", workflow="", stage=""))      # the type of each field
 CACHE_FILE = STATE_DIR / "board.json"                           # the open tasks for the hooks
 CACHE_AGE = 300                                                 # five minutes, in seconds
+FAILED_AGE = 60         # after gh did not answer, the hooks do not ask gh again for this many seconds
 
 
 class BoardError(RuntimeError):
@@ -274,21 +275,25 @@ def _open_issues(root: Path, names: str, timeout: float) -> list[dict] | None:
     return [item for item in found if isinstance(item, dict)] if isinstance(found, list) else None
 
 
-def _keep(root: Path, issues: list[dict]) -> None:
-    """Keep the open issues for the hooks, with the time. A hook never reads a half-written copy. When another
-    process reads the copy now, Windows does not let Akasha replace it: the next hook asks gh again."""
+def _keep(root: Path, issues: list[dict] | None) -> None:
+    """Keep the open issues for the hooks, with the time. None keeps the time when gh did not answer. A hook never
+    reads a half-written copy. When another process reads the copy now, Windows does not let Akasha replace it: the
+    next hook asks gh again."""
     path = root / CACHE_FILE
-    kept = [{"body": item.get("body") or "", "url": item.get("url") or ""} for item in issues]
+    kept = {"failed": time.time()} if issues is None else {
+        "checked": time.time(), "issues": [{"body": item.get("body") or "", "url": item.get("url") or ""}
+                                           for item in issues]}
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        repo.write_whole(path, json.dumps({"checked": time.time(), "issues": kept}, ensure_ascii=False))
+        repo.write_whole(path, json.dumps(kept, ensure_ascii=False))
     except OSError:
         pass
 
 
 def cached(root: Path, max_age: float = CACHE_AGE, timeout: float = 5) -> list[Task] | None:
     """The tasks of the open issues for the hooks, at most `max_age` seconds old. When the copy is older, Akasha asks
-    gh again and waits `timeout` seconds at most. None without GitHub, or when gh does not answer.
+    gh again and waits `timeout` seconds at most. None without GitHub, or when gh does not answer. Then for
+    FAILED_AGE seconds, each hook gets None at once and does not wait for gh again.
 
     The commands never use this copy: a decision or a takeover needs the current board. Each board write on this
     computer removes the copy (publish)."""
@@ -296,15 +301,15 @@ def cached(root: Path, max_age: float = CACHE_AGE, timeout: float = 5) -> list[T
         return None
     try:
         known = json.loads((root / CACHE_FILE).read_text(encoding="utf-8"))
+        if "failed" in known and time.time() - float(known["failed"]) < FAILED_AGE:
+            return None
         if time.time() - float(known["checked"]) < max_age:
             return [task for item in known["issues"] if (task := _issue_task(item)) is not None]
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        pass                                          # no copy, or a damaged copy: ask gh
+        pass                                          # no copy, an old failure, or a damaged copy: ask gh
     found = _open_issues(root, "body,url", timeout)
-    if found is None:
-        return None
     _keep(root, found)
-    return [task for item in found if (task := _issue_task(item)) is not None]
+    return None if found is None else [task for item in found if (task := _issue_task(item)) is not None]
 
 
 def overview(root: Path, timeout: float = 5) -> list[tuple[Task, list[Comment]]] | None:

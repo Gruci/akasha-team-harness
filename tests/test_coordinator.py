@@ -243,10 +243,21 @@ class BoardTests(unittest.TestCase):
             board.publish(root, task("t-3"))
             self.assertFalse((root / board.CACHE_FILE).exists())                       # a board write removes it
             self.assertEqual([item.id for item in board.cached(root)], ["t-1", "t-2", "t-3"])
-        with patch("akasha.coordinator.board.gh", FakeBoard(broken=True)), \
+        broken = FakeBoard(broken=True)
+        with patch("akasha.coordinator.board.gh", broken), \
                 patch("akasha.coordinator.board.available", return_value=True):
             board.forget(root)
             self.assertIsNone(board.cached(root))                                      # gh does not answer
+            self.assertIsNone(board.cached(root))
+            self.assertEqual(len(broken.calls), 1)                     # the next hook does not wait for gh again
+            with patch("akasha.coordinator.board.FAILED_AGE", 0):
+                self.assertIsNone(board.cached(root))                                  # later, it asks gh again
+            self.assertEqual(len(broken.calls), 2)
+        with patch("akasha.coordinator.board.gh", fake), \
+                patch("akasha.coordinator.board.available", return_value=True):
+            self.assertIsNone(board.cached(root))
+            board.publish(root, task("t-4"))                                           # gh works: a board write
+            self.assertEqual([item.id for item in board.cached(root)], ["t-1", "t-2", "t-3", "t-4"])
         self.assertIsNone(board.cached(root))                                          # without GitHub
 
     def test_the_session_start_reads_the_board_and_the_comments_at_once(self):

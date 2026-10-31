@@ -11,6 +11,9 @@ from akasha.infra import github
 from akasha.validators import langs
 
 IGNORED = (".akasha/state/", ".akasha/work/")
+HISTORY = 100           # the setup reads this many earlier versions of each file of Codex on the default branch
+COMMIT_CODEX = ("Make a branch, commit them, and open a pull request, so that each Codex session gets the current "
+                "rules and hooks.")
 RULES_TEXT = {
     "github": "Server rules: GitHub branch protection and auto-merge.",
     "akasha": "Server rules: GitHub has no branch protection on this plan, so the merge and watch workflows of Akasha "
@@ -65,6 +68,47 @@ def _on_server(root: Path) -> str:
     return branch if branch and config.on_server(root, f"origin/{branch}") else ""
 
 
+def _server_text(root: Path, ref: str, name: str) -> str | None:
+    """The file at a commit, or None when the commit has no such file."""
+    shown = git(root, "show", f"{ref}:{name}")
+    return shown.stdout.replace("\r\n", "\n") if shown.returncode == 0 else None
+
+
+def _older(root: Path, branch: str, name: str) -> bool:
+    """True when the default branch had the file as the Akasha on this computer makes it, and other text since: an
+    Akasha that is newer than this Akasha wrote the file. A fix of Akasha keeps the version 1.0.0, so the history of
+    the file tells the order."""
+    listed = git(root, "log", "--format=%H", "-n", str(HISTORY), f"origin/{branch}", "--", name)
+    return any(codex.current(name, _server_text(root, commit, name)) for commit in listed.stdout.split())
+
+
+def _codex_files(root: Path) -> list[str]:
+    """Bring the files that Codex reads up to date in a ready repository: an update of Akasha can change them.
+    Return the lines of the report, or none when nothing changes.
+
+    The default branch on the server decides, as the examination of the server rules fetched it. A checkout that is
+    only old needs a pull, and an Akasha that is older than the Akasha that wrote the files does not write its older
+    rules back. Without a copy of the default branch, the checkout decides."""
+    branch = github.known_branch(root)
+    if not branch or git(root, "rev-parse", "-q", "--verify", f"refs/remotes/origin/{branch}").returncode:
+        changed = codex.write(root)
+        return [f"Akasha updated {' and '.join(changed)} for this Akasha. {COMMIT_CODEX}"] if changed else []
+    stale = tuple(name for name in codex.FILES
+                  if not codex.current(name, _server_text(root, f"origin/{branch}", name)))
+    if not stale:
+        old = [name for name in codex.FILES if not codex.current(name, codex.read(root / name))]
+        return [f"The default branch {branch} has the current {' and '.join(old)}, but this checkout is old. Pull the "
+                f"default branch: git pull origin {branch}"] if old else []
+    files = " and ".join(stale)
+    if any(_older(root, branch, name) for name in stale):
+        return [f"An Akasha that is newer than the Akasha on this computer wrote {files} on {branch}. Akasha does not "
+                f"write the older rules back. Update Akasha ({github.UPDATE}), then run the setup again."]
+    if codex.write(root, stale):
+        return [f"Akasha updated {files} for this Akasha. {COMMIT_CODEX}"]
+    return [f"This checkout has the current {files}, but {branch} does not. {COMMIT_CODEX} When a pull request with "
+            "the files is open, wait for its merge."]
+
+
 def run(root: Path, approved_by: str) -> list[str]:
     """Examine the repository first. A repository with the team rules and the server rules on needs only the files
     that Codex reads from this Akasha: an update of Akasha can change them. A checkout that only lacks the latest
@@ -79,11 +123,8 @@ def run(root: Path, approved_by: str) -> list[str]:
     warned = [] if approved_by else [f"GitHub warning: {item}" for item in github.warnings(root)]
     if path.is_file() and not approved_by and not problems:
         ready = "Akasha is ready in this repository: the team rules and the server rules are on."
-        changed = codex.write(root)
-        if not changed:
-            return [f"{ready} Nothing to set up."] + warned
-        return [ready, f"Akasha updated {' and '.join(changed)} for this Akasha. Make a branch, commit them, and open "
-                       "a pull request, so that each Codex session gets the current rules and hooks."] + warned
+        told = _codex_files(root)
+        return ([ready] + told if told else [f"{ready} Nothing to set up."]) + warned
     report = []
     if path.is_file():
         report.append(f"{config.CONFIG_FILE} is present. Akasha keeps it.")

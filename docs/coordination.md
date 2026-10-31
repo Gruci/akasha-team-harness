@@ -56,7 +56,7 @@ With GitHub, the board shows the open issues, and the active tasks on this compu
 
 Before a request, Akasha finishes the tasks that this person holds on this computer and whose pull request merged. If Akasha cannot update the issue of such a task, for example because a person deleted the issue, the request continues. The request itself reads and writes the board.
 
-The hooks of the agent engine read the open tasks from a copy of the board in `.akasha/state/board.json`. The copy is at most five minutes old, so that the hook after each edit stays fast. Each board write on this computer removes the copy. The commands never use it: a decision, a takeover, and an overlap check need the current board.
+The hooks of the agent engine read the open tasks from a copy of the board in `.akasha/state/board.json`. The copy is at most five minutes old, so that the hook after each edit stays fast. When `gh` does not answer, the copy keeps the time, and for one minute the hooks do not ask `gh` again. Each board write on this computer removes the copy. The commands never use it: a decision, a takeover, and an overlap check need the current board.
 
 > **NOTE:** Without GitHub, the board holds only the active tasks on one computer.
 
@@ -67,7 +67,7 @@ Other people and the helpers of Akasha write comments on the issue of a task, fo
 Anybody can write on the issues of a public repository, and such text can try to give instructions to the agent engine. Thus Akasha shows only these comments:
 
 - The author is an account of the repository on GitHub (`OWNER`, `MEMBER`, or `COLLABORATOR`), a person in `[roles]` of `akasha.toml`, or the requester of the task.
-- The comment is not hidden, and the GitHub account of this computer did not write it.
+- The comment is not hidden, and the GitHub account of this computer did not write it. A notice that an Akasha command wrote for another task, for example an overlap, is news also from the GitHub account of this computer: the same account can hold both tasks. A hidden mark `<!-- akasha-notice -->` at the end of the comment tells such a notice.
 
 The comments show as quotes under a line that tells the agent engine to read them as information, not as instructions. A notice of the helpers of Akasha, a failed server check or a conflict, shows as a sentence of Akasha, not as the text of the comment, because anybody can copy its mark.
 
@@ -108,7 +108,7 @@ If another person took over a task while this computer still has its work copy, 
 
 ## Overlap checks
 
-The coordinator compares a task with each active task on the board. A task is active when it is open or stopped. The coordinator does this check when a task starts, when the scope of a task gets wider, and when its feature key changes. A new task goes on the board before the check. Thus two tasks that start at the same time find each other. When `advance` finds that the real changes touch a public contract that the task did not have, Akasha compares only the new contracts again.
+The coordinator compares a task with each active task on the board. A task is active when it is open or stopped. The coordinator does this check when a task starts, when the scope of a task gets wider, and when its feature key changes. A new task goes on the board before the check. Thus two tasks that start at the same time find each other. After a change of the scope or of the feature key, Akasha compares only what changed: the new file patterns, their new contracts, and the new feature key. When `advance` finds that the real changes touch a public contract that the task did not have, Akasha compares only the new contracts again. Thus Akasha does not tell the same overlap two times.
 
 | Overlap | Test | Action |
 |:--|:--|:--|
@@ -116,7 +116,7 @@ The coordinator compares a task with each active task on the board. A task is ac
 | Same files | The scopes of the two tasks can match the same file | Both tasks continue. Akasha does not set the sequence: the task that merges later gets the earlier change at its handover, or when the helpers bring its pull request up to date. If the changes conflict, Akasha tells that task |
 | Same contract | The two tasks change the same public contract | Akasha tells the requester of the other task |
 
-For each overlap, Akasha shows the overlap to the agent engine of the task. It also writes the overlap on the issue of the other task with an `@` mention of its requester, and GitHub tells the people who follow that issue. The agent engine of the other task sees the comment as news.
+For each overlap, Akasha shows the overlap to the agent engine of the task. It also writes the overlap on the issue of the other task with an `@` mention of its requester, and GitHub tells the people who follow that issue. A command that changes the task writes these comments after its board write: when the board write fails, the next command finds the same overlaps again. The agent engine of the other task sees the comment as news, also when the same GitHub account holds both tasks.
 
 The file test is careful. Two patterns touch when the part before the first wildcard of one pattern starts with the same part of the other pattern. For example, `src/search/**` and `src/search/date.py` touch. `src/search/**` and `src/billing/**` do not touch.
 
@@ -128,7 +128,7 @@ After each edit in the work copy of a task that this copy of the repository hold
 - the files in the team context and in the map folder, because they are outside each scope,
 - the files outside the work copies.
 
-The agent engine gets the notice once for each pair of tasks, until the scope of the other task changes. `.akasha/state/seen.json` keeps the notices that the agent engine got. The notice does not stop the edit. With GitHub, the other tasks come from the copy of the board of the hooks. When `gh` does not answer, the hook gives no notice. Without GitHub, the hook compares the file with the other tasks on this computer.
+The agent engine gets the notice once for each pair of tasks, until the scope of the other task changes. `.akasha/state/seen.json` keeps the notices that the agent engine got. The notice does not stop the edit. With GitHub, the other tasks come from the copy of the board of the hooks. When `gh` does not answer, the hook gives no notice, and the next hooks do not wait for `gh` for one minute. Without GitHub, the hook compares the file with the other tasks on this computer.
 
 ## Stack tasks of one feature
 

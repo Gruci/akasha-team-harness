@@ -117,9 +117,19 @@ def session_start(root: Path) -> int:
 def _in_time(work: Callable[[], list[str]], seconds: float) -> list[str]:
     """The lines of the work, or no lines when the work does not end in `seconds`, one second at least. Such work,
     for example an examination of the server rules on a slow GitHub, stops when the hook ends, and the next session
-    start tries again. The handover examines the server rules itself."""
+    start tries again. The handover examines the server rules itself.
+
+    A problem in the work gives no lines and one line on the standard error, as for each other hook (__main__)."""
     done: list[list[str]] = []
-    worker = threading.Thread(target=lambda: done.append(work()), daemon=True)
+
+    def run() -> None:
+        try:
+            done.append(work())
+        except Exception as error:     # noqa: BLE001 — a defect in Akasha must never stop the other lines
+            print(f"Akasha hook problem: {error}", file=sys.stderr)
+            done.append([])
+
+    worker = threading.Thread(target=run, daemon=True)
     worker.start()
     worker.join(max(seconds, 1))
     return done[0] if done else []
