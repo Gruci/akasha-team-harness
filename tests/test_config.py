@@ -55,7 +55,7 @@ workflow = "Deploy to server"
         self.assertEqual(team.deploy_workflow, "Deploy to server")
 
     def test_mistakes_are_refused(self):
-        for text in ('[checks]\nfoo = "x"', '[checks.secrets]\ncommand = "x"', '[team]\nadmins = "a"',
+        for text in ('[checks.secrets]\ncommand = "x"', '[team]\nadmins = "a"',
                      '[ci]\npython = "3.10"', '[work]\nfolder = ".akasha/state"', '[work]\nfolder = "../x"',
                      '[work]\nbranch_prefix = "a b/"', '[server]\nrules = "maybe"', '[checks.a]\ncwd = "x"',
                      '[work]\nrecords = ".akasha/work/x"', '[work]\nfolder = "w"\nrecords = "w"',
@@ -66,9 +66,10 @@ workflow = "Deploy to server"
     def test_settings_of_a_newer_akasha_are_a_notice(self):
         """A newer Akasha wrote a key that an older one on another computer does not know (critic)."""
         team = config.parse('[nope]\nx = 1\n[team]\nadmins = ["a"]\nowners = []\n[deploy]\nname = "x"\n'
-                            '[checks]\nrequired = ["t"]\n[checks.t]\ncommand = "x"\nlater = 1\n')
+                            '[checks]\nrequired = ["t"]\ntimeout = 600\n[checks.t]\ncommand = "x"\nlater = 1\n')
         self.assertEqual(team.admins, ("a",))
-        self.assertEqual(team.unknown, ("[nope]", "[team] owners", "[deploy] name", "[checks.t] later"))
+        self.assertEqual(team.unknown, ("[nope]", "[team] owners", "[deploy] name", "[checks] timeout",
+                                        "[checks.t] later"))
 
     def test_the_rules_can_live_in_the_github_folder(self):
         """A repository can allow only listed files at the top, as MIS does with its gate of root files."""

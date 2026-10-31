@@ -2,6 +2,7 @@
 review, the build, the checks, and the summary."""
 
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -152,8 +153,13 @@ class FlowTests(unittest.TestCase):
         """After /clear the environment of a command can keep an old session; the hook knows the current one."""
         task = self.started()
         (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text("<p>x</p>", encoding="utf-8")
-        approval.note_session(self.root, "after-clear")
-        with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "before-clear"}):
+        line = f'"C:/python.exe" -X utf8 "C:/plugin/akasha_run.py" preview {task.id}'
+        approval.note_session(self.root, "other-session", '"C:/python.exe" -X utf8 "C:/plugin/akasha_run.py" status')
+        with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "before-clear"}), \
+                patch.object(sys, "argv", ["C:/plugin/akasha_run.py", "preview", task.id]):
+            flow.preview(self.root, task.id)                 # the kept line is of another command
+            self.assertEqual(load(self.root, task.id).shown_in, "before-clear")
+            approval.note_session(self.root, "after-clear", line)
             flow.preview(self.root, task.id)
         self.assertEqual(load(self.root, task.id).shown_in, "after-clear")
 

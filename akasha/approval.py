@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import sys
 import time
 from pathlib import Path
 
@@ -30,18 +32,27 @@ SESSION = STATE_DIR / "session.json"     # the session of the last Akasha comman
 SESSION_SECONDS = 120
 
 
-def note_session(root: Path, session: str) -> None:
-    """Keep the session of the Akasha command that is about to run. The hook gets it from the agent engine, also after
-    /clear and in Codex, where the environment of the command does not tell it."""
+def note_session(root: Path, session: str, line: str) -> None:
+    """Keep the session of the Akasha command `line` that is about to run. The hook gets it from the agent engine,
+    also after /clear and in Codex, where the environment of the command does not tell it."""
+    try:
+        words = shlex.split(line)
+    except ValueError:
+        return
     (root / SESSION).parent.mkdir(parents=True, exist_ok=True)
-    write_whole(root / SESSION, json.dumps({"session": session, "at": time.time()}))
+    write_whole(root / SESSION, json.dumps({"session": session, "at": time.time(), "words": words}))
 
 
 def session(root: Path) -> str:
-    """The session of this Akasha command: the one that its hook kept a moment ago, else the one of Claude Code."""
+    """The session of this Akasha command: the one that its hook kept a moment ago for this very command line, else
+    the one of Claude Code. Another session can run an Akasha command at the same time, so the words must match."""
+    path = root / SESSION
     try:
-        kept = json.loads((root / SESSION).read_text(encoding="utf-8"))
-        if time.time() - float(kept["at"]) < SESSION_SECONDS and kept.get("session"):
+        kept = json.loads(path.read_text(encoding="utf-8"))
+        words, mine = list(kept.get("words") or []), sys.argv[1:]
+        if time.time() - float(kept["at"]) < SESSION_SECONDS and kept.get("session") and mine and \
+                words[-len(mine):] == mine:
+            path.unlink(missing_ok=True)                  # once: a later command has its own
             return str(kept["session"])
     except (OSError, ValueError, KeyError, TypeError):
         pass

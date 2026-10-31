@@ -29,9 +29,12 @@ SESSION_SECONDS = 10
 OTHERS_SHOWN = 8
 SEEN = config.STATE_DIR / "seen.json"
 UPDATE = "/plugin marketplace update akasha, then /plugin update akasha@akasha, then restart the agent app"
-# Commands that the agent engine runs without a permission prompt: they change only the task of this person
-SAFE_COMMANDS = ("start", "preview", "approve", "status", "check", "land", "board", "help", "ask", "handoff",
-                 "resume", "tidy", "doctor", "version", "retro")
+# Commands that the agent engine runs without a permission prompt, with the options that each one may have: they
+# change only the task of this person. `check --ci --config`, `resume --force`, and the others ask the person first.
+SAFE_COMMANDS: dict[str, tuple[str, ...]] = {
+    "start": ("--name", "--scope"), "preview": ("--text", "--no-open"), "approve": (), "status": (),
+    "check": ("--only",), "land": ("--wait",), "board": (), "help": (), "ask": (), "handoff": (), "resume": (),
+    "tidy": (), "doctor": (), "version": (), "retro": ()}
 
 
 def _payload() -> dict:
@@ -144,23 +147,26 @@ def _role_lines(root: Path) -> list[str]:
 
 def allowed(line: str) -> bool:
     """True when the shell line is exactly one safe command of this Akasha, so that the person sees no permission
-    prompt for it. The launcher must be the one of this plugin, and the line has no other command."""
-    if re.search(r"[;&|<>`\n]|\$\(", line):
+    prompt for it: this Python, the launcher of this plugin, a safe command with only its known options, and nothing
+    that a shell expands."""
+    if re.search(r"[;&|<>`\n$(){}@%!*?\\]", line):
         return False
     try:
         words = shlex.split(line)
     except ValueError:
         return False
     launcher = Path(__file__).resolve().parents[1] / "akasha_run.py"
-    if len(words) < 5 or words[1:3] != ["-X", "utf8"] or Path(words[0]).stem.lower() not in ("python", "python3", "py"):
+    if len(words) < 5 or words[1:3] != ["-X", "utf8"] or not launcher.is_file():
         return False
-    if words[3:5] == ["-m", "akasha"]:
-        rest = words[5:]
-    elif Path(words[3]).resolve() == launcher.resolve():
-        rest = words[4:]
-    else:
+    try:
+        same = Path(words[0]).resolve() == Path(sys.executable).resolve() and \
+            Path(words[3]).resolve() == launcher.resolve()
+    except OSError:
         return False
-    return bool(rest) and rest[0] in SAFE_COMMANDS and not (rest[0] == "resume" and "--force" in rest)
+    rest = words[4:]
+    if not same or not rest or rest[0] not in SAFE_COMMANDS:
+        return False
+    return all(word in SAFE_COMMANDS[rest[0]] for word in rest[1:] if word.startswith("-"))
 
 
 def _step(task: Task, session: str) -> str:
@@ -230,7 +236,7 @@ def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict, here: bool =
         line = " ".join(line) if isinstance(line, list) else str(line)
         reason = check_command(line, cwd, root, git_only=not here, own=_own(root))
         if here and session and ("akasha_run.py" in line or "-m akasha" in line):
-            approval.note_session(root, session)          # the Akasha command reads its session from here
+            approval.note_session(root, session, line)    # the Akasha command reads its session from here
     elif tool in EDIT_TOOLS:
         tasks = all_local(root)
         set_up = config.on_server(root, repo.default_branch(root))
@@ -241,7 +247,7 @@ def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict, here: bool =
         trace.note(root, "blocked", tool=tool, reason=reason[:300])
         print(reason, file=sys.stderr)
         return 2
-    if line and here and allowed(line):
+    if line and here and tool == "Bash" and allowed(line):
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
                                                  "permissionDecisionReason": "a command of Akasha"}}))
     return 0

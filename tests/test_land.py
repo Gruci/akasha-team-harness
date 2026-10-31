@@ -319,6 +319,18 @@ class LandTests(Landing):
         self.assertEqual(state, land.DEPLOYED)
         self.assertIn("u2", lines[-1])
 
+    def test_a_deployment_that_a_person_cancelled_ends_the_follow(self):
+        self.deploying()
+        self.runs = [{"status": "completed", "conclusion": "cancelled", "createdAt": "2026-11-01T10:00:00Z", "url": "u"}]
+        self.branch_runs = list(self.runs)
+        state, _lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.DEPLOYING)                   # a newer run can still come
+        task = load(self.root, self.task.id)
+        task.checks["merged_at"] = time.time() - land.DEPLOY_GRACE - 1
+        save(self.root, task)
+        state, _lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.DEPLOY_FAILED)
+
     def test_a_conflict_names_the_files(self):
         other = Path(self.repo.folder.name) / "other"
         run(Path(self.repo.folder.name), "git", "clone", "-q", str(self.repo.origin), str(other))

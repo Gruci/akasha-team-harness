@@ -76,6 +76,8 @@ def _parser() -> argparse.ArgumentParser:
     watch.add_argument("--repository", required=True)
     for name in ("branch", "before", "after", "forced", "pusher"):
         watch.add_argument(f"--{name}", default="")
+    for each in (parser, *commands.choices.values()):
+        each.allow_abbrev = False          # `--forc` must not mean `--force`: only a whole option counts
     return parser
 
 

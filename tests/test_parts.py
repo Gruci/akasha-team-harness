@@ -171,12 +171,17 @@ class GitHubFileTests(unittest.TestCase):
     def test_an_approval_covers_only_the_version_that_the_reviewer_saw(self):
         """A risky file changed after the approval merged without a new review on GitHub Free (critic)."""
         states = {"b": ("APPROVED", "old")}
-        later = subprocess.CompletedProcess([], 0, "app.py\ndb/x.sql\n", "")
+        later = subprocess.CompletedProcess([], 0, "app.py\ndb/x.sql\ndb/main.sql\n", "")
         with patch("akasha.repo.gh", return_value=later), patch("akasha.repo.origin", return_value="o/r"):
-            self.assertFalse(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "new"))
-            self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("web/**",), "new"))
-        self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "old"))
-        self.assertFalse(github.approved(Path.cwd(), states, {"c"}, ("db/**",), "old"))
+            self.assertFalse(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "new", ["db/x.sql"]))
+            self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("web/**",), "new", ["db/x.sql"]))
+            # db/main.sql came in from the default branch: the change of the task did not touch it
+            self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "new", ["db/other.sql"]))
+        many = subprocess.CompletedProcess([], 0, "\n".join(f"f{n}" for n in range(300)), "")
+        with patch("akasha.repo.gh", return_value=many), patch("akasha.repo.origin", return_value="o/r"):
+            self.assertFalse(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "new", ["db/x.sql"]))
+        self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "old", ["db/x.sql"]))
+        self.assertFalse(github.approved(Path.cwd(), states, {"c"}, ("db/**",), "old", ["db/x.sql"]))
 
     def test_without_reviewers_the_administrators_review_a_risky_path(self):
         team = config.parse('[team]\nadmins = ["a"]\n[risk]\npaths = ["db/**"]\n')
@@ -201,10 +206,12 @@ class GitHubFileTests(unittest.TestCase):
             "checks": [{"context": "checks"}]}}}, team))
 
     def test_codeowners_block(self):
-        team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b", "c"]\n[risk]\npaths = ["db/**"]\n')
+        team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b", "c"]\n[risk]\npaths = ["db/**"]\n'
+                            '[guides]\nplan = ["dev/RULES.md"]\n')
         owners = github.codeowners(team)
         self.assertIn("db/** @b @c", owners)
         self.assertIn("/akasha.toml @a", owners)
+        self.assertIn("/dev/RULES.md @a", owners)                # a guide that each AI follows is a rule
         merged = github.merge_block("* @team\n", owners)
         self.assertTrue(merged.startswith("* @team") and merged.endswith("# akasha:end\n"))
         self.assertEqual(github.merge_block(merged, owners), merged)

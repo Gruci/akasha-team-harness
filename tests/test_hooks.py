@@ -10,6 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from akasha import __main__ as akasha_main
 from akasha import flow, hooks, setup
 from akasha.task import load
 from tests.helpers import TEAM, Repository
@@ -109,14 +110,26 @@ class HookTests(unittest.TestCase):
     def test_exact_akasha_commands_need_no_permission_prompt(self):
         """A teammate who is not a developer saw a prompt with a long path for each step (adoption)."""
         base = hooks.command()
-        for line, expected in ((f"{base} start \"Title\" --name t9", True), (f"{base} land t9 --wait 540", True),
-                               (f"{base} approve t9", True), (f"{base} resume t9 --force", False),
-                               (f"{base} cancel t9", False), (f"{base} start t && rm -rf x", False),
-                               (f"{base} setup --apply", False), ("python -X utf8 other.py start x", False)):
+        python = Path(sys.executable).as_posix()
+        for line, expected in (
+                (f"{base} start \"주문 목록 CSV\" --name t9 --scope web/x.py", True), (f"{base} land t9 --wait 540", True),
+                (f"{base} approve t9", True), (f"{base} check t9", True), (f"{base} resume t9", True),
+                (f"{base} resume t9 --force", False), (f"{base} resume t9 --forc", False), (f"{base} cancel t9", False),
+                (f"{base} check t9 --ci --config evil.toml", False), (f"{base} start t && rm -rf x", False),
+                (f"{base} status (Remove-Item -Recurse C:/Users)", False), (f'{base} ask "$GH_TOKEN"', False),
+                (f"{base} setup --apply", False), (f'"{python}" -X utf8 -m akasha status', False),
+                (f'"C:/Temp/x/python.exe" -X utf8 "{Path(hooks.__file__).parents[1].as_posix()}/akasha_run.py" '
+                 "status", False),
+                (f'"{python}" -X utf8 other.py start x', False)):
             with self.subTest(line=line):
                 self.assertEqual(hooks.allowed(line), expected)
         code, out, _err = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": f"{base} status"}})
         self.assertEqual((code, json.loads(out)["hookSpecificOutput"]["permissionDecision"]), (0, "allow"))
+        _code, out, _err = self.hook("PreToolUse", {"tool_name": "PowerShell",
+                                                    "tool_input": {"command": f"{base} status"}})
+        self.assertNotIn("allow", out)                    # PowerShell expands more than Akasha examines
+        with self.assertRaises(SystemExit):
+            akasha_main.main(["resume", "t9", "--forc"])     # no abbreviation of an option
 
     def test_session_start_tells_each_person_their_part(self):
         self.repo.close()

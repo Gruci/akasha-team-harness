@@ -185,10 +185,13 @@ def _check_ready(root: Path, name: str, check: config.Check | None, guide: bool)
 
 
 def _runs(program: str) -> bool:
-    """True when the program answers `--version`. The shortcut of the Microsoft Store named python is on PATH, but
-    does not run."""
+    """True when the program is on PATH, and a Python also answers `--version`: the shortcut of the Microsoft Store
+    named python is on PATH, but does not run. (`npm` is npm.cmd on Windows, and `go` has no `--version`.)"""
+    found = shutil.which(program)
+    if not found or Path(program).stem.lower() not in ("python", "python3", "py"):
+        return bool(found)
     try:
-        return subprocess.run([program, "--version"], capture_output=True, timeout=30).returncode == 0
+        return subprocess.run([found, "--version"], capture_output=True, timeout=30).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
 

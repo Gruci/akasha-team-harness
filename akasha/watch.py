@@ -71,7 +71,7 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
         return ""
     states = github.review_states(_api(root, f"repos/{slug}/pulls/{pull['number']}/reviews?per_page=100"))
     for path, people, patterns in needs:
-        if not github.approved(root, states, people, patterns, str(pull["head"]["sha"])):
+        if not github.approved(root, states, people, patterns, str(pull["head"]["sha"]), changed):
             return f"pull request #{pull['number']} changed {path} without the review of one of {sorted(people)}"
     return ""
 

@@ -46,7 +46,8 @@ def codeowners(team: Team) -> str:
         lines += [f"{item} {reviewers}" for item in team.risk_paths]
     admins = " ".join(f"@{name}" for name in team.admins)
     if admins:
-        lines += [f"/{path} {admins}" for path in (CONFIG_FILE, ".github/", "CODEOWNERS")]
+        guides = tuple(name for names in team.guides.values() for name in names)
+        lines += [f"/{path} {admins}" for path in dict.fromkeys((CONFIG_FILE, ".github/", "CODEOWNERS") + guides)]
     return "\n".join(lines + [END]) + "\n"
 
 
@@ -78,10 +79,15 @@ def review_states(reviews: object) -> dict[str, tuple[str, str]]:
     return states
 
 
+COMPARE_LIMIT = 300                          # GitHub lists at most this many files of a comparison
+
+
 def approved(root: Path, states: dict[str, tuple[str, str]], people: set[str], patterns: tuple[str, ...],
-             head: str) -> bool:
-    """True when one of the people approved, and no file of the patterns changed between the commit that they reviewed
-    and the head: a later change of a risky file needs a new review. GitHub Free does not dismiss an old approval."""
+             head: str, own: list[str]) -> bool:
+    """True when one of the people approved, and no file of the patterns that the pull request changes (`own`)
+    changed between the commit that they reviewed and the head: a later change of a risky file needs a new review.
+    Files that came in from the default branch do not count. GitHub Free does not dismiss an old approval."""
+    mine = {path for path in own if any(matches(path, item) for item in patterns)}
     for name in people:
         state, reviewed = states.get(name, ("", ""))
         if state != "APPROVED":
@@ -90,8 +96,8 @@ def approved(root: Path, states: dict[str, tuple[str, str]], people: set[str], p
             return True
         changed = repo.gh(root, "api", f"repos/{repo.origin(root)}/compare/{reviewed}...{head}", "--jq",
                           ".files[].filename")
-        if changed.returncode == 0 and not any(matches(path, item) for path in changed.stdout.split()
-                                               for item in patterns):
+        files = changed.stdout.split()
+        if changed.returncode == 0 and len(files) < COMPARE_LIMIT and not mine & set(files):
             return True
     return False
 

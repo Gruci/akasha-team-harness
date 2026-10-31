@@ -225,7 +225,7 @@ def _waiting_review(root: Path, team: Team, task: Task, view: dict) -> tuple[str
     for _path, people, patterns in needs:
         if any(states.get(name, ("", ""))[0] == "CHANGES_REQUESTED" for name in people):
             return "CHANGES", people
-        if not github.approved(root, states, people, patterns, head):
+        if not github.approved(root, states, people, patterns, head, files):
             return "WAIT", people
     return "", set()
 
@@ -367,11 +367,12 @@ def _deploy(root: Path, team: Team, task: Task, deadline: float) -> tuple[str, l
     while True:
         runs, error = _runs(root, team, "--commit", str(task.checks.get("merge")))
         latest = runs[0] if runs else None
+        late = time.time() - float(task.checks.get("merged_at") or 0) > DEPLOY_GRACE
         if latest and str(latest.get("conclusion") or "").lower() == "cancelled":
             newer, _error = _runs(root, team, "--branch", repo.default_branch(root))
             later = [run for run in newer or [] if str(run.get("createdAt")) > str(latest.get("createdAt"))]
-            latest = later[0] if later else {"status": "waiting"}
-        late = time.time() - float(task.checks.get("merged_at") or 0) > DEPLOY_GRACE
+            # A newer run comes soon after a cancel by a newer merge; a run that a person cancelled stays the end
+            latest = later[0] if later else latest if late else {"status": "waiting"}
         done_now = bool(latest) and str(latest.get("status") or "").lower() == "completed"
         if done_now or (late and not latest):
             task.checks.pop("merge", None)            # the task is an ended merged task again

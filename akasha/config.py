@@ -222,8 +222,14 @@ def team_from(data: dict) -> Team:
     rules = server.get("rules", "github")
     if rules not in SERVER_RULES:
         raise ConfigError(f"{CONFIG_FILE}: [server] rules must be {' or '.join(SERVER_RULES)}")
-    named = {name: _check(name, value, unknown) for name, value in checks.items()
-             if name not in CHECK_SETTINGS or isinstance(value, dict)}
+    named = {}
+    for name, value in checks.items():
+        if name in CHECK_SETTINGS and not isinstance(value, dict):
+            continue
+        if not isinstance(value, dict) and name not in ONE_LINE_CHECKS:
+            unknown.append(f"[checks] {name}")            # a setting of a newer Akasha, or a check without a table
+            continue
+        named[name] = _check(name, value, unknown)
     work_dir = _folder(work.get("folder", WORK_DIR), "folder", WORK_DIR, ())
     deploy = data.get("deploy", {})
     return Team(
