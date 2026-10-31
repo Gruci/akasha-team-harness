@@ -67,7 +67,8 @@ class FakeBoard:
             return answer(self.add(value("--body")) + "\n")
         if verb == ("issue", "list"):
             words = value("--search").replace(" in:body", "")
-            found = [{"body": issue["body"], "url": address} for address, issue in self.issues.items()
+            found = [{name: issue[name] if name != "url" else address for name in value("--json").split(",")}
+                     for address, issue in self.issues.items()
                      if (value("--state") == "all" or issue["state"] == "OPEN") and words in issue["body"]]
             return answer(found)
         issue = self.issues.get(args[2] if len(args) > 2 else "")
@@ -106,7 +107,8 @@ class OverlapTests(unittest.TestCase):
 
     def test_messages_tell_the_action(self):
         found = overlap.find(task("a", scope=["src/**"]), [task("b", scope=["src/app.py"])])
-        self.assertIn("the earlier task merges first", found[0].message())
+        self.assertIn("Akasha does not set the sequence: the task that merges later gets the earlier change",
+                      found[0].message())
 
     def test_a_task_does_not_overlap_itself(self):
         mine = task("a", feature="x", scope=["src/**"])
@@ -222,6 +224,49 @@ class BoardTests(unittest.TestCase):
         asked = [call[1] for call in fake.calls if call[0] == "api"]      # only for a decision comment, and only once
         self.assertEqual(asked, [f"repos/{{owner}}/{{repo}}/collaborators/{login}/permission"
                                  for login in ("dev-c", "reader-a", "member-a")])
+
+    def test_the_hooks_read_a_copy_of_the_board(self):
+        root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
+        fake = FakeBoard()
+        fake.add(board.body(task("t-1", scope=["src/**"])))
+        listed = lambda: [call for call in fake.calls if call[:2] == ("issue", "list")]      # noqa: E731
+        with patch("akasha.coordinator.board.gh", fake), \
+                patch("akasha.coordinator.board.available", return_value=True):
+            self.assertEqual([item.id for item in board.cached(root)], ["t-1"])
+            fake.add(board.body(task("t-2")))
+            self.assertEqual([item.id for item in board.cached(root)], ["t-1"])          # the copy is not old yet
+            self.assertEqual(len(listed()), 1)
+            self.assertEqual([item.id for item in board.cached(root, max_age=0)], ["t-1", "t-2"])     # an old copy
+            board.read(root)
+            board.find(root, "t-2")
+            self.assertEqual(len(listed()), 4)                                         # the commands read the board
+            board.publish(root, task("t-3"))
+            self.assertFalse((root / board.CACHE_FILE).exists())                       # a board write removes it
+            self.assertEqual([item.id for item in board.cached(root)], ["t-1", "t-2", "t-3"])
+        with patch("akasha.coordinator.board.gh", FakeBoard(broken=True)), \
+                patch("akasha.coordinator.board.available", return_value=True):
+            board.forget(root)
+            self.assertIsNone(board.cached(root))                                      # gh does not answer
+        self.assertIsNone(board.cached(root))                                          # without GitHub
+
+    def test_the_session_start_reads_the_board_and_the_comments_at_once(self):
+        root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
+        fake = FakeBoard()
+        address = fake.add(board.body(task("t-1")))
+        fake.say(address, "ops-a", "/approve spec r1", "NONE")
+        fake.add(board.body(task("t-2", status="done")), state="CLOSED")
+        with patch("akasha.coordinator.board.gh", fake), \
+                patch("akasha.coordinator.board.available", return_value=True):
+            [(found, said)] = board.overview(root, timeout=3)
+            self.assertEqual([item.id for item in board.cached(root)], ["t-1"])           # the copy of the hooks too
+        self.assertEqual((found.id, found.board), ("t-1", address))
+        self.assertEqual(said, [board.Comment(100, "ops-a", "NONE", "2026-10-31T00:00:00Z", False, False,
+                                              "/approve spec r1")])
+        self.assertEqual(fake.calls, [("issue", "list", "--label", "akasha", "--state", "open", "--limit", "500",
+                                       "--json", "body,url,comments")])
+        with patch("akasha.coordinator.board.gh", FakeBoard(broken=True)), \
+                patch("akasha.coordinator.board.available", return_value=True):
+            self.assertIsNone(board.overview(root))
 
     def test_an_account_is_the_name_that_github_gives(self):
         root = Path(tempfile.mkdtemp(prefix="akasha-board-"))

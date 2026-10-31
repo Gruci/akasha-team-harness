@@ -35,7 +35,7 @@ Do not write `## Verification`. Akasha writes it from the real results of the ch
 6. Tell the requester: "GitHub merges the change when the server check passes."
    With the GitHub app of Akasha, the helpers bring the pull request up to date on GitHub when the default branch moves, and the server check runs again.
 7. If the server check fails, repair the change in the work copy. Then do step 3 again. Akasha adds the repair to the same pull request.
-   Akasha also writes a comment on the pull request and on the issue of the task when the server check fails, or when the pull request conflicts with the latest default branch. For a conflict, do step 3 again: Akasha merges the default branch into the work copy and shows the files that conflict.
+   Akasha also writes a comment on the pull request and on the issue of the task when the server check fails, or when the pull request conflicts with the latest default branch. `akasha advance <task>` and `akasha show <task>` show it as a news line. For a conflict, do step 3 again: Akasha merges the default branch into the work copy and shows the files that conflict.
 8. Later, run `akasha advance <task>`. When GitHub merged the pull request, the task is done.
 
 > **CAUTION:** Do not merge the pull request yourself. GitHub merges it when the server check passes. Do not force push.

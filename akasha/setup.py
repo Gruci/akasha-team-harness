@@ -66,8 +66,9 @@ def _on_server(root: Path) -> str:
 
 
 def run(root: Path, approved_by: str) -> list[str]:
-    """Examine the repository first. A repository with the team rules and the server rules on needs nothing. A
-    checkout that only lacks the latest default branch needs a pull, not a second setup."""
+    """Examine the repository first. A repository with the team rules and the server rules on needs only the files
+    that Codex reads from this Akasha: an update of Akasha can change them. A checkout that only lacks the latest
+    default branch needs a pull, not a second setup."""
     path = root / config.CONFIG_FILE
     pull = _on_server(root)
     if pull:
@@ -77,8 +78,12 @@ def run(root: Path, approved_by: str) -> list[str]:
     problems = [] if approved_by else github.status(root)
     warned = [] if approved_by else [f"GitHub warning: {item}" for item in github.warnings(root)]
     if path.is_file() and not approved_by and not problems:
-        ready = "Akasha is ready in this repository: the team rules and the server rules are on. Nothing to set up."
-        return [ready] + warned
+        ready = "Akasha is ready in this repository: the team rules and the server rules are on."
+        changed = codex.write(root)
+        if not changed:
+            return [f"{ready} Nothing to set up."] + warned
+        return [ready, f"Akasha updated {' and '.join(changed)} for this Akasha. Make a branch, commit them, and open "
+                       "a pull request, so that each Codex session gets the current rules and hooks."] + warned
     report = []
     if path.is_file():
         report.append(f"{config.CONFIG_FILE} is present. Akasha keeps it.")
@@ -99,7 +104,9 @@ def run(root: Path, approved_by: str) -> list[str]:
     if missing:
         ignore.write_text(present.rstrip("\n") + ("\n" if present.strip() else "") + "\n".join(missing) + "\n",
                           encoding="utf-8")
-    report.append("Akasha wrote " + ", ".join(codex.write(root)) + ". Codex needs Akasha installed with pip.")
+    written = codex.write(root)
+    if written:
+        report.append("Akasha wrote " + ", ".join(written) + ". Codex needs Akasha installed with pip.")
     if approved_by:
         refused, risks = github.apply(root, approved_by)
         report += [f"GitHub: {item}" for item in refused] or ["GitHub settings agree with akasha.toml."]

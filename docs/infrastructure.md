@@ -165,6 +165,8 @@ Akasha keeps the result for one hour in `.akasha/state/server.json`, so that a s
 
 Each `infra` command and each examination before the handover updates the result. The examination before the handover never uses the kept result.
 
+The session start notice comes in 15 seconds, also when GitHub is slow. When the examination of the server rules does not end in that time, the notice comes without the result. The next session start examines GitHub again.
+
 To find the default branch without the network, the hooks read this result, else `origin/HEAD`. `setup` asks the server. When the default branch already has `akasha.toml` and the checkout does not, `setup` writes nothing and tells the person to pull.
 
 ## When a person changes a setting

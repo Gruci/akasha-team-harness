@@ -70,8 +70,8 @@ def gh(root: Path, *args: str, payload: dict | None = None, timeout: float = 60)
         return subprocess.CompletedProcess(["gh", *args], 127, "", str(error))
 
 
-def me(root: Path, fresh: bool = False) -> str:
-    """The GitHub name of the person on this computer in lower case, or "" when gh does not answer.
+def me(root: Path, fresh: bool = False, timeout: float = 60) -> str:
+    """The GitHub name of the person on this computer in lower case, or "" when gh does not answer in `timeout`.
 
     Akasha asks gh once in each process. Each hook is a new process, so Akasha also keeps the name for one hour.
     With `fresh`, Akasha asks gh and does not read the kept name: a person can edit the file."""
@@ -84,7 +84,7 @@ def me(root: Path, fresh: bool = False) -> str:
     except (OSError, ValueError, KeyError, TypeError):
         login = ""
     if not login:
-        asked = gh(root, "api", "user", "--jq", ".login")
+        asked = gh(root, "api", "user", "--jq", ".login", timeout=timeout)
         login = asked.stdout.strip().lower() if asked.returncode == 0 else ""
         if login:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,7 +93,7 @@ def me(root: Path, fresh: bool = False) -> str:
     return login
 
 
-def _write_whole(path: Path, text: str, replace: bool) -> bool:
+def write_whole(path: Path, text: str, replace: bool = True) -> bool:
     """Write the file in one step, so that no other process reads it empty or half written. Without replace, the
     file must be new: False when it is already there.
 
@@ -131,6 +131,6 @@ def host(root: Path) -> str:
         return mark
     made = secrets.token_hex(8)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if _write_whole(path, json.dumps({"host": made}), replace=not missing):
+    if write_whole(path, json.dumps({"host": made}), replace=not missing):
         return made
     return host(root)                                 # another process wrote its mark first

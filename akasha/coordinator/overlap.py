@@ -9,7 +9,9 @@ from akasha.core.task import Task, active
 
 ACTIONS = {
     "stack": "Both tasks make the same feature. Build the new task on the earlier task, so that nobody waits.",
-    "order": "Both tasks change the same files. Akasha sets the sequence: the earlier task merges first.",
+    "order": "Both tasks change the same files. Akasha does not set the sequence: the task that merges later gets the "
+             "earlier change at its handover, or when the helpers bring its pull request up to date. If the changes "
+             "conflict, Akasha tells that task.",
     "notify": "Both tasks change the same public contract. Akasha tells the requester of the other task.",
 }
 

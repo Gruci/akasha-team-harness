@@ -34,6 +34,21 @@ def _uncounted(task_id: str) -> None:
         print(f"  not counted — {item}")
 
 
+def _news(root: Path, task: tasks.Task) -> None:
+    """The new comments of other people on the issue, apart from the blockers: they do not change the exit code. The
+    mark of the task moves only after they show."""
+    found = flow.news(root, task)
+    for line in flow.quoted(found):
+        print(f"  {line}")
+    flow.shown(root, task.id, found)
+
+
+def _overlaps(task_id: str) -> None:
+    """The overlaps of the new contracts that the last advance found."""
+    for item in flow.overlaps(task_id):
+        print(f"  overlap — {item.message()}")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m akasha", description=f"Akasha {VERSION}")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -201,10 +216,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "advance":
         blocked = flow.advance(root, args.task)
-        _show(flow.load(root, args.task, write=False))
+        task = flow.load(root, args.task, write=False)
+        _show(task)
         for reason in blocked:
             print(f"  blocked — {reason}")
+        _overlaps(args.task)
         _uncounted(args.task)
+        _news(root, task)
         return 1 if blocked else 0
     if args.command == "show":
         task = flow.load(root, args.task, write=False)
@@ -238,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         if task.setup_output:
             print(f"  setup command output on this computer:\n{task.setup_output}")
         _uncounted(task.id)
+        _news(root, task)
         return 0
     if args.command == "check":
         result = flow.check(root, args.task)
@@ -257,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Pull request: {address} — auto-merge is on")
         for reason in blocked:
             print(f"  blocked — {reason}")
+        _overlaps(args.task)
+        _news(root, tasks.load(root, args.task))      # the handover saved the task on this computer last
         return 1 if blocked else 0
     if args.command == "board":
         listed, source = board.read(root)

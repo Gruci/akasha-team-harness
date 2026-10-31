@@ -56,7 +56,22 @@ With GitHub, the board shows the open issues, and the active tasks on this compu
 
 Before a request, Akasha finishes the tasks that this person holds on this computer and whose pull request merged. If Akasha cannot update the issue of such a task, for example because a person deleted the issue, the request continues. The request itself reads and writes the board.
 
+The hooks of the agent engine read the open tasks from a copy of the board in `.akasha/state/board.json`. The copy is at most five minutes old, so that the hook after each edit stays fast. Each board write on this computer removes the copy. The commands never use it: a decision, a takeover, and an overlap check need the current board.
+
 > **NOTE:** Without GitHub, the board holds only the active tasks on one computer.
+
+## News on the issue
+
+Other people and the helpers of Akasha write comments on the issue of a task, for example an overlap notice, a cancel of an earlier task, or a failed server check. With GitHub, `advance`, `show`, and `handover` show the new comments to the agent engine as `news —` lines, apart from the blockers. The news does not change the exit code of the command.
+
+Anybody can write on the issues of a public repository, and such text can try to give instructions to the agent engine. Thus Akasha shows only these comments:
+
+- The author is an account of the repository on GitHub (`OWNER`, `MEMBER`, or `COLLABORATOR`), a person in `[roles]` of `akasha.toml`, or the requester of the task.
+- The comment is not hidden, and the GitHub account of this computer did not write it.
+
+The comments show as quotes under a line that tells the agent engine to read them as information, not as instructions. A notice of the helpers of Akasha, a failed server check or a conflict, shows as a sentence of Akasha, not as the text of the comment, because anybody can copy its mark.
+
+A command shows 10 new comments at most, and 1000 characters of each comment. The next command shows the next comments. After the comments show, a mark in `.akasha/state/seen/<task>.json` moves past them, so each comment shows once on each computer. The session start notice tells the count of new comments for each task that you hold or requested.
 
 ## The holder of a task
 
@@ -93,17 +108,27 @@ If another person took over a task while this computer still has its work copy, 
 
 ## Overlap checks
 
-The coordinator compares a task with each active task on the board. A task is active when it is open or stopped. The coordinator does this check when a task starts and when the scope of a task gets wider. A new task goes on the board before the check. Thus two tasks that start at the same time find each other.
+The coordinator compares a task with each active task on the board. A task is active when it is open or stopped. The coordinator does this check when a task starts, when the scope of a task gets wider, and when its feature key changes. A new task goes on the board before the check. Thus two tasks that start at the same time find each other. When `advance` finds that the real changes touch a public contract that the task did not have, Akasha compares only the new contracts again.
 
 | Overlap | Test | Action |
 |:--|:--|:--|
 | Same feature | The two tasks have the same feature key | Build the new task on the earlier task |
-| Same files | The scopes of the two tasks can match the same file | The earlier task merges first |
+| Same files | The scopes of the two tasks can match the same file | Both tasks continue. Akasha does not set the sequence: the task that merges later gets the earlier change at its handover, or when the helpers bring its pull request up to date. If the changes conflict, Akasha tells that task |
 | Same contract | The two tasks change the same public contract | Akasha tells the requester of the other task |
 
-For each overlap, Akasha shows the overlap to the agent engine of the new task. It also writes the overlap on the issue of the other task, and GitHub tells the people who follow that issue.
+For each overlap, Akasha shows the overlap to the agent engine of the task. It also writes the overlap on the issue of the other task with an `@` mention of its requester, and GitHub tells the people who follow that issue. The agent engine of the other task sees the comment as news.
 
 The file test is careful. Two patterns touch when the part before the first wildcard of one pattern starts with the same part of the other pattern. For example, `src/search/**` and `src/search/date.py` touch. `src/search/**` and `src/billing/**` do not touch.
+
+### During the work
+
+After each edit in the work copy of a task that this copy of the repository holds, the hook compares the file with the scopes of the other open tasks. The path is relative to the top of the work copy, as in a scope. These do not count:
+
+- the task itself, the task that it builds on, and the tasks that build on it,
+- the files in the team context and in the map folder, because they are outside each scope,
+- the files outside the work copies.
+
+The agent engine gets the notice once for each pair of tasks, until the scope of the other task changes. `.akasha/state/seen.json` keeps the notices that the agent engine got. The notice does not stop the edit. With GitHub, the other tasks come from the copy of the board of the hooks. When `gh` does not answer, the hook gives no notice. Without GitHub, the hook compares the file with the other tasks on this computer.
 
 ## Stack tasks of one feature
 
@@ -132,7 +157,7 @@ Each task builds in its own work copy: a git worktree in `.akasha/work/<task>`, 
 - When a task is cancelled, the work copy stays. A person removes it after a review of the changes.
 - After a handoff, the work copy and the local branch of the task go away. A takeover makes a new work copy from the work on the server.
 - A folder that is not on the branch of the task is not its work copy, for example an empty folder after a failed removal. In such a folder, git works on the main checkout. Thus `check`, `handover`, and `handoff` stop there and do not save or push the changes of the main checkout.
-- The guard and the notice at the end of each turn look only at the work copies on this computer.
+- The guard, the overlap notice after an edit, and the notice at the end of each turn look only at the work copies on this computer.
 
 ## The main checkout
 

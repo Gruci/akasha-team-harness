@@ -46,6 +46,14 @@ FAILED = {"failure", "timed_out"}                      # the conclusions of a ch
 PUSH_TRIES = 3                                         # the watch fetches and undoes again after a refused push
 _IDENTITY = ("-c", "user.name=akasha", "-c", "user.email=akasha@users.noreply.github.com")
 _EMPTY = "0" * 40
+# The mark of a notice of the helpers on a pull request and on the issue of its task: a failed check or a conflict
+# on a head commit. The commands show such a notice as a sentence of Akasha, because anybody can copy the mark.
+NOTICE = re.compile(r"<!-- akasha-(failed|conflict): ([0-9a-f]{7,40}) -->")
+
+
+def _mark(kind: str, sha: str) -> str:
+    """The mark of a notice of the helpers (NOTICE)."""
+    return f"<!-- akasha-{kind}: {sha} -->"
 
 
 class ServerError(RuntimeError):
@@ -163,7 +171,7 @@ def _bring_up_to_date(root: Path, slug: str, pull: dict) -> str:
     if status == 422 and "conflict" in message.lower():
         issue, task = _task(root, slug, pull)
         again = f"akasha handover {task.id}" if task is not None and task.id else "the handover"
-        _tell(root, slug, (number, issue), f"<!-- akasha-conflict: {head} -->",
+        _tell(root, slug, (number, issue), _mark("conflict", head),
               f"{_mention(task, pull)}Akasha: pull request #{number} conflicts with the latest {base}, so Akasha "
               f"cannot bring it up to date. Do the handover again (`{again}`): it merges {base} into the work copy "
               "and tells the files that conflict.")
@@ -211,7 +219,7 @@ def failed(root: Path, slug: str, head_sha: str) -> str:
         return f"pull request #{number} has no {MERGE_LABEL} label"
     issue, task = _task(root, slug, pull)
     again = f"akasha handover {task.id}" if task is not None and task.id else "the handover"
-    _tell(root, slug, (number, issue), f"<!-- akasha-failed: {head_sha} -->",
+    _tell(root, slug, (number, issue), _mark("failed", head_sha),
           f"{_mention(task, pull)}Akasha: the check {desired.CHECK_NAME} failed on pull request #{number} with the "
           f"latest {base} (commit {head_sha[:12]}). Repair the change in the work copy of the task, then do the "
           f"handover again (`{again}`).")

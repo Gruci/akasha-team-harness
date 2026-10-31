@@ -42,8 +42,12 @@ The secret check finds secret keys in files. It finds these kinds:
 
 It runs at two times:
 
-1. After each edit of the agent engine. When it finds a key, it tells the agent engine to remove the key and read it from the environment.
+1. After each edit of the agent engine. When it finds a key, the hook sends the edit back to the agent engine with exit code 2, and tells it to remove the key and read it from the environment.
 2. As the required check `secrets`, on each changed file of the task. File names with Korean or other non-ASCII letters are included.
+
+## The overlap notice after an edit
+
+The same hook after each edit also compares the file with the scopes of the other open tasks. When the file is in the work copy of a task and in the scope of another task, the hook tells the agent engine. The notice does not stop the work: the hook gives it as additional context with exit code 0. Claude Code and Codex give that context to the agent engine. When the hook also finds a secret key, the notice goes into the same message. Each pair of tasks gets the notice once. [Coordination](coordination.md#during-the-work) tells which files and tasks count.
 
 ## The briefing check
 

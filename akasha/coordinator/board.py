@@ -9,6 +9,9 @@ so that a person who is not logged in to gh does not work where the other people
 
 People decide with decision comments on the issue, for example `/approve spec r2`. GitHub shows the account that
 wrote each comment, so the comment tells who decided. The issue body only carries the state between computers.
+
+The hooks read the open tasks from a copy of the board that is at most a few minutes old (cached), so that the hook
+after each edit stays fast. The commands never use that copy: they read the board itself.
 """
 
 from __future__ import annotations
@@ -16,10 +19,12 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from dataclasses import asdict, dataclass, fields
+import time
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from akasha import repo
+from akasha.config import STATE_DIR
 from akasha.core.task import LOCAL_FIELDS, Task, active, all_tasks, load
 from akasha.repo import gh
 
@@ -38,6 +43,8 @@ _writers: dict[tuple[Path, str], bool] = {}                     # one question t
 # The fields on the issue: each field except the fields of one computer and the issue address itself
 _FIELDS = tuple(item.name for item in fields(Task) if item.name not in LOCAL_FIELDS and item.name != "board")
 _EMPTY = asdict(Task(id="", title="", workflow="", stage=""))      # the type of each field
+CACHE_FILE = STATE_DIR / "board.json"                           # the open tasks for the hooks
+CACHE_AGE = 300                                                 # five minutes, in seconds
 
 
 class BoardError(RuntimeError):
@@ -177,6 +184,15 @@ def find(root: Path, task_id: str) -> Task | None:
     return next((task for task in found or [] if task.id == task_id), None)
 
 
+def _comment(item: dict) -> Comment:
+    """One comment in the JSON of gh. Here only the OWNER is a writer: comments asks GitHub about the others."""
+    number = _COMMENT_NUMBER.search(item.get("url") or "")
+    association = item.get("authorAssociation") or ""
+    return Comment(int(number.group(1)) if number else 0, (item.get("author") or {}).get("login") or "", association,
+                   item.get("createdAt") or "", bool(item.get("includesCreatedEdit")), bool(item.get("isMinimized")),
+                   item.get("body") or "", association == "OWNER")
+
+
 def comments(root: Path, address: str) -> list[Comment]:
     """The comments on the issue of a task, the oldest first. For each decision comment, Akasha also finds out if
     its author has write access to the repository."""
@@ -185,13 +201,11 @@ def comments(root: Path, address: str) -> list[Comment]:
         return []
     found = []
     for item in json.loads(viewed.stdout or "{}").get("comments") or []:
-        number = _COMMENT_NUMBER.search(item.get("url") or "")
-        login, association = (item.get("author") or {}).get("login") or "", item.get("authorAssociation") or ""
-        body = item.get("body") or ""
-        decision = (body.split() or [""])[0].lower() in DECISIONS
-        writer = association == "OWNER" or (decision and association in _MAYBE_WRITERS and can_write(root, login))
-        found.append(Comment(int(number.group(1)) if number else 0, login, association, item.get("createdAt") or "",
-                             bool(item.get("includesCreatedEdit")), bool(item.get("isMinimized")), body, writer))
+        comment = _comment(item)
+        decision = (comment.body.split() or [""])[0].lower() in DECISIONS
+        if decision and comment.association in _MAYBE_WRITERS and can_write(root, comment.author):
+            comment = replace(comment, writer=True)
+        found.append(comment)
     return found
 
 
@@ -249,19 +263,87 @@ def can_comment(root: Path, login: str) -> bool:
     return asked.returncode != 0 or json.loads(asked.stdout or "{}").get("permission") != "none"
 
 
+def _open_issues(root: Path, names: str, timeout: float) -> list[dict] | None:
+    """The open issues with the label akasha, with the JSON fields `names`. None when gh does not answer."""
+    listed = gh(root, "issue", "list", "--label", LABEL, "--state", "open", "--limit", "500", "--json", names,
+                timeout=timeout)
+    try:
+        found = json.loads(listed.stdout or "[]") if listed.returncode == 0 else None
+    except ValueError:
+        return None
+    return [item for item in found if isinstance(item, dict)] if isinstance(found, list) else None
+
+
+def _keep(root: Path, issues: list[dict]) -> None:
+    """Keep the open issues for the hooks, with the time. A hook never reads a half-written copy. When another
+    process reads the copy now, Windows does not let Akasha replace it: the next hook asks gh again."""
+    path = root / CACHE_FILE
+    kept = [{"body": item.get("body") or "", "url": item.get("url") or ""} for item in issues]
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        repo.write_whole(path, json.dumps({"checked": time.time(), "issues": kept}, ensure_ascii=False))
+    except OSError:
+        pass
+
+
+def cached(root: Path, max_age: float = CACHE_AGE, timeout: float = 5) -> list[Task] | None:
+    """The tasks of the open issues for the hooks, at most `max_age` seconds old. When the copy is older, Akasha asks
+    gh again and waits `timeout` seconds at most. None without GitHub, or when gh does not answer.
+
+    The commands never use this copy: a decision or a takeover needs the current board. Each board write on this
+    computer removes the copy (publish)."""
+    if not available(root):
+        return None
+    try:
+        known = json.loads((root / CACHE_FILE).read_text(encoding="utf-8"))
+        if time.time() - float(known["checked"]) < max_age:
+            return [task for item in known["issues"] if (task := _issue_task(item)) is not None]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass                                          # no copy, or a damaged copy: ask gh
+    found = _open_issues(root, "body,url", timeout)
+    if found is None:
+        return None
+    _keep(root, found)
+    return [task for item in found if (task := _issue_task(item)) is not None]
+
+
+def overview(root: Path, timeout: float = 5) -> list[tuple[Task, list[Comment]]] | None:
+    """The tasks of the open issues with their comments, in one call of gh, for the session start notice. None
+    without GitHub, or when gh does not answer in `timeout` seconds. It also renews the copy of the hooks."""
+    found = _open_issues(root, "body,url,comments", timeout) if available(root) else None
+    if found is None:
+        return None
+    _keep(root, found)
+    return [(task, [_comment(item) for item in issue.get("comments") or [] if isinstance(item, dict)])
+            for issue in found if (task := _issue_task(issue)) is not None]
+
+
+def forget(root: Path) -> None:
+    """Remove the copy of the board of the hooks, so that the next hook reads the board again. When a hook reads the
+    copy now, Windows does not let Akasha remove it: then the copy stays until it is CACHE_AGE old."""
+    try:
+        (root / CACHE_FILE).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def publish(root: Path, task: Task) -> str:
     """Put the task on the shared board, or update its issue. Return the issue address, or "" without GitHub.
 
-    The issue stays open until the pull request merges. Akasha closes it when the task is done or cancelled."""
+    The issue stays open until the pull request merges. Akasha closes it when the task is done or cancelled. After
+    the write, the copy of the board of the hooks goes away (forget), also when a hook renewed it during the write."""
     title = f"[akasha] {task.title}"
-    if task.board:
-        _answered(root, gh(root, "issue", "edit", task.board, "--title", title, "--body", body(task)), "write")
-        if task.status in ("done", "cancelled"):
-            _answered(root, gh(root, "issue", "close", task.board), "write")
+    try:
+        if task.board:
+            _answered(root, gh(root, "issue", "edit", task.board, "--title", title, "--body", body(task)), "write")
+            if task.status in ("done", "cancelled"):
+                _answered(root, gh(root, "issue", "close", task.board), "write")
+            return task.board
+        gh(root, "label", "create", LABEL, "--color", "6d28d9", "--description", "Akasha task", "--force")
+        made = gh(root, "issue", "create", "--label", LABEL, "--title", title, "--body", body(task))
+        if not _answered(root, made, "write") or not made.stdout.strip():
+            return ""
+        task.board = made.stdout.strip().splitlines()[-1]
         return task.board
-    gh(root, "label", "create", LABEL, "--color", "6d28d9", "--description", "Akasha task", "--force")
-    made = gh(root, "issue", "create", "--label", LABEL, "--title", title, "--body", body(task))
-    if not _answered(root, made, "write") or not made.stdout.strip():
-        return ""
-    task.board = made.stdout.strip().splitlines()[-1]
-    return task.board
+    finally:
+        forget(root)

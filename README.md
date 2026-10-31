@@ -106,7 +106,7 @@ When two tasks overlap, the board decides:
 | Overlap | What happens |
 |:--|:--|
 | Same feature | The new task builds on the earlier one |
-| Same files | The earlier task merges first |
+| Same files | Both tasks continue. The task that merges later<br>gets the earlier change, and a conflict goes to that task |
 | Same contract | A notice goes on the issue of the other task,<br>and GitHub tells the people who follow it |
 
 Each task also gets its own issue on the board, its own preview port, and its own preview database.
