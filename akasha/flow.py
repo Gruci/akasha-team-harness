@@ -1516,8 +1516,10 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
 
 def _wip_branches(team: Team, task: Task) -> list[str]:
     """The branches on the server where the last handoff of the task can be: the wip branch with the prefix of the
-    team, and with the default prefix, for a handoff before the team changed it."""
-    return list(dict.fromkeys((f"{team.wip_prefix}{task.id}", f"{config.WIP_PREFIX}{task.id}")))
+    team, and with the default prefix, for a handoff before the team changed it. A handoff pushes to the first one.
+    Never the task branch: after two changes of [work], the wip prefix can be the old branch prefix of a task."""
+    wips = (f"{team.wip_prefix}{task.id}", f"{config.WIP_PREFIX}{task.id}")
+    return [wip for wip in dict.fromkeys(wips) if wip.lower() != task.branch.lower()]
 
 
 def _drop_wip(root: Path, task: Task) -> None:
@@ -1556,8 +1558,12 @@ def handoff(root: Path, task_id: str) -> Task:
         if strays:
             raise RuntimeError(f"the work copy has files outside the scope: {', '.join(strays[:5])}. Remove them, add "
                                "them to .gitignore, or widen the scope with specify --scope. Then do the handoff again")
+        wips = _wip_branches(rules(root), task)
+        if not wips:
+            raise RuntimeError(f"the task branch {task.branch} has the name of the wip branch, so a handoff would put "
+                               "work that did not pass the checks on it. Ask an administrator to correct [work]")
         _commit(tree, f"wip: {task.title}")
-        pushed = workcopy.git(tree, "push", "-q", "origin", f"HEAD:refs/heads/{rules(root).wip_prefix}{task.id}")
+        pushed = workcopy.git(tree, "push", "-q", "origin", f"HEAD:refs/heads/{wips[0]}")
         if pushed.returncode:
             raise RuntimeError(f"git push failed: {pushed.stderr.strip()[:300]}. Akasha never forces this push: when "
                                "the server has newer work of this task, this work copy is behind it")
@@ -1594,9 +1600,9 @@ def _work_on_server(root: Path, team: Team, task: Task) -> str:
     if handed and not (start and _contains(root, start, task.wip)):
         start = f"origin/{handed}"
     if not start:
-        raise RuntimeError(f"the work of the task {task.id} is not on the server: no branch {wips[0]} and no branch "
-                           f"{task.branch}. Ask {task.holder or 'the last holder'} to hand it off with akasha handoff "
-                           f"{task.id}")
+        raise RuntimeError(f"the work of the task {task.id} is not on the server: no branch {' or '.join(wips)} and "
+                           f"no branch {task.branch}. Ask {task.holder or 'the last holder'} to hand it off with "
+                           f"akasha handoff {task.id}")
     workcopy.git(root, "worktree", "prune")          # forget the work copies whose folders a person removed
     tree = Path(task.workcopy) if task.workcopy else root / team.work_dir / task.id
     if tree.is_dir():

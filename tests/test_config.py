@@ -138,10 +138,15 @@ class ConfigTests(unittest.TestCase):
                       '"feat\\\\"', '"feat\\t"'):
             with self.subTest(prefix=value), self.assertRaises(config.ConfigError):
                 config.load(self.repo(f"[work]\nbranch_prefix = {value}\n"))
-        for branch, wip in (("x/", "x/"), ("akasha/", "akasha/wip/"), ("Feat/", "feat/"), ("wip/", "wip/old-")):
+        for branch, wip in (("x/", "x/"), ("akasha/", "akasha/wip/"), ("Feat/", "feat/"), ("wip/", "wip/old-"),
+                            ("akasha-wip/", "wip/"), ("Akasha-", "wip/"), ("feat/", "Akasha/"),
+                            ("feat/", "akasha/wip/")):         # the default prefixes of the older tasks count too
             with self.subTest(branch=branch, wip=wip), self.assertRaises(config.ConfigError) as refused:
                 config.load(self.repo(f'[work]\nbranch_prefix = "{branch}"\nwip_prefix = "{wip}"\n'))
             self.assertIn("one cannot start with the other", str(refused.exception))
+        with self.assertRaises(config.ConfigError) as refused:
+            config.load(self.repo('[work]\nbranch_prefix = "akasha-wip/"\nwip_prefix = "wip/"\n'))
+        self.assertIn("branch_prefix akasha-wip/ and the default wip_prefix akasha-wip/", str(refused.exception))
         with self.assertRaises(config.ConfigError):
             config.load(self.repo('[work]\nprefix = "feat/"\n'))
 

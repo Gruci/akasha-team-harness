@@ -17,7 +17,7 @@ The guard examines each shell command and each edit before it runs. It stops the
 | `rm -r`, `Remove-Item -Recurse`, `rd /s`, or `del /s` on the whole project, on a folder outside the project, or on `*` | It deletes data that Akasha cannot restore |
 | A recursive delete of a path with a variable, for example `$HOME` or `%USERPROFILE%` | Akasha cannot see the target |
 | A recursive delete after `cd` or `Set-Location` in the same command | Akasha cannot see the target |
-| `git push` to a task branch `akasha/<task>` or `akasha-wip/<task>`, or to a branch with a prefix of `[work]` in `akasha.toml`, also to delete it; `git push --all` or `--mirror`; and `git push` without a branch, or to `HEAD`, in a work copy | Akasha pushes the task branches itself, also the branch of the task of the agent engine. The task branch on the server always passed the checks |
+| `git push` to a task branch `akasha/<task>` or `akasha-wip/<task>`, or to a branch with a prefix of `[work]` in `akasha.toml`, or to the branch of a task on this computer, also to delete it; `git push --all` or `--mirror`; and `git push` without a branch, or to `HEAD`, in a work copy | Akasha pushes the task branches itself, also the branch of the task of the agent engine. The task branch on the server always passed the checks |
 | `gh pr merge`, a merge through `gh api` (`pulls/<number>/merge`, or the GraphQL `mergePullRequest`), or the GraphQL `enablePullRequestAutoMerge` | GitHub, or the merge workflow of Akasha, merges each pull request when the server check passes |
 | `gh issue comment`, `gh pr comment`, or `gh api` on comments, with a line that starts with `/approve`, `/accept`, `/reject`, `/resume`, or `/cancel` | A decision counts only from the GitHub account of the person who decides. The guard also reads the file of `--body-file`, `--input`, or `@<file>` |
 | `gh issue comment --edit-last` or `--delete-last`, `gh api` with `PATCH` or `DELETE` on `issues/comments/<id>`, or the GraphQL `updateIssueComment`, `deleteIssueComment`, or `minimizeComment` | When a comment changes or goes away, a later decision can stop counting, and an earlier decision counts again |
@@ -96,7 +96,7 @@ A language pack gives the default commands for one language. `setup` writes them
 
 `setup` writes the setup command as a comment. When the command is correct for your project, remove the `#`. On Windows, Akasha runs a command that starts with `./` as `.\`.
 
-Each pack also names the files that its tests and builds make, for example `__pycache__/` for Python and `node_modules/` for TypeScript. `setup` adds them to `.gitignore`, so that they never go into a commit.
+Each pack also names the files that its tests and builds make, for example `__pycache__/` for Python and `node_modules/` for TypeScript. `setup` adds them to `.gitignore` when git does not ignore them yet, so that they never go into a commit.
 
 For a language without a pack, write the commands in `[checks]` of `akasha.toml`. To add a pack to Akasha, add one TOML file to `akasha/validators/packs/`:
 

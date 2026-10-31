@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from akasha import config
-from akasha.core.workcopy import fetch, git
+from akasha.core.workcopy import examine_folder, fetch, git
 from akasha.engine import codex
 from akasha.infra import github
 from akasha.validators import langs
@@ -69,17 +69,20 @@ def _on_server(root: Path) -> str:
 
 
 def _server_text(root: Path, ref: str, name: str) -> str | None:
-    """The file at a commit, or None when the commit has no such file."""
+    """The file at a commit, or None when the commit has no such file. A byte order mark stays, as in codex.read."""
     shown = git(root, "show", f"{ref}:{name}")
     return shown.stdout.replace("\r\n", "\n") if shown.returncode == 0 else None
 
 
 def _older(root: Path, branch: str, name: str) -> bool:
-    """True when the default branch had the file as the Akasha on this computer makes it, and other text since: an
-    Akasha that is newer than this Akasha wrote the file. A fix of Akasha keeps the version 1.0.0, so the history of
-    the file tells the order."""
+    """True when the default branch has other rules or hooks of Akasha in the file than the Akasha on this computer
+    makes, but had them in an earlier version: an Akasha that is newer than this Akasha wrote the file. A fix of
+    Akasha keeps the version 1.0.0, so the history of the file tells the order. Only the part of Akasha counts
+    (codex.agrees): a change of the team, for example its own hooks, is not the work of another Akasha."""
+    if codex.agrees(name, _server_text(root, f"origin/{branch}", name)):
+        return False
     listed = git(root, "log", "--format=%H", "-n", str(HISTORY), f"origin/{branch}", "--", name)
-    return any(codex.current(name, _server_text(root, commit, name)) for commit in listed.stdout.split())
+    return any(codex.agrees(name, _server_text(root, commit, name)) for commit in listed.stdout.split())
 
 
 def _codex_files(root: Path) -> list[str]:
@@ -98,8 +101,8 @@ def _codex_files(root: Path) -> list[str]:
         changed = codex.write(root, names)
         return told + ([f"Akasha updated {' and '.join(changed)} for this Akasha. {COMMIT_CODEX}"] if changed else [])
     stale = tuple(name for name in names if not codex.current(name, _server_text(root, f"origin/{branch}", name)))
-    if not stale:
-        old = [name for name in names if not codex.current(name, codex.read(root / name))]
+    if not stale:                    # a change of the team in this checkout only is not old (codex.agrees)
+        old = [name for name in names if not codex.agrees(name, codex.read(root / name))]
         return told + ([f"The default branch {branch} has the current {' and '.join(old)}, but this checkout is old. "
                         f"Pull the default branch: git pull origin {branch}"] if old else [])
     files = " and ".join(stale)
@@ -128,14 +131,18 @@ def _forms(line: str) -> set[str]:
 
 
 def _ignore(root: Path, lines: tuple[str, ...]) -> list[str]:
-    """Add the lines to .gitignore when it does not have them (_forms). Return the lines that Akasha added."""
+    """Add the lines to .gitignore when it does not have them (_forms), and git does not ignore their files with
+    another line yet, for example .akasha/ for .akasha/state/. Return the lines that Akasha added. Akasha only adds
+    lines at the end, so the other lines keep their bytes, also in another encoding than UTF-8."""
     ignore = root / ".gitignore"
-    present = ignore.read_text(encoding="utf-8") if ignore.is_file() else ""
-    known = set(present.splitlines())
-    missing = [line for line in dict.fromkeys(lines) if not _forms(line) & known]
+    present = ignore.read_bytes() if ignore.is_file() else b""
+    known = set(present.decode("utf-8-sig", errors="replace").splitlines())
+    missing = [line for line in dict.fromkeys(lines) if not _forms(line) & known
+               and git(root, "check-ignore", "-q", line.lstrip("/")).returncode]
     if missing:
-        ignore.write_text(present.rstrip("\n") + ("\n" if present.strip() else "") + "\n".join(missing) + "\n",
-                          encoding="utf-8")
+        end = b"\r\n" if b"\r\n" in present else b"\n"
+        ignore.write_bytes(present.rstrip(b"\r\n") + (end if present.strip() else b"")
+                           + end.join(line.encode("utf-8") for line in missing) + end)
     return missing
 
 
@@ -162,6 +169,7 @@ def run(root: Path, approved_by: str) -> list[str]:
     elif not ready:
         report.append(f"{config.CONFIG_FILE} is present. Akasha keeps it.")
     team = config.load(root)                             # stop here if the team config is not correct
+    examine_folder(root, team.work_dir)
     made = () if ready else tuple(line for pack in langs.detect(root) for line in pack.ignore)
     added = _ignore(root, (_top(config.STATE_DIR.as_posix()), _top(team.work_dir), *made))     # also when ready
     if ready:

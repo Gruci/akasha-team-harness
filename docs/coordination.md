@@ -150,8 +150,8 @@ When two people want the same feature, the second task builds on the first task.
 
 Each task builds in its own work copy: a git worktree in `.akasha/work/<task>`, on the task branch `akasha/<task>`. `[work]` in `akasha.toml` can give another folder and other prefixes, for a repository that already uses these names ([Team config](team-config.md)).
 
-- Each task keeps its branch, also after a takeover on another computer or a change of `[work]`. Thus its pull request and its branch on the server stay the same.
-- Git does not track the work copies. When no ignore file names the work folder, Akasha adds it to `.git/info/exclude` at the first work copy on each computer.
+- Each task keeps its branch, also after a takeover on another computer or a change of `[work]`. Thus its pull request and its branch on the server stay the same. A work copy of the task that this computer still has stays in its folder.
+- Git does not track the work copies. When no ignore file names the work folder, Akasha adds it to `.git/info/exclude` at the first work copy on each computer. Akasha stops when git tracks files in the work folder: git ignores the folder, also in each work copy, so the new files of a task there would not go into the task.
 - A work copy starts from the latest default branch on the server, or from the branch of the earlier task. Akasha asks the server for the name of its default branch: GitHub tells it, else git asks the server. Thus a clone from before the team renamed the default branch starts from the correct branch.
 - While a task builds, Akasha stops edits in the main checkout.
 - Two tasks never write in the same folder.

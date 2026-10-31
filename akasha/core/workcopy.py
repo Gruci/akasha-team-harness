@@ -8,7 +8,7 @@ import signal
 import subprocess
 from pathlib import Path
 
-from akasha.config import Team
+from akasha.config import CONFIG_FILE, WORK_DIR, Team
 from akasha.core.task import Task
 
 _QUIET = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}     # git must fail, not wait for a password that nobody types
@@ -80,19 +80,35 @@ def _exclude(root: Path, folder: str) -> None:
         file.write((b"\n" if known and not known.endswith(b"\n") else b"") + line + b"\n")
 
 
+def examine_folder(root: Path, folder: str) -> None:
+    """Stop when git tracks files in the work folder. Git ignores the work folder, also in each work copy (_exclude
+    and the .gitignore of the setup), so the new files of a task in that folder would not go into the task."""
+    listed = git(root, "-c", "core.quotePath=false", "ls-files", "-z", "--", f":(icase,literal){folder}")
+    found = [name for name in listed.stdout.split("\0") if name] if listed.returncode == 0 else []
+    if found:
+        raise RuntimeError(f"git tracks files in the work folder {folder} of [work], for example {found[0]}. The "
+                           "folder holds only the work copies, and git ignores it in each work copy: the new files "
+                           f"of a task there would not go into the task. Set [work] folder in {CONFIG_FILE} to a "
+                           f"folder that git does not track, for example {WORK_DIR.as_posix()}")
+
+
 def create(root: Path, team: Team, task: Task, start: str = "HEAD") -> Path:
     """Make the work copy of the task in the work folder of the team, on the branch of the task from the start commit.
     A task that has a branch keeps it, for example a task from another computer: its branch and its pull request on
     the server stay the same, also after the team changed the branch prefix. A new task gets <branch prefix><task>.
 
-    When an earlier run stopped after it made the branch or the folder, Akasha uses them again."""
+    When an earlier run stopped after it made the branch or the folder, Akasha uses them again. A work copy of the
+    task on this computer stays in its folder, also after the team changed the work folder: git keeps the branch of
+    the task in that work copy."""
     head = git(root, "rev-parse", start)
     if head.returncode:
         raise RuntimeError("the repository has no commit — make the first commit before a task starts"
                            if start == "HEAD" else f"git cannot find {start}")
-    path = root / team.work_dir / task.id
+    kept = Path(task.workcopy) if task.workcopy and Path(task.workcopy).is_dir() else None
+    path = kept or root / team.work_dir / task.id
     branch = task.branch or f"{team.branch_prefix}{task.id}"
     base = head.stdout.strip()
+    examine_folder(root, team.work_dir)
     _exclude(root, team.work_dir)
     if git(root, "rev-parse", "--verify", "-q", branch).returncode == 0:
         base = git(root, "merge-base", base, branch).stdout.strip() or base

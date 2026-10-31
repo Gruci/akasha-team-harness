@@ -90,7 +90,8 @@ def _hook(event: str, matcher: str | None) -> dict:
 
 
 def _changed(path: Path, text: str) -> bool:
-    """Write the text into the file when the file has other text. True when the file changed."""
+    """Write the text into the file when the file has other text, also only a byte order mark. True when the file
+    changed."""
     if read(path) == text:
         return False
     path.parent.mkdir(exist_ok=True)
@@ -104,20 +105,53 @@ def _ours(hook: object) -> bool:
     return any(HOOK_MARK in str(command or "") for command in commands)
 
 
-def _hooks(text: str | None) -> str | None:
-    """The hooks file with the hooks of this Akasha, from the current text of the file or from no file. None when the
-    text is not JSON in the form of the hooks of Codex: Akasha does not change such a file.
-
-    The hooks of the team stay. In each event, Akasha removes only its own hooks, and only the groups that become
-    empty, then adds its group at the end. The other events and the other keys stay. Thus the file gets one set of
-    the hooks of Akasha, also after many runs."""
+def _parsed(text: str | None) -> tuple[dict, dict] | None:
+    """The JSON of a hooks file and its hooks, from the text of the file or from no file. None when the text is not
+    JSON in the form of the hooks of Codex. A byte order mark does no harm."""
+    text = (text or "").lstrip("\ufeff")
     try:
-        data = json.loads(text.lstrip("\ufeff")) if text and text.strip() else {}
+        data = json.loads(text) if text.strip() else {}
     except ValueError:
         return None
     hooks = data.get("hooks", {}) if isinstance(data, dict) else None
     if not isinstance(hooks, dict) or not all(isinstance(groups, list) for groups in hooks.values()):
         return None
+    return data, hooks
+
+
+def _signature(hooks: dict) -> dict[str, list]:
+    """The hooks of Akasha in the hooks of a file, for each event: each hook with the keys of its group. The place of
+    the groups, the other hooks, and the formatting do not count."""
+    found: dict[str, list] = {}
+    for event, groups in hooks.items():
+        for group in groups:
+            inner = group.get("hooks") if isinstance(group, dict) else None
+            for hook in inner if isinstance(inner, list) else []:
+                if _ours(hook):
+                    found.setdefault(event, []).append(({k: v for k, v in group.items() if k != "hooks"}, hook))
+    return found
+
+
+def _settled(hooks: dict) -> bool:
+    """True when the hooks of Akasha in the hooks of a file are the hooks of this Akasha."""
+    return _signature(hooks) == _signature({event: [_hook(event, matcher)] for event, matcher in EVENTS})
+
+
+def _hooks(text: str | None) -> str | None:
+    """The hooks file with the hooks of this Akasha, from the current text of the file or from no file. None when the
+    text is not JSON in the form of the hooks of Codex: Akasha does not change such a file.
+
+    The hooks of the team stay. A file that has the hooks of this Akasha stays as it is, also when the team put its
+    groups after the group of Akasha or formats the file in another way: only a byte order mark goes, because a JSON
+    reader can refuse it. Else, in each event, Akasha removes only its own hooks, and only the groups that become
+    empty, then adds its group at the end. The other events and the other keys stay. Thus the file gets one set of
+    the hooks of Akasha, also after many runs."""
+    parsed = _parsed(text)
+    if parsed is None:
+        return None
+    data, hooks = parsed
+    if _settled(hooks):
+        return (text or "").lstrip("\ufeff")
     for event, matcher in EVENTS:
         kept = []
         for group in hooks.get(event, []):
@@ -150,6 +184,18 @@ def current(name: str, text: str | None) -> bool:
     return text is not None and made(name, text) == text
 
 
+def agrees(name: str, text: str | None) -> bool:
+    """True when the part of Akasha in the text of the file `name` of FILES is as this Akasha makes it: the rules
+    block of AGENTS.md, or the hooks of Akasha in .codex/hooks.json. The other text, the other hooks, the
+    formatting, and a byte order mark do not count, so that a change of the team is not the work of another Akasha."""
+    if text is None:
+        return False
+    if name == "AGENTS.md":
+        return START in text and END in text and text[text.index(START):text.index(END) + len(END)] == RULES.strip()
+    parsed = _parsed(text)
+    return parsed is not None and _settled(parsed[1])
+
+
 def write(root: Path, names: tuple[str, ...] = FILES) -> list[str]:
     """Put the Akasha rules into AGENTS.md and the hooks into .codex/hooks.json, or only into the files `names`.
     Keep the other text of AGENTS.md and the other hooks of .codex/hooks.json. A hooks file that Akasha cannot read
@@ -169,5 +215,6 @@ def unreadable(root: Path) -> list[str]:
 
 
 def read(path: Path) -> str | None:
-    """The text of a file of Codex without a byte order mark, or None when the file is not there."""
-    return path.read_text(encoding="utf-8-sig") if path.is_file() else None
+    """The text of a file of Codex, or None when the file is not there. A byte order mark stays in the text: Akasha
+    reads the hooks without it (_parsed), and removes it from the hooks file (_hooks)."""
+    return path.read_text(encoding="utf-8") if path.is_file() else None

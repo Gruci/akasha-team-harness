@@ -215,13 +215,19 @@ def _prefix(value: object, where: str) -> str:
 
 def _work(section: dict, map_dir: str) -> tuple[str, str, str]:
     """[work]: the folder of the work copies, and the prefixes of the task branches and of the wip branches. Akasha
-    tells a task branch from a wip branch by the prefix, so one prefix cannot start with the other."""
+    tells a task branch from a wip branch by the prefix, so one prefix cannot start with the other. The default
+    prefixes count too: the tasks from before a change of [work] keep their branches, and a takeover also finds a
+    handoff on the default wip prefix."""
     folder = _work_folder(section.get("folder", WORK_DIR.as_posix()), map_dir)
     branch = _prefix(section.get("branch_prefix", BRANCH_PREFIX), "[work] branch_prefix")
     wip = _prefix(section.get("wip_prefix", WIP_PREFIX), "[work] wip_prefix")
-    if branch.lower().startswith(wip.lower()) or wip.lower().startswith(branch.lower()):
-        raise ConfigError(f"{CONFIG_FILE}: [work] branch_prefix {branch} and wip_prefix {wip} must be different, and "
-                          "one cannot start with the other")
+    pairs = (("branch_prefix", branch, "wip_prefix", wip),
+             ("branch_prefix", branch, "the default wip_prefix", WIP_PREFIX),
+             ("the default branch_prefix", BRANCH_PREFIX, "wip_prefix", wip))
+    for one, first, other, second in pairs:
+        if first.lower().startswith(second.lower()) or second.lower().startswith(first.lower()):
+            raise ConfigError(f"{CONFIG_FILE}: [work] {one} {first} and {other} {second} must be different, and one "
+                              "cannot start with the other")
     return folder, branch, wip
 
 

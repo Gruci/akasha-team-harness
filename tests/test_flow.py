@@ -634,6 +634,36 @@ class FlowTests(unittest.TestCase):
                                         "on main. Akasha does not write the older rules back. Update Akasha"))
         self.assertTrue(codex.current("AGENTS.md", codex.read(here / "AGENTS.md")))      # the newer rules stay
 
+    def test_setup_in_a_ready_repository_keeps_the_hooks_of_the_team(self):
+        first = make_repo(PASS)
+        codex.write(first)
+        workcopy.git(first, "add", "-A")
+        workcopy.git(first, "commit", "-qm", "the files of Codex")
+        here = clone(add_remote(first))
+        path = here / ".codex" / "hooks.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["hooks"]["PreToolUse"].append({"matcher": "Bash", "hooks": [{"type": "command", "command": "./lint.sh"}]})
+        team_hooks = json.dumps(data, indent=4) + "\n"            # after the group of Akasha, in another form
+
+        def ready() -> list[str]:
+            with patch("akasha.setup.github.status", return_value=[]):
+                return setup.run(here, "")[1:]
+
+        path.write_text(team_hooks, encoding="utf-8")
+        self.assertEqual(ready(), [])                                    # only in this checkout
+        for args in (("commit", "-qam", "the hooks of the team"), ("push", "-q", "origin", "main")):
+            workcopy.git(here, *args)
+        self.assertEqual(ready(), [])                                    # also on the default branch
+        self.assertEqual(path.read_text(encoding="utf-8"), team_hooks)
+        path.write_text("\ufeff" + team_hooks, encoding="utf-8")         # a Windows editor adds a byte order mark
+        for args in (("commit", "-qam", "a byte order mark"), ("push", "-q", "origin", "main")):
+            workcopy.git(here, *args)
+        self.assertEqual(ready(), [f"Akasha updated .codex/hooks.json for this Akasha. {setup.COMMIT_CODEX}"])
+        self.assertEqual(path.read_text(encoding="utf-8"), team_hooks)   # only the mark goes
+        for args in (("commit", "-qam", "no byte order mark"), ("push", "-q", "origin", "main")):
+            workcopy.git(here, *args)
+        self.assertEqual(ready(), [])
+
 
 class ProductMapTests(unittest.TestCase):
     """One map file for each feature key, so that the tasks of different features do not change the same file."""
@@ -880,6 +910,60 @@ class ExistingHarnessTests(unittest.TestCase):
         self.assertIn("/tmp/", lines)                         # only the folder at the top, not each tmp/
         self.assertNotIn("__pycache__/", lines)               # after the first setup, the team owns these lines
 
+    def test_setup_asks_git_which_folders_the_gitignore_of_the_team_ignores(self):
+        root = make_repo(PASS)
+        codex.write(root)
+        ignore = root / ".gitignore"
+        ignore.write_bytes("# 빌드 결과\r\n.akasha/\r\n".encode("cp949"))      # not UTF-8, and one line for both
+        with patch("akasha.setup.github.status", return_value=[]):
+            self.assertEqual(setup.run(root, ""), [f"{setup.READY} Nothing to set up."])
+            with (root / "akasha.toml").open("a", encoding="utf-8") as file:
+                file.write('[work]\nfolder = "tmp"\n')
+            self.assertEqual(setup.run(root, "")[1:], ["Akasha added /tmp/ to .gitignore: git does not track the "
+                                                       "folders of Akasha on each computer. Commit .gitignore in a "
+                                                       "pull request."])
+        self.assertEqual(ignore.read_bytes(), "# 빌드 결과\r\n.akasha/\r\n/tmp/\r\n".encode("cp949"))
+
+    def test_a_work_folder_that_git_tracks_stops_the_work_copies_and_the_setup(self):
+        root = make_repo(PASS)
+        (root / "src").mkdir()
+        (root / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+        with (root / "akasha.toml").open("a", encoding="utf-8") as file:
+            file.write('[work]\nfolder = "Src"\n')                             # case does not count on Windows
+        workcopy.git(root, "add", "-A")
+        workcopy.git(root, "commit", "-qm", "a work folder with code")
+        told = "git tracks files in the work folder Src of [work], for example src/app.py"
+        with self.assertRaises(RuntimeError) as stopped:
+            flow.start(root, "Add a date filter", "ops-a", workflow="small")
+        self.assertIn(told, str(stopped.exception))
+        with patch("akasha.setup.github.status", return_value=[]), self.assertRaises(RuntimeError) as stopped:
+            setup.run(root, "")
+        self.assertIn(told, str(stopped.exception))
+        exclude = root / workcopy.git(root, "rev-parse", "--git-path", "info/exclude").stdout.strip()
+        self.assertNotIn("Src", (root / ".gitignore").read_text(encoding="utf-8"))
+        self.assertNotIn("Src", exclude.read_text(encoding="utf-8") if exclude.is_file() else "")
+
+    def test_a_wip_branch_is_never_the_task_branch(self):
+        task = tasks.Task(id="t-1", title="x", workflow="small", stage="build", branch="feat-a/t-1")
+        self.assertEqual(flow._wip_branches(config.Team(wip_prefix="Feat-a/"), task), ["akasha-wip/t-1"])
+        self.assertEqual(flow._wip_branches(config.Team(wip_prefix="wip/"), task), ["wip/t-1", "akasha-wip/t-1"])
+
+    def test_the_guard_keeps_the_tasks_from_before_a_change_of_work(self):
+        root = make_repo(PASS)
+        rules = root / "akasha.toml"
+        first = rules.read_text(encoding="utf-8")
+        names = '[work]\nfolder = ".wt-{0}"\nbranch_prefix = "feat-{0}/"\nwip_prefix = "wip-{0}/"\n'
+        rules.write_text(first + names.format("a"), encoding="utf-8")
+        workcopy.git(root, "commit", "-qam", "the names of the team")
+        task, _ = flow.start(root, "Add a date filter", "ops-a", workflow="small")
+        rules.write_text(first + names.format("b"), encoding="utf-8")
+        workcopy.git(root, "commit", "-qam", "other names")                   # the task keeps its names
+        self.assertEqual((config.load(root).branch_prefix, task.branch), ("feat-b/", f"feat-a/{task.id}"))
+        with redirect_stderr(io.StringIO()):
+            for cwd, line in ((root, f"git push origin {task.branch}"), (Path(task.workcopy), "git push")):
+                with self.subTest(line=line):
+                    self.assertEqual(hooks.before_tool(root, cwd, "Bash", {"command": line}), 2)
+
     def test_the_tasks_stack_with_the_names_of_the_team(self):
         root = make_repo(PASS)
         with (root / "akasha.toml").open("a", encoding="utf-8") as file:
@@ -1066,6 +1150,22 @@ class SharedTaskTests(unittest.TestCase):
             back = flow.takeover(self.first, task.id)
         self.assertEqual(Path(back.workcopy), old)
         self.assertEqual(workcopy.changed_files(back), ["export.py", "search.py"])
+
+    def test_an_old_work_copy_stays_in_its_folder_after_a_change_of_the_work_folder(self):
+        task = self.started()
+        with person("dev-a", "pc-a", self.fake):
+            flow.check(self.first, task.id)                             # the checks pass: the task branch is pushed
+            stopped_task = flow.load(self.first, task.id)
+            stopped_task.status = "stopped"
+            flow._publish(self.first, stopped_task)
+        with person("dev-a", "pc-b", self.fake):
+            flow.takeover(self.second, task.id)
+            flow.handoff(self.second, task.id)
+        self.team_rules('[work]\nfolder = ".worktrees"\n')
+        with person("dev-a", "pc-a", self.fake):
+            back = flow.takeover(self.first, task.id)                   # git keeps the branch in the old work copy
+        self.assertEqual((Path(back.workcopy), back.branch), (Path(task.workcopy), task.branch))
+        self.assertFalse((self.first / ".worktrees" / task.id).exists())
 
     def test_a_folder_that_is_not_the_work_copy_stops_the_takeover(self):
         task = self.started()

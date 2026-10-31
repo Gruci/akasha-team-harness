@@ -235,16 +235,19 @@ def _delete_reason(args: list[str], cwd: Path, root: Path, moved: bool) -> str |
     return None
 
 
-def check_command(line: str, cwd: Path, root: Path, team: Team | None = None) -> str | None:
+def check_command(line: str, cwd: Path, root: Path, team: Team | None = None,
+                  tasks: Iterable[Task] = ()) -> str | None:
     """The reason to stop the shell command, or None when the command is safe to run.
 
     In a work copy, a push of the current branch is a push of the task branch. The folder of git is the folder of the
     command, the folder after a change of the folder in the same command, or the folder of `git -C`. The task
     branches and the work copies have the prefixes and the folder of [work] in the team rules `team`, and the default
-    ones too, for the tasks from before a change of [work]."""
-    team = team or Team()
-    branches = tuple(dict.fromkeys((*TASK_BRANCHES, team.branch_prefix, team.wip_prefix)))
-    folders = (root / WORK_DIR, root / team.work_dir)
+    ones too. Each task keeps its branch and its work copy after a change of [work], so the branches and the work
+    copies of the tasks on this computer `tasks` count too."""
+    team, known = team or Team(), list(tasks)
+    branches = tuple(dict.fromkeys((*TASK_BRANCHES, team.branch_prefix, team.wip_prefix,
+                                    *(task.branch for task in known if task.branch))))
+    folders = (root / WORK_DIR, root / team.work_dir, *(Path(task.workcopy) for task in known if task.workcopy))
     moved, here = False, cwd
     commands = [args for args in map(_program, _commands(line)) if args]
     for args in commands:

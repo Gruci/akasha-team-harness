@@ -12,9 +12,10 @@ Akasha examines the repository first. Do only the part that the repository needs
 ## Procedure
 
 1. Run `akasha setup`.
-2. If Akasha says that the repository is ready, tell the user that Akasha is ready. If Akasha also says that it updated `AGENTS.md` or `.codex/hooks.json`, an update of Akasha changed the files that Codex reads. If Akasha says that it added a folder to `.gitignore`, the team changed `[work]`. Then make a new branch, commit these files on it, and open a pull request. Stop here.
+2. If Akasha says that the repository is ready, tell the user that Akasha is ready. If Akasha also says that it updated `AGENTS.md` or `.codex/hooks.json`, an update of Akasha changed the files that Codex reads, or Akasha removed a byte order mark from `.codex/hooks.json`: a JSON reader can refuse it. If Akasha says that it added a folder to `.gitignore`, the team changed `[work]`. Then make a new branch, commit these files on it, and open a pull request. Stop here.
    Akasha keeps the other text of `AGENTS.md` and the other hooks in `.codex/hooks.json`. If Akasha says that `.codex/hooks.json` is not JSON, tell the user: Akasha did not change it. The user repairs the file or removes it. Then run `akasha setup` again.
    If Akasha says that this checkout is old, tell the user to pull the default branch with the command that Akasha shows. If Akasha says that a newer Akasha wrote the files, tell the user to update Akasha, then run `akasha setup` again. Do not change these files yourself.
+   If Akasha says that git tracks files in the work folder of `[work]`, tell the user: an administrator sets `[work] folder` in `akasha.toml` to a folder that git does not track. Then run `akasha setup` again.
    If Akasha says that the default branch on the server already has `akasha.toml`, the setup is done, and this checkout is old. Tell the user to pull the default branch with the command that Akasha shows. Then run `akasha setup` again.
 3. If Akasha wrote `akasha.toml`, the repository did not use Akasha yet. Ask the user these questions. Ask one question at a time.
    - Which GitHub names are the administrators?
