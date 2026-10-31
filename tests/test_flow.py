@@ -17,6 +17,7 @@ from akasha.core import stages, workcopy
 from akasha.core import task as tasks
 from akasha.engine import hooks
 from akasha.infra import desired, github
+from akasha.validators import runner
 from tests.test_coordinator import FakeBoard, answer
 from tests.test_risk import BRIEFING
 
@@ -67,6 +68,11 @@ def github_merges_later():
             patch("akasha.flow.github.auto_merge", return_value=answer()), \
             patch("akasha.flow.gh", return_value=opened) as gh:
         yield gh
+
+
+def created(gh) -> tuple:
+    """The arguments of gh pr create."""
+    return next(call.args for call in gh.call_args_list if call.args[1:3] == ("pr", "create"))
 
 
 def clone(remote: Path) -> Path:
@@ -184,7 +190,10 @@ class FlowTests(unittest.TestCase):
             (Path(task.workcopy) / "search.py").write_text("x = 2\n", encoding="utf-8")
             flow.handover(root, task.id)                     # a repair goes to the same pull request
             self.assertEqual(flow.advance(root, task.id), [])    # GitHub merged it
-        self.assertEqual([call.args[1:3] for call in gh.call_args_list], [("pr", "create")])
+        self.assertEqual([call.args[1:3] for call in gh.call_args_list],
+                         [("label", "create"), ("pr", "create"), ("pr", "edit")])
+        self.assertEqual(created(gh)[created(gh).index("--label") + 1], "akasha-merge")    # also where GitHub merges
+        self.assertEqual(gh.call_args_list[-1].args[3:], (PULL_REQUEST, "--add-label", "akasha-merge"))
         subject, body = auto_merge.call_args.args[2:4]
         self.assertEqual(subject, "Change the search (#7)")
         self.assertTrue(body.startswith("## Why") and "## Verification" in body)
@@ -213,9 +222,61 @@ class FlowTests(unittest.TestCase):
                 patch("akasha.flow.github.merged", return_value=False), \
                 patch("akasha.flow.github.auto_merge") as auto_merge, patch("akasha.flow.gh", return_value=opened) as gh:
             flow.handover(root, task.id)
-        created = gh.call_args_list[0].args
-        self.assertEqual(created[created.index("--label") + 1], "akasha-merge")
+        self.assertEqual(created(gh)[created(gh).index("--label") + 1], "akasha-merge")
         auto_merge.assert_not_called()                       # the merge workflow of Akasha merges it
+
+    def ready_to_hand_over(self) -> tuple[Path, Path, tasks.Task]:
+        """A task at the handover stage. The check pushed its work to the task branch on the server."""
+        root = make_repo(PASS)
+        remote = add_remote(root)
+        task, _ = flow.start(root, "Change the search", "ops-member", workflow="small")
+        (Path(task.workcopy) / "search.py").write_text("x = 1\n", encoding="utf-8")
+        flow.impact(root, task.id, IMPACT, map_note="The change adds no feature, screen, table, or API.")
+        flow.advance(root, task.id)
+        flow.check(root, task.id)
+        with patch("akasha.flow.github.status", return_value=[]):
+            flow.advance(root, task.id)
+        flow.brief(root, task.id, BRIEFING)
+        return root, remote, tasks.load(root, task.id)
+
+    def commit_on_server(self, remote: Path, branch: str, name: str) -> None:
+        """A commit on the task branch on the server, for example a merge commit that GitHub made, or a repair that
+        a person made on GitHub."""
+        other = clone(remote)
+        for args in (("checkout", "-q", branch), ("add", "-A"), ("commit", "-qm", "on GitHub"),
+                     ("push", "-q", "origin", branch)):
+            if args[0] == "add":
+                (other / name).write_text("y = 1\n", encoding="utf-8")
+            subprocess.run(["git", *args], cwd=other, check=True, capture_output=True)
+
+    def test_the_handover_checks_the_commits_of_the_task_branch_on_the_server(self):
+        root, remote, task = self.ready_to_hand_over()
+        self.commit_on_server(remote, task.branch, "fix.py")
+        with github_merges_later(), patch("akasha.flow.runner.run", wraps=runner.run) as checked:
+            flow.handover(root, task.id)
+        self.assertEqual(checked.call_count, 1)             # one check, on the work with the commit of the server
+        self.assertTrue((Path(task.workcopy) / "fix.py").is_file())
+        self.assertEqual(workcopy.git(remote, "rev-parse", task.branch).stdout,
+                         workcopy.git(Path(task.workcopy), "rev-parse", "HEAD").stdout)
+
+    def test_a_refused_push_of_the_handover_merges_and_pushes_once_more(self):
+        root, remote, task = self.ready_to_hand_over()
+        real, raced = workcopy.git, []
+
+        def first_push_races(cwd, *args, **values):
+            if args[:4] == ("push", "-u", "origin", task.branch) and not raced:     # the push of the handover
+                raced.append(True)
+                self.commit_on_server(remote, task.branch, "fix.py")
+            return real(cwd, *args, **values)
+
+        with github_merges_later(), patch("akasha.flow.workcopy.git", side_effect=first_push_races), \
+                patch("akasha.flow.runner.run", wraps=runner.run) as checked:
+            address, _blocked = flow.handover(root, task.id)
+        self.assertEqual((address, raced, checked.call_count), (PULL_REQUEST, [True], 2))   # the new file is checked
+        self.assertTrue((Path(task.workcopy) / "fix.py").is_file())
+        self.assertEqual(workcopy.git(remote, "rev-parse", task.branch).stdout,
+                         workcopy.git(Path(task.workcopy), "rev-parse", "HEAD").stdout)
+        self.assertEqual(tasks.load(root, task.id).base, workcopy.git(remote, "rev-parse", "main").stdout.strip())
 
     def test_files_outside_the_scope_never_go_into_a_commit(self):
         root = make_repo(PASS)
@@ -363,8 +424,7 @@ class FlowTests(unittest.TestCase):
         with github_merges_later() as gh:
             address, _blocked = flow.handover(root, task.id)
         self.assertEqual(address, PULL_REQUEST)
-        created = gh.call_args_list[0].args
-        body = created[created.index("--body") + 1]
+        body = created(gh)[created(gh).index("--body") + 1]
         self.assertIn(f"passed on the latest main: secrets, tests (`{PASS}`). These checks did not run, because the "
                       "change touches no file that they examine: front.", body)
 
@@ -783,7 +843,8 @@ class SharedTaskTests(unittest.TestCase):
             with github_merges_later() as gh:
                 address, blocked = flow.handover(self.second, task.id)
             task = flow.load(self.second, task.id)
-        self.assertEqual((address, [call.args[1:3] for call in gh.call_args_list]), (PULL_REQUEST, [("pr", "create")]))
+        self.assertEqual((address, [call.args[1:3] for call in gh.call_args_list]),
+                         (PULL_REQUEST, [("label", "create"), ("pr", "create")]))
         self.assertTrue(any("did not merge yet" in reason for reason in blocked))
         self.assertEqual(task.base, main)                               # the new base of the handover stays
         self.assertEqual(workcopy.changed_files(task), ["search.py"])
@@ -1708,7 +1769,9 @@ class HookTests(unittest.TestCase):
                     patch("akasha.infra.github._server_file", side_effect=lambda r, b, p: None), \
                     patch("akasha.infra.desired.workflows", return_value={}), \
                     patch("akasha.infra.desired.block", return_value=""), \
-                    patch("akasha.infra.desired.codeowners", return_value=""), redirect_stdout(output):
+                    patch("akasha.infra.desired.codeowners", return_value=""), \
+                    patch("akasha.infra.github.gh", return_value=answer({"name": github.APP_VARIABLE})), \
+                    redirect_stdout(output):
                 hooks.session_start(root)
             return output.getvalue()
 

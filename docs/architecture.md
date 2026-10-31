@@ -87,7 +87,7 @@ The agent engine runs these commands. People do not have to remember them. The s
 | `check` | Runs the required checks in the work copy. When each check passes or is NOT_NEEDED, it saves the work and pushes the task branch. It tells a push that the server refuses |
 | `accept` | Records the inspection of the requester, of one condition by its text or number, or of all conditions. With GitHub, the same rule as `approve` |
 | `brief` | Examines and records the briefing |
-| `handover` | Checks the change again on the latest default branch, opens the pull request, and turns on auto-merge |
+| `handover` | Merges the task branch on the server and the latest default branch, checks the change again, opens the pull request with the label `akasha-merge`, and turns on auto-merge |
 | `resume` | Opens a stopped task again after a developer examined it. With GitHub, the same rule as `approve` |
 | `cancel` | Stops a task for good. With GitHub, the same rule as `approve`, and the holder also closes the pull request |
 | `handoff` | Saves the work so far on the server and frees the task, so that another person can take it over. Run it in the main checkout |
@@ -95,7 +95,7 @@ The agent engine runs these commands. People do not have to remember them. The s
 | `board` | Shows the tasks of all requesters, with the holder and the feature key of each task |
 | `infra` | Shows the GitHub settings that are not correct. With `--apply`, it corrects them when the GitHub account of this computer is an administrator |
 | `hook` | The entry point for the hooks of the agent engine |
-| `server` | The merge and watch helpers run this on GitHub. People and the agent engine do not run it |
+| `server` | The merge and watch helpers run this on GitHub: `merge`, `watch`, `update`, and `failed`. People and the agent engine do not run it |
 
 ## Requirements
 

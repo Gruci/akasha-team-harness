@@ -11,7 +11,8 @@ from akasha.config import CONFIG_FILE, LEGACY_MAP, TEAM_WORKFLOWS, Team
 
 CHECK_NAME = "akasha"
 TEMPLATES = Path(__file__).parent / "templates"
-# The required check, and the two helpers that act only where GitHub has no branch protection or auto-merge
+# The required check, and the two helpers. The helpers merge and undo only where GitHub has no branch protection or
+# auto-merge. In each repository, they bring the pull requests of the tasks up to date.
 WORKFLOW_FILES = {f".github/workflows/{name}": name for name in ("akasha.yml", "akasha-merge.yml", "akasha-watch.yml")}
 TEMPLATE_FILE = ".github/pull_request_template.md"
 CODEOWNERS_FILES = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")     # GitHub uses the first that exists

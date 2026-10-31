@@ -109,10 +109,18 @@ def _parser() -> argparse.ArgumentParser:
     merge = jobs.add_parser("merge", help="merge a pull request with the label akasha-merge after its check passed")
     merge.add_argument("--repository", required=True)
     merge.add_argument("--head-sha", required=True)
+    merge.add_argument("--update-branch", default="false", metavar="true|false",
+                       help="bring a pull request that is behind up to date: only with a token that starts workflows")
     watch = jobs.add_parser("watch", help="undo a change on the default branch that went around the check")
     watch.add_argument("--repository", required=True)
     for name in ("branch", "before", "after", "forced", "pusher"):
         watch.add_argument(f"--{name}", default="")
+    update = jobs.add_parser("update", help="bring each pull request with the label akasha-merge up to date")
+    update.add_argument("--repository", required=True)
+    update.add_argument("--branch", required=True)
+    failed = jobs.add_parser("failed", help="tell the holder of a task that the check failed on its pull request")
+    failed.add_argument("--repository", required=True)
+    failed.add_argument("--head-sha", required=True)
     return parser
 
 
@@ -125,13 +133,17 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as error:     # noqa: BLE001 — a defect in Akasha must never stop the work of the agent
             print(f"Akasha hook problem: {error}", file=sys.stderr)
             return 0
-    if args.command == "server":                      # GitHub Actions run this in the checkout of the repository
+    if args.command == "server":                      # GitHub Actions run this, in the checkout for merge and watch
         from akasha.infra import server
         if args.job == "merge":
-            print(server.merge(Path.cwd(), args.repository, args.head_sha))
-        else:
+            print(server.merge(Path.cwd(), args.repository, args.head_sha, args.update_branch.lower() == "true"))
+        elif args.job == "watch":
             print(server.watch(Path.cwd(), args.repository, args.branch, args.before, args.after,
                                args.forced.lower() == "true", args.pusher))
+        elif args.job == "update":
+            print(server.update(Path.cwd(), args.repository, args.branch))
+        elif args.job == "failed":
+            print(server.failed(Path.cwd(), args.repository, args.head_sha))
         return 0
     if args.command == "check" and args.ci:
         result = flow.ci_check(Path.cwd(), args.config, args.base)

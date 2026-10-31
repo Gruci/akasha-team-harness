@@ -154,9 +154,11 @@ GitHub's own protection comes first. Akasha's helper workflows fill in only wher
 | Repository | Enforced by |
 |:--|:--|
 | Public, or private on<br>GitHub Pro, Team, or Enterprise | **GitHub** — branch protection, the required check,<br>code owners, and auto-merge |
-| Private on GitHub Free | **Akasha's helpers** — `akasha-merge` merges after the check passes.<br>`akasha-watch` reverts a change that skipped the check, and opens an issue |
+| Private on GitHub Free | **Akasha's helpers** — `akasha-merge` merges after the check passes<br>and the code owners approve.<br>`akasha-watch` reverts a change that skipped the check, and opens an issue |
 
 Setup tries GitHub first and records which one applies in `akasha.toml`. After a plan change, run setup again.
+
+In both cases, Akasha's helpers bring a pull request that is behind up to date when the default branch moves. Thus tasks that hand over at the same time all merge, one after another. This needs the GitHub app of Akasha, and the setup skill tells how to make it. With the app, a merge of the helpers also starts your other workflows, for example a deployment.
 
 > **NOTE:** GitHub stops a bad change before it merges. `akasha-watch` reverts it right after. Administrator pushes and force pushes are reported, not reverted.
 

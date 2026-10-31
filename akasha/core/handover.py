@@ -6,6 +6,8 @@ from akasha.config import Check
 from akasha.core.task import Task
 from akasha.validators.runner import command
 
+TASK_MARK = "<!-- akasha-task:"                       # the mark of the task in the body of its pull request
+
 
 def _named(name: str, checks: dict[str, Check]) -> str:
     """The name of a check with the command that ran, and with its folder when the command does not run at the top.
@@ -43,4 +45,4 @@ def pull_request_body(task: Task, branch: str, checks: dict[str, Check]) -> str:
     body = commit_body(task, branch, checks)
     if task.board:                                    # the merge closes the issue of the task on the board
         body += f"\nCloses #{task.board.rstrip('/').rsplit('/', 1)[-1]}\n"
-    return body + f"\n<!-- akasha-task: {task.id} -->\n"
+    return body + f"\n{TASK_MARK} {task.id} -->\n"

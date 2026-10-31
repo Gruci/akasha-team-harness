@@ -1,6 +1,6 @@
 ---
 name: akasha-setup
-description: Set up Akasha in a repository, or turn on its server rules. Use when the user says "Set up Akasha" or "Akasha 설정해줘", or when the session start notice says that the repository does not use Akasha yet or that its server rules are off.
+description: Set up Akasha in a repository, or turn on its server rules. Use when the user says "Set up Akasha" or "Akasha 설정해줘", or when the session start notice says that the repository does not use Akasha yet or that its server rules are off, or when Akasha says that the GitHub app of Akasha is not set up.
 ---
 
 # Set up Akasha
@@ -26,6 +26,7 @@ Akasha examines the repository first. Do only the part that the repository needs
    - If the owner must change the plan or make the repository public, tell the user. The server rules cannot go on before that.
    - If the user is not an administrator, tell the user to ask an administrator. The work can start now. The handover waits for the server rules.
    - If Akasha shows a GitHub warning, tell the user. A warning does not stop the work or the handover.
+   - If the warning says that the GitHub app of Akasha is not set up, tell the administrator to make it. Do the steps in [Make the GitHub app of Akasha](#make-the-github-app-of-akasha).
    - If the user is an administrator, ask the user to approve the GitHub changes. Then run `akasha setup --approve-infra <GitHub name>`. The name must be the GitHub account of this computer: Akasha asks GitHub, and only an administrator of the repository can change the settings. If this output shows a GitHub warning, tell the user before the pull request.
 6. Make a new branch. Commit the new and changed files on it and open a pull request.
    The files are `akasha.toml`, `.akasha/context/map/README.md`, `AGENTS.md`, `.codex/hooks.json`, `.gitignore`, and the files in `.github/`.
@@ -34,3 +35,31 @@ Akasha examines the repository first. Do only the part that the repository needs
 > **CAUTION:** Do not change the GitHub settings without the approval of an administrator.
 
 > **NOTE:** Codex needs Akasha installed with pip: `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"`.
+
+## Make the GitHub app of Akasha
+
+The helper workflows of Akasha use the token of this app. With the app, the pull requests of the tasks come up to date when the default branch moves, and a merge of the helpers starts the other workflows, for example a deployment. Make the app in each repository, also when GitHub merges.
+
+An administrator of the repository does these steps on GitHub. Tell the steps to the administrator one at a time.
+
+1. On GitHub, open **Settings** → **Developer settings** → **GitHub Apps** → **New GitHub App**. For a repository of an organization, open the settings of the organization.
+2. Give the app a name, for example `akasha-<repository>`, and a homepage URL, for example the address of the repository. Clear **Webhook** → **Active**.
+3. Give the app these repository permissions. Then select **Only on this account**, and **Create GitHub App**.
+
+   | Permission | Access |
+   |:--|:--|
+   | Contents | Read and write |
+   | Pull requests | Read and write |
+   | Issues | Read and write |
+   | Workflows | Read and write |
+   | Checks | Read-only |
+
+4. On the page of the app, select **Generate a private key**. GitHub downloads a `.pem` file.
+5. Select **Install App**, then the account of the repository. Select **Only select repositories**, and the repository.
+6. Ask the administrator for the Client ID on the page of the app. Run `gh variable set AKASHA_APP_CLIENT_ID --body <Client ID>`.
+7. Tell the administrator to run this command in a terminal: `gh secret set AKASHA_APP_KEY < <path of the .pem file>`. Then the administrator deletes the `.pem` file, or keeps it in a safe place.
+8. Run `akasha infra`. Make sure that it does not show the notice about the GitHub app.
+
+> **CAUTION:** Do not open or read the private key. Only the administrator stores it.
+
+> **NOTE:** Without the Workflows permission, the helpers cannot merge or undo a change in `.github/workflows/`. Without the app, the secret `AKASHA_TOKEN` with a token of a person also starts other workflows, but the token belongs to that person.

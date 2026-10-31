@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import re
+import subprocess
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -1248,14 +1249,56 @@ def _examine_base(root: Path, task: Task) -> None:
         raise RuntimeError(f"the task builds on {task.builds_on}, which did not merge yet. Hand over after it merges")
 
 
+def _merge_server(tree: Path, task: Task, branch: str) -> None:
+    """Merge the task branch on the server, then the latest default branch, into the work copy, and move the base of
+    the task to the default branch.
+
+    The task branch on the server can have commits that the work copy does not have: GitHub makes a merge commit there
+    when the helpers of Akasha bring the pull request up to date. Before the first passed check, the server has no
+    task branch."""
+    if workcopy.fetch(tree, task.branch).returncode == 0 and \
+            workcopy.git(tree, "merge", "--no-edit", "-q", f"origin/{task.branch}").returncode:
+        workcopy.git(tree, "merge", "--abort")
+        raise RuntimeError(f"the task branch {task.branch} on the server has commits that conflict with the work copy. "
+                           f"In {tree}, run git merge origin/{task.branch}, repair the conflict, and commit. Then do "
+                           "the handover again")
+    fetched = workcopy.git(tree, "fetch", "origin", branch)
+    if fetched.returncode:
+        raise RuntimeError(f"git fetch failed: {fetched.stderr.strip()[:300]}")
+    merged = workcopy.git(tree, "merge", "--no-edit", f"origin/{branch}")
+    if merged.returncode:
+        workcopy.git(tree, "merge", "--abort")
+        raise RuntimeError(f"the change conflicts with the latest {branch}. In {tree}, run git merge origin/{branch}, "
+                           "repair the conflict, and commit. Then do the handover again")
+    task.base = workcopy.git(tree, "rev-parse", f"origin/{branch}").stdout.strip() or task.base
+
+
+def _push_again(root: Path, team: Team, tree: Path, task: Task, branch: str) -> subprocess.CompletedProcess:
+    """Push once more after the server refused the push of the handover, for example because the helpers of Akasha
+    brought the pull request up to date after the check. Akasha merges the task branch on the server and the latest
+    default branch again. When the merges changed files, the checks run again first: the task branch on the server
+    always passed the checks. Akasha never forces the push."""
+    checked = workcopy.git(tree, "rev-parse", "HEAD^{tree}").stdout.strip()
+    _merge_server(tree, task, branch)
+    if workcopy.git(tree, "rev-parse", "HEAD^{tree}").stdout.strip() != checked:
+        result = runner.run(team, tree, workcopy.changed_files(task))
+        task.checks = result.status
+        if not runner.passed(result.status):
+            _publish(root, task)
+            raise RuntimeError("a required check did not pass on the latest default branch: " + str(result.status))
+    _publish(root, task)
+    return workcopy.git(tree, "push", "-u", "origin", task.branch)
+
+
 @_command
 def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     """Check the change again on the latest default branch, open the pull request, and turn on auto-merge.
 
     The pull request merges as one squash commit when the required check passes: by GitHub auto-merge, or by the
     merge workflow of Akasha where GitHub has none. The commit body is the briefing, so a person who must revert the
-    change later finds it fast. Return the pull request address and the reasons that keep the task at the handover
-    stage."""
+    change later finds it fast. The pull request gets the label akasha-merge in each repository, so that the helpers
+    of Akasha bring it up to date when the default branch moves. Return the pull request address and the reasons that
+    keep the task at the handover stage."""
     team, task = rules(root), _held(root, task_id)
     if task.stage != "handover" or task.status != "open":
         raise ValueError(f"the task is {task.status} at the {task.stage} stage — the handover needs an open task "
@@ -1281,36 +1324,31 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
         raise RuntimeError(f"the work copy has files outside the scope: {', '.join(strays[:5])}. Remove them, add them "
                            "to .gitignore, or widen the scope with specify --scope. Then do the handover again")
     _commit(tree, task.title)
-    fetched = workcopy.git(tree, "fetch", "origin", branch)
-    if fetched.returncode:
-        raise RuntimeError(f"git fetch failed: {fetched.stderr.strip()[:300]}")
-    merged = workcopy.git(tree, "merge", "--no-edit", f"origin/{branch}")
-    if merged.returncode:
-        workcopy.git(tree, "merge", "--abort")
-        raise RuntimeError(f"the change conflicts with the latest {branch}. In {tree}, run git merge origin/{branch}, "
-                           "repair the conflict, and commit. Then do the handover again")
-    task.base = workcopy.git(tree, "rev-parse", f"origin/{branch}").stdout.strip() or task.base
+    _merge_server(tree, task, branch)
     _publish(root, task)                              # from now on, the changed files are the changes of this task
     result = check(root, task_id)
     if not runner.passed(result.status):
         raise RuntimeError("a required check did not pass on the latest default branch: " + str(result.status))
     task = load(root, task_id)
     pushed = workcopy.git(tree, "push", "-u", "origin", task.branch)
+    if pushed.returncode:                             # the task branch on the server moved after the check
+        pushed = _push_again(root, team, tree, task, branch)
     if pushed.returncode:
-        raise RuntimeError(f"git push failed: {pushed.stderr.strip()[:300]}")
+        raise RuntimeError(f"git push failed: {pushed.stderr.strip()[:300]}. Akasha never forces this push")
     if task.wip:                                      # the task branch has the work of the last handoff now
         _drop_wip(root, task)
         _publish(root, task)
-    helped = team.server_rules == "akasha"            # the merge workflow of Akasha merges a pull request with the label
+    helped = team.server_rules == "akasha"            # the merge workflow of Akasha merges; GitHub has no auto-merge
     if not task.pull_request:                         # a second handover only pushes the new commits
+        gh(root, "label", "create", server.MERGE_LABEL, *server.LABEL_OPTIONS)     # when nobody made the label yet
         created = gh(root, "pr", "create", "--base", branch, "--head", task.branch, "--title", task.title,
                      "--body", handover_document.pull_request_body(task, branch, team.checks),
-                     *(["--label", server.MERGE_LABEL] if helped else []))
+                     "--label", server.MERGE_LABEL)
         if created.returncode:
             raise RuntimeError(f"gh pr create failed: {created.stderr.strip()[:300]}")
         task.pull_request = created.stdout.strip().splitlines()[-1]
         _publish(root, task)
-    elif helped and server.MERGE_LABEL not in {label.get("name") for label in known.get("labels", [])}:
+    elif server.MERGE_LABEL not in {label.get("name") for label in known.get("labels", [])}:
         gh(root, "pr", "edit", task.pull_request, "--add-label", server.MERGE_LABEL)
     if not helped and not known.get("autoMergeRequest"):
         number = task.pull_request.rstrip("/").rsplit("/", 1)[-1]

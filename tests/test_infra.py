@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import tempfile
 import unittest
@@ -9,9 +10,9 @@ from akasha import config
 from akasha.config import Team
 from akasha.infra import desired, github, server
 
-# The required check without [ci]. Akasha 1.0.0 had the same text without the bash default, the fresh install, and
-# the UTF-8 mode. A change of this text makes the handover wait in each repository until an administrator sets up
-# Akasha again, so change it only on purpose.
+# The required check without [ci]. Akasha 1.0.0 had the same text without the concurrency group, the bash default,
+# the fresh install, and the UTF-8 mode. A change of this text makes the handover wait in each repository until an
+# administrator sets up Akasha again, so change it only on purpose.
 DEFAULT_CHECK = """\
 # Akasha installs this file. It runs the required checks of the team on each pull request.
 # The rules come from the default branch, so a pull request cannot make its own checks weaker.
@@ -21,6 +22,10 @@ on:
   merge_group:
 permissions:
   contents: read
+concurrency:
+  # A new commit on the pull request, for example an update by Akasha, stops the check of the older commit
+  group: akasha-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   akasha:
     runs-on: ubuntu-latest
@@ -111,8 +116,9 @@ class InfraTests(unittest.TestCase):
         self.assertIn("refs/heads/", check)
         self.assertIn("    runs-on: ubuntu-latest\n", check)
         self.assertIn('python-version: "3.12"', check)
-        for helper in (".github/workflows/akasha-merge.yml", ".github/workflows/akasha-watch.yml"):
-            self.assertIn("When GitHub protects the default branch, it does nothing", files[helper])
+        self.assertIn("When GitHub protects the default\n#   branch, GitHub merges.", files[".github/workflows/akasha-merge.yml"])
+        self.assertIn("When GitHub protects the default branch, it does nothing.\n# update:",
+                      files[".github/workflows/akasha-watch.yml"])
         self.assertEqual(desired.settings_drift({"allow_auto_merge": False, "allow_squash_merge": True}),
                          ["the repository setting allow_auto_merge is off"])
         self.assertEqual(desired.settings_drift({}), [])                # hidden settings are not problems
@@ -138,6 +144,39 @@ class InfraTests(unittest.TestCase):
         for labels in (("linux",), ("true",), ("my runner",)):           # YAML reads these as other values
             with self.subTest(labels=labels):
                 self.assertEqual(desired.runs_on(labels), json.dumps(labels[0]))
+
+    def test_the_helpers_use_the_app_token_when_the_repository_has_the_app(self):
+        files = desired.workflows()
+        jobs = {}
+        for name in ("akasha-merge", "akasha-watch"):
+            text = files[f".github/workflows/{name}.yml"]
+            self.assertIn("git+https://github.com/Gruci/akasha-team-harness@v1.0.0", text)
+            for part in re.split(r"\n(?=  \w)", "\n" + text.split("\njobs:\n", 1)[1])[1:]:     # one part for each job
+                jobs[part.split(":")[0].strip()] = part
+        self.assertEqual(set(jobs), {"merge", "failed", "watch", "update"})
+        app = "uses: actions/create-github-app-token@v3"
+        for job in ("merge", "watch"):                              # a repository without the app works as before
+            with self.subTest(job=job):
+                step = jobs[job][jobs[job].index("Make a token of the GitHub app"):jobs[job].index(app)]
+                self.assertIn("if: ${{ vars.AKASHA_APP_CLIENT_ID != '' }}", step)
+                self.assertIn("client-id: ${{ vars.AKASHA_APP_CLIENT_ID }}", jobs[job])
+                self.assertIn("private-key: ${{ secrets.AKASHA_APP_KEY }}", jobs[job])
+                self.assertIn("GH_TOKEN: ${{ steps.app.outputs.token || secrets.AKASHA_TOKEN || github.token }}",
+                              jobs[job])
+                self.assertLess(jobs[job].index(app), jobs[job].index("python -m akasha server"))
+        self.assertIn("vars.AKASHA_APP_CLIENT_ID != ''", jobs["update"].splitlines()[1])   # only with the app
+        self.assertIn("GH_TOKEN: ${{ steps.app.outputs.token }}", jobs["update"])
+        self.assertNotIn(app, jobs["failed"])                        # a comment needs no app
+        self.assertIn("persist-credentials: false", jobs["watch"])   # git pushes with the token of the undo step
+        self.assertLess(jobs["watch"].index("gh auth setup-git"), jobs["watch"].index("server watch"))
+        self.assertIn("ref: ${{ github.event.repository.default_branch }}", jobs["merge"])  # never the pull request
+        for job, group in (("merge", "akasha-merge"), ("update", "akasha-update")):
+            self.assertIn(f"group: {group}", jobs[job])
+            self.assertIn("cancel-in-progress: false", jobs[job])
+        self.assertIn("--update-branch \"$UPDATE\"", jobs["merge"])
+        self.assertIn("pull_request_review:", files[".github/workflows/akasha-merge.yml"])
+        self.assertIn("server failed", jobs["failed"])
+        self.assertIn("server update", jobs["update"])
 
     def test_a_runner_of_the_team_in_a_public_repository_gets_a_warning(self):
         own = Team(runs_on=("self-hosted", "linux"))
@@ -217,6 +256,24 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(problems, [])                                   # a warning does not stop a handover
         self.assertIn("a pull request from a fork runs its code on that machine", warned[0])
 
+    def test_the_open_pull_requests_of_the_tasks_get_the_merge_label(self):
+        listed = [{"number": 4, "body": "## Why\n\n<!-- akasha-task: t-1 -->\n", "labels": []},
+                  {"number": 5, "body": "<!-- akasha-task: t-2 -->", "labels": [{"name": server.MERGE_LABEL}]},
+                  {"number": 6, "body": "A pull request of a person", "labels": []}]
+
+        def answers(root, *args, payload=None):
+            return subprocess.CompletedProcess([], 0, json.dumps(listed) if args[:2] == ("pr", "list") else "{}", "")
+
+        with patch("akasha.repo.origin", return_value="team/app"), patch("akasha.repo.me", return_value="admin-a"), \
+                patch("akasha.infra.github.repository", return_value=("team/app", "main")), \
+                patch("akasha.infra.github.settings", return_value={"permissions": {"admin": True}}), \
+                patch("akasha.infra.github.gh", side_effect=answers) as gh:
+            github.apply(self.root)
+        calls = [call.args[1:] for call in gh.call_args_list]
+        self.assertIn(("label", "create", server.MERGE_LABEL, *server.LABEL_OPTIONS, "--force"), calls)
+        self.assertEqual([call for call in calls if call[:2] == ("pr", "edit")],
+                         [("pr", "edit", "4", "--add-label", server.MERGE_LABEL)])     # also where GitHub merges
+
     def test_without_github_the_name_of_the_team_config(self):
         with self.assertRaises(PermissionError):
             self.apply("", by="dev-b", origin="")
@@ -252,14 +309,29 @@ class StatusTests(unittest.TestCase):
                      ("update-ref", "refs/remotes/origin/main", "HEAD")):
             subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
 
-    def status(self, private: bool = True) -> list[str]:
+    def status(self, private: bool = True, admin: bool = True,
+               variable: subprocess.CompletedProcess | None = None) -> list[str]:
+        """Examine the settings. `variable` is the answer of GitHub for the variable of the GitHub app."""
         correct = {"required_status_checks": {"strict": True, "contexts": ["akasha"]},
                    "required_pull_request_reviews": {"require_code_owner_reviews": True}}
+        found = variable or subprocess.CompletedProcess([], 0, '{"name": "AKASHA_APP_CLIENT_ID"}', "")
         with patch("akasha.infra.github.repository", return_value=("team/app", "main")), \
-                patch("akasha.infra.github.settings", return_value={"private": private, "permissions": {"admin": True}}), \
+                patch("akasha.infra.github.settings", return_value={"private": private, "permissions": {"admin": admin}}), \
                 patch("akasha.infra.github.protection", return_value=correct), \
-                patch("akasha.infra.github.fetch"):
+                patch("akasha.infra.github.fetch"), patch("akasha.infra.github.gh", return_value=found) as self.gh:
             return github.status(self.root)
+
+    def test_only_an_administrator_is_told_about_a_missing_app(self):
+        missing = subprocess.CompletedProcess([], 1, '{"message": "Not Found"}', "gh: Not Found (HTTP 404)")
+        self.assertEqual(self.status(variable=missing), [])           # a notice does not stop a handover
+        self.assertEqual(github.warnings(self.root), [github.NO_APP])
+        self.assertEqual(self.gh.call_args.args[1:], ("api", f"repos/team/app/actions/variables/{github.APP_VARIABLE}"))
+        hidden = subprocess.CompletedProcess([], 1, '{"message": "Forbidden"}', "gh: Forbidden (HTTP 403)")
+        for admin, answer in ((True, None), (True, hidden), (False, missing)):
+            with self.subTest(admin=admin, answer=answer):
+                self.assertEqual(self.status(admin=admin, variable=answer), [])
+                self.assertEqual(github.warnings(self.root), [])
+        self.gh.assert_not_called()                                   # only an administrator is asked
 
     def test_the_server_files_follow_the_team_config_on_the_default_branch(self):
         self.assertEqual(self.status(), [])

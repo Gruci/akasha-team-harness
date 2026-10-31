@@ -6,6 +6,10 @@ on:
   merge_group:
 permissions:
   contents: read
+concurrency:
+  # A new commit on the pull request, for example an update by Akasha, stops the check of the older commit
+  group: akasha-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   akasha:
     runs-on: @@AKASHA_RUNS_ON@@

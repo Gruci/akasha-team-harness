@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from akasha import config, repo
+from akasha.core.handover import TASK_MARK
 from akasha.core.workcopy import fetch, git
 from akasha.infra import desired, server
 from akasha.repo import gh, gh_repo
@@ -21,6 +22,11 @@ ANSWER_SECONDS = 10                                    # git waits this long for
 _NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no branch protection for private repositories
 UPDATE = "/plugin update akasha@akasha in Claude Code, or pip install again for Codex"
 _HEAD = re.compile(r"^ref: refs/heads/(\S+)\tHEAD$", re.M)        # the answer of git ls-remote --symref origin HEAD
+APP_VARIABLE = "AKASHA_APP_CLIENT_ID"                  # the repository variable with the Client ID of the GitHub app
+NO_APP = (f"the GitHub app of Akasha is not set up: the repository variable {APP_VARIABLE} is missing. Without the "
+          "app, the pull requests of the tasks do not come up to date when the default branch moves, and a merge or "
+          "an undo of the helpers does not start other workflows, for example a deployment. The akasha-setup skill "
+          "tells how to make the app")
 
 
 def repository(root: Path) -> tuple[str, str] | None:
@@ -116,7 +122,7 @@ def status(root: Path) -> list[str]:
 
     The server files must agree with the team config on the default branch, as CODEOWNERS does. Each examination
     also updates the record that the session start notice reads. The record also keeps the warnings that do not stop
-    a handover, for `infra` and `setup`."""
+    a handover, for `infra` and `setup`: for example, a repository without the GitHub app of Akasha."""
     found = repository(root)
     if found is None:
         problems = ["Akasha cannot read the GitHub repository — make sure that gh is installed and logged in"]
@@ -136,8 +142,20 @@ def status(root: Path) -> list[str]:
     if desired.block(owners) != desired.codeowners(team):
         problems.append(f"the Akasha block of CODEOWNERS on {branch} is missing or different from akasha.toml")
     _remember(root, problems, bool((current.get("permissions") or {}).get("admin")), team.server_rules, branch,
-              desired.warnings(team, current))
+              desired.warnings(team, current) + _app_warnings(root, slug, current))
     return problems
+
+
+def _app_warnings(root: Path, slug: str, current: dict) -> list[str]:
+    """A notice for an administrator when the repository has no GitHub app of Akasha. It does not stop a handover:
+    without the app, the helpers work as in Akasha 1.0.0.
+
+    The documents of GitHub do not agree on who can read the repository variables, so Akasha asks only an
+    administrator. Only "not found" means that the variable is missing."""
+    if not (current.get("permissions") or {}).get("admin"):
+        return []
+    read = gh(root, "api", f"repos/{slug}/actions/variables/{APP_VARIABLE}")
+    return [NO_APP] if read.returncode and "HTTP 404" in read.stderr + read.stdout else []
 
 
 def warnings(root: Path) -> list[str]:
@@ -227,7 +245,8 @@ def apply(root: Path, approved_by: str = "") -> tuple[list[str], list[str]]:
     problems, and the warnings that do not stop a handover.
 
     Akasha turns on the branch protection and the auto-merge of GitHub. When the plan of the repository has none,
-    Akasha records `[server] rules = "akasha"`, and its merge and watch workflows enforce the rules. Akasha keeps the
+    Akasha records `[server] rules = "akasha"`, and its merge and watch workflows enforce the rules. In both cases,
+    each open pull request of a task gets the merge label, so that the helpers bring it up to date. Akasha keeps the
     CODEOWNERS lines and the pull request template that the team already has. The server files get the values of
     the team config in this checkout: the administrator commits them with the team config in one pull request. Thus
     the warnings are for the team config in this checkout, before the pull request merges."""
@@ -257,8 +276,8 @@ def apply(root: Path, approved_by: str = "") -> tuple[list[str], list[str]]:
     elif done.returncode:
         problems.append(f"GitHub refused the branch protection: {done.stderr.strip()[:300]}")
     config.set_server_rules(root, rules)
-    gh(root, "label", "create", server.MERGE_LABEL, "--color", "0e8a16", "--force",
-       "--description", "Akasha merges this pull request after the check passes")
+    gh(root, "label", "create", server.MERGE_LABEL, *server.LABEL_OPTIONS, "--force")
+    _label_pulls(root)
     wanted = desired.SETTINGS if rules == "github" else {"allow_squash_merge": True, "delete_branch_on_merge": True}
     changed = gh(root, "api", "--method", "PATCH", f"repos/{slug}", "--input", "-", payload=wanted)
     if changed.returncode:
@@ -267,7 +286,18 @@ def apply(root: Path, approved_by: str = "") -> tuple[list[str], list[str]]:
     # free plan. Thus Akasha reads the settings again.
     current = settings(root, slug)
     problems += [f"GitHub kept a setting off: {item}" for item in desired.settings_drift(current, wanted)]
-    return problems, desired.warnings(team, current)
+    return problems, desired.warnings(team, current) + _app_warnings(root, slug, current)
+
+
+def _label_pulls(root: Path) -> None:
+    """Give the merge label to each open pull request of a task that does not have it, for example a pull request of
+    Akasha 1.0.0 where GitHub merges. The helpers bring only the pull requests with the label up to date."""
+    listed = gh(root, "pr", "list", "--state", "open", "--limit", "500", "--json", "number,body,labels")
+    found = json.loads(listed.stdout or "[]") if listed.returncode == 0 else []
+    for pull in found if isinstance(found, list) else []:
+        if TASK_MARK in (pull.get("body") or "") and \
+                server.MERGE_LABEL not in {label.get("name") for label in pull.get("labels") or []}:
+            gh(root, "pr", "edit", str(pull["number"]), "--add-label", server.MERGE_LABEL)
 
 
 def pull_request(root: Path, address_or_branch: str) -> dict:
