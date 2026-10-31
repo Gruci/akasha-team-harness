@@ -210,7 +210,7 @@ The merge and watch helpers always run on `ubuntu-latest`. They can write to the
 
 | Key | Value |
 |:--|:--|
-| `map` | The map folder of the product map, relative to the top of the repository. The default is `.akasha/context/map`. Akasha refuses an absolute path, a drive, `..`, and a device name of Windows, for example `aux` |
+| `map` | The map folder of the product map, relative to the top of the repository. The default is `.akasha/context/map`. Akasha refuses an absolute path, a drive, `..`, the top of the repository, and a device name of Windows, for example `aux` |
 
 The map folder is outside each task scope, and its files do not raise the risk level of a task, so that each task can update its map file. Use it only for the product map.
 

@@ -113,6 +113,12 @@ def _labeled(pull: dict) -> bool:
     return MERGE_LABEL in {label.get("name") for label in pull.get("labels") or []}
 
 
+def _from_here(slug: str, pull: dict) -> bool:
+    """True when the head branch of the pull request is in the repository itself. Akasha pushes each task branch to
+    origin, so a pull request from a fork is never the pull request of a task, also with the label and the mark."""
+    return (((pull.get("head") or {}).get("repo") or {}).get("full_name") or "").lower() == slug.lower()
+
+
 def _conclusions(root: Path, slug: str, sha: str) -> set[str]:
     """The conclusions of the latest runs of the check akasha on a commit, for example success or failure. A run that
     did not finish has no conclusion yet: ""."""
@@ -193,13 +199,13 @@ def _update_one(root: Path, slug: str, pull: dict) -> str:
 
 def update(root: Path, slug: str, branch: str) -> str:
     """Bring each open pull request with the label akasha-merge on the branch up to date, so that its check runs on
-    the latest branch. Skip a draft, a pull request whose check failed on its head, and a pull request whose task is
-    not active. Return one line for each pull request.
+    the latest branch. Skip a draft, a pull request from a fork, a pull request whose check failed on its head, and a
+    pull request whose task is not active. Return one line for each pull request.
 
     A failure of GitHub for one pull request does not stop the others: it goes into its line."""
     lines = []
     for pull in _pages(root, f"repos/{slug}/pulls?state=open&base={branch}&per_page=100"):
-        if not _labeled(pull) or pull.get("draft"):
+        if not _labeled(pull) or pull.get("draft") or not _from_here(slug, pull):
             continue
         try:
             lines.append(_update_one(root, slug, pull))
@@ -268,8 +274,11 @@ def _settle(root: Path, slug: str, pull: dict, update_branch: bool, passed: bool
     Like strict branch protection, Akasha does not merge a branch that is behind the default branch. With
     `update_branch`, the token starts workflows: in each repository, Akasha brings such a pull request up to date,
     and the pass of the check on the new head merges it. Without `update_branch`, as in Akasha 1.0.0, a comment asks
-    for the handover again where GitHub does not protect the branch, once for each head."""
+    for the handover again where GitHub does not protect the branch, once for each head. A pull request from a fork is
+    not the pull request of a task (_from_here)."""
     number, head, base = str(pull["number"]), pull["head"]["sha"], pull["base"]["ref"]
+    if not _from_here(slug, pull):
+        return False, f"pull request #{number} comes from a fork, so it is not the pull request of a task"
     if not passed and "success" not in _conclusions(root, slug, head):   # an approval can come before the pass
         return False, f"the check {desired.CHECK_NAME} did not pass on the head of pull request #{number}"
     behind = _behind(root, slug, base, head)

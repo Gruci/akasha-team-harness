@@ -34,9 +34,10 @@ def task_issue(holder: str = "dev-b", status: str = "open") -> dict:
 
 
 def labeled(number: int, head: str, body: str = "Closes #3\n\n<!-- akasha-task: t-1 -->\n", draft: bool = False,
-            label: bool = True) -> dict:
-    """An open pull request of a task in the shape of the REST API."""
-    return {"state": "open", "number": number, "title": "Add a date filter", "head": {"sha": head},
+            label: bool = True, repository: str = "team/app") -> dict:
+    """An open pull request of a task in the shape of the REST API. `repository` has its head branch."""
+    return {"state": "open", "number": number, "title": "Add a date filter",
+            "head": {"sha": head, "ref": "akasha/t-1", "repo": {"full_name": repository}},
             "base": {"ref": "main"}, "labels": [{"name": server.MERGE_LABEL}] if label else [], "draft": draft,
             "user": {"login": "dev-a"}, "body": body}
 
@@ -143,7 +144,9 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(fake.updated(), [])                         # the workflow token brings nothing up to date
 
     def test_steps_aside_or_waits(self):
+        fork = {SHA: [labeled(7, SHA, repository="stranger/app")]}          # the label and the mark of a task
         cases = {"has no akasha-merge label": FakeGitHub(pulls=self.pull(labeled_=False)),
+                 "comes from a fork": FakeGitHub(pulls=fork),
                  "GitHub protects main": FakeGitHub(protected=True, pulls=self.pull()),
                  "is behind main": FakeGitHub(behind=2, pulls=self.pull()),
                  "did not pass": FakeGitHub(pulls=self.pull(), conclusions={SHA: [""]})}    # an early approval
@@ -261,7 +264,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_skips_what_must_not_come_up_to_date(self):
         listed = [labeled(5, "c" * 40, draft=True), labeled(6, "d" * 40, label=False), labeled(7, SHA),
-                  labeled(8, OTHER, body="Closes #4\n")]
+                  labeled(8, OTHER, body="Closes #4\n"), labeled(9, "e" * 40, repository="stranger/app")]
         issues = {"3": task_issue(), "4": task_issue(status="cancelled")}
         fake = FakeGitHub(behind=1, listed=listed, issues=issues, conclusions={SHA: ["failure"]})
         self.assertEqual(self.update(fake), ["pull request #7: the check akasha failed on its head",

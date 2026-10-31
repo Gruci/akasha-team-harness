@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from akasha import SOURCE, config, repo
+from akasha.coordinator import board
 from akasha.core.handover import TASK_MARK
 from akasha.core.workcopy import fetch, git
 from akasha.infra import desired, server
@@ -309,12 +310,22 @@ def apply(root: Path, approved_by: str = "") -> tuple[list[str], list[str]]:
 
 def _label_pulls(root: Path) -> None:
     """Give the merge label to each open pull request of a task that does not have it, for example a pull request of
-    Akasha 1.0.0 where GitHub merges. The helpers bring only the pull requests with the label up to date."""
-    listed = gh(root, "pr", "list", "--state", "open", "--limit", "500", "--json", "number,body,labels")
+    Akasha 1.0.0 where GitHub merges. The helpers bring only the pull requests with the label up to date.
+
+    Each person can copy the mark of a task into a pull request, also from a fork. Thus a pull request gets the label
+    only when its head is in the repository itself and a task on the board names it as its pull request. When gh
+    cannot read the board, no pull request gets the label: the next handover of each task gives it."""
+    listed = gh(root, "pr", "list", "--state", "open", "--limit", "500", "--json",
+                "number,url,body,labels,isCrossRepository")
     found = json.loads(listed.stdout or "[]") if listed.returncode == 0 else []
+    try:
+        recorded = {task.pull_request for task in board.read(root)[0] if task.pull_request}
+    except board.BoardError:
+        return
     for pull in found if isinstance(found, list) else []:
-        if TASK_MARK in (pull.get("body") or "") and \
-                server.MERGE_LABEL not in {label.get("name") for label in pull.get("labels") or []}:
+        if TASK_MARK in (pull.get("body") or "") and pull.get("isCrossRepository") is False \
+                and pull.get("url") in recorded \
+                and server.MERGE_LABEL not in {label.get("name") for label in pull.get("labels") or []}:
             gh(root, "pr", "edit", str(pull["number"]), "--add-label", server.MERGE_LABEL)
 
 

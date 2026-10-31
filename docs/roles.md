@@ -59,10 +59,11 @@ With GitHub, each decision of a person is a decision comment on the issue of the
 Akasha does not trust a name that the agent engine types. Each time that Akasha reads a task, it counts the approvals and the inspection results again from the decision comments only. The issue body and the task file only carry the state of the task between computers:
 
 - The approvals and the inspection results in the issue body and in the task file do not count.
-- A task file on this computer that is newer than the issue does not change the requester. It does not open a stopped task, and it does not open a done or a cancelled task again. The revision of the specification does not go back, and changed completion conditions or open questions get a new revision.
+- A task file on this computer that is newer than the issue does not change the requester, the holder, or the workflow. It does not move the task past the stage on the issue, so the next `advance` examines the gates again. It does not lower the risk level or the count of failed repairs. It does not open a stopped task, and it does not change a done or a cancelled task. The revision of the specification does not go back, and changed completion conditions or open questions get a new revision.
+- Without GitHub, Akasha writes no issue, also for a task that has one, for example after `origin` moved away from GitHub. The decisions that Akasha records on the computer then do not go on the issue. When `origin` is on GitHub again, the decisions count again only from the comments.
 - The guard stops the agent engine when it changes the body of an issue with `gh`, writes a decision comment with `gh`, or edits, deletes, or hides a comment. See [Validators](validators.md).
 
-> **NOTE:** A person with write access to the repository can edit an issue body on GitHub, also the requester or the status of the task. Akasha cannot tell that edit from a write of Akasha. Give write access only to the people that the team trusts.
+> **NOTE:** A person with write access to the repository can edit an issue body on GitHub, also the requester, the completion conditions, the stage, or the status of the task. Akasha cannot tell that edit from a write of Akasha, and it counts the decisions with the edited values. For example, the new requester decides, and `/accept <number>` is for the condition that has that number now. A person with write access can also delete the comment of another person, and Akasha cannot see a deleted comment. Give write access only to the people that the team trusts.
 
 Rules for the decision comments:
 
@@ -71,9 +72,9 @@ Rules for the decision comments:
 - `<number>` is the number of a completion condition, from 1. `all` in place of the number inspects all conditions. For the same condition, the later comment wins.
 - `/approve risk <level>` counts when the level is the current risk level of the task or higher. When the real changes raise the risk level, the gate needs a new approval. When `[approval]` names the role `requester`, the approval of the specification is the approval of the requester for the gate.
 - A `/resume` counts only when it comes after the comment of Akasha that stopped the task, and only once.
-- Akasha does not count an edited comment or a hidden comment. A person with write access can edit the comment of another person, and GitHub still shows the first author.
+- A person with write access can edit or hide the comment of another person, and GitHub still shows the first author. Thus an edit or a hidden comment never makes a decision, and never brings back an earlier decision. Akasha does not count an edited comment. A hidden comment counts only as `/reject` or `/cancel`. Akasha cannot see the text before an edit, so an edited comment of the requester also removes the inspection results before it: the requester writes them again.
 - The `@` and upper case or lower case do not change a name.
-- `advance` and `show` tell each decision comment that does not count, and why.
+- `advance` and `show` tell each decision comment that does not count, and why. For an author that Akasha does not trust as a source of news, they show only the author and the reason, not the text. See [Coordination](coordination.md#news-on-the-issue).
 - When Akasha cannot read the comments, no approval and no acceptance counts.
 
 ### The same-computer exception

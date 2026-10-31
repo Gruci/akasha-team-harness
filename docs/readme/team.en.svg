@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="714" viewBox="0 0 1000 714" role="img" aria-label="Three people work in one repository at the same time, each with their own AI. Operations asks for a date filter on the customer search, and Finance asks for the tax on invoices. Later, Sales asks for an export button on the customer search. Inside the Akasha harness, the shared task board finds that the export button is the same feature, so that task starts from the branch of the date filter and hands over after it merges. The invoice task has no overlap and runs in parallel. GitHub merges three commits in order: #41 Show the tax on invoices, #42 Add a date filter, #43 Add an export button. When tasks overlap, the board decides: the same feature stacks, for the same files both tasks continue and the task that merges later gets the earlier change, and the same contract leaves a notice on the other task.">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="714" viewBox="0 0 1000 714" role="img" aria-label="Three people work in one repository at the same time, each with their own AI. Operations asks for a date filter on the customer search, and Finance asks for the tax on invoices. Later, Sales asks for an export button on the customer search. Inside the Akasha harness, the shared task board finds that the export button is the same feature, so that task starts from the branch of the date filter and hands over after it merges. The invoice task has no overlap and runs in parallel. GitHub merges three commits in order: #41 Show the tax on invoices, #42 Add a date filter, #43 Add an export button. When tasks overlap, Akasha applies these rules: the same feature stacks, for the same files both tasks continue and the task that merges later gets the earlier change, and the same contract leaves a notice on the other task.">
 <style>
 text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;fill:#e6edf3}
 .title{font-size:22px;font-weight:700}
@@ -68,7 +68,7 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun
 <text x="502" y="241" class="gate">starts from its branch</text>
 <text x="860" y="226" class="small" text-anchor="end">hands over after #42 merges</text>
 <rect x="24" y="454" width="160" height="56" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="476" r="5" fill="#3fb950"/><text x="56" y="481" class="name">GitHub</text><text x="38" y="502" class="small">main</text>
-<text x="24" y="572" class="label">WHEN TASKS OVERLAP, THE SHARED TASK BOARD DECIDES</text>
+<text x="24" y="572" class="label">WHEN TASKS OVERLAP, AKASHA APPLIES THESE RULES</text>
 <rect x="24" y="584" width="306" height="50" rx="8" fill="#211a3a" stroke="#6d5bd0"/>
 <circle cx="38" cy="600" r="3.5" fill="#a78bfa"/>
 <text x="50" y="605" class="gatehead">Same feature</text>

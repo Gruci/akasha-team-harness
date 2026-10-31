@@ -19,7 +19,7 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
 
 ## Decisions of people
 
-With GitHub, each decision of a person is a decision comment on the issue of the task, from the GitHub account of that person: `/approve spec r<N>`, `/approve risk <level>`, `/accept <number> r<N>`, `/reject <number> r<N> <reason>`, `/resume`, and `/cancel <reason>`. `akasha advance <task>` and `akasha show <task>` tell the exact comment and the issue.
+With GitHub, each decision of a person is a decision comment on the issue of the task, from the GitHub account of that person: `/approve spec r<N>`, `/approve risk <level>`, `/accept <number> r<N>`, `/reject <number> r<N> <reason>`, `/resume`, and `/cancel <reason>`. `akasha advance <task>` tells the exact comment and the issue. `akasha show <task>` shows the revision `r<N>` and the numbers of the completion conditions.
 
 - If the person who decides is the GitHub account of this computer, and the person gives you the decision, run the Akasha command in the step. Akasha writes the comment with that account.
 - If the person is another account, the command stops and tells the comment. Give the person the comment and the issue address. Then wait. Run `akasha advance <task>` again later.
@@ -68,7 +68,7 @@ If the requester withdraws the request, run `akasha cancel <task> --reason "<rea
 
 > **NOTE:** If Akasha says that it recorded the task but cannot make its work copy, continue with that task. Do not record the task again, because that makes a second task. Repair the cause that Akasha shows, then run `akasha advance <task>`. It makes the work copy.
 
-> **NOTE:** If Akasha says that another person or another computer holds the task, do not change the task. Tell the user who holds it. If Akasha says that nobody holds the task, take it over: see [When another person continues the task](#when-another-person-continues-the-task). If Akasha also says that this computer still has a work copy of the task, tell the user: the user examines it, saves what they need, and removes it. If Akasha says that another command changed the task, do the step again.
+> **NOTE:** If Akasha says that another person or another computer holds the task, do not change the task. Tell the user who holds it. If the user says that the copy of the holder is gone, see [When another person continues the task](#when-another-person-continues-the-task). If Akasha says that nobody holds the task, take it over: see [When another person continues the task](#when-another-person-continues-the-task). If Akasha also says that this computer still has a work copy of the task, tell the user: the user examines it, saves what they need, and removes it. If Akasha says that another command changed the task, do the step again.
 
 ## Stage 2 — Specification and impact
 
@@ -87,7 +87,7 @@ If the requester withdraws the request, run `akasha cancel <task> --reason "<rea
 
 > **CAUTION:** Never record an approval for a person who did not give it.
 
-> **NOTE:** When the completion conditions or the open questions change, the specification gets a new revision. The requester approves it again, and the task goes back to the specification stage. With GitHub, a task with a pull request keeps its specification: record the new conditions as a new request.
+> **NOTE:** With GitHub, when the completion conditions or the open questions change, the specification gets a new revision. The requester approves it again, and the task goes back to the specification stage. A task with a pull request keeps its specification: record the new conditions as a new request. Without GitHub, the approval and the acceptances stay, as in Akasha 1.0.0.
 
 ## When the request changes the work of an earlier requester
 
@@ -116,7 +116,9 @@ To continue the task of another person:
    - If Akasha says that the work of the task is not on the server, or that Akasha 1.0.0 recorded the task on another computer, ask the person that Akasha names to hand off the task there. Then do step 2 again.
 4. Run `akasha show <task>`. Continue at the stage that Akasha shows.
 
-> **NOTE:** A developer can take over a stopped task without a handoff, also after the developer wrote `/resume`. Akasha tells the old holder on the issue.
+> **NOTE:** A developer can take over a stopped task without a handoff, also after the developer wrote `/resume`. Akasha tells the old holder on the issue. When the task stopped, Akasha saved its work on the server, except when the work copy had a secret key or a file outside the scope.
+
+> **NOTE:** If the copy of the holder is gone, for example after a new clone or a broken computer, the holder cannot hand off the task. Ask the user first. When the user agrees, run `akasha takeover <task> --force`. The same GitHub account or a developer can do it. The work that the old copy did not push is not in the task.
 
 ## Stage 3 — Build
 
@@ -135,6 +137,7 @@ To continue the task of another person:
    - SKIP means that the team config has no command for a required check. SKIP is not a pass. Tell the user that an administrator must add the command to `akasha.toml`.
    - If Akasha says that the task branch on the server has commits that conflict with the work copy, do the steps in the message. Then run the check again.
    - If Akasha says that it could not update the task branch on the server, tell the user the reason. Run the check again later.
+   - If Akasha says that the task has no work copy on this computer, run the command that Akasha shows. It makes the work copy again.
 2. Repair each failure. Then run the check again.
 3. If Akasha stops the task after three failed repairs, stop the work. Tell the requester in simple words that a developer must examine the problem.
 4. With GitHub, the developer writes `/resume` on the issue of the task. If the developer is the GitHub account of this computer and tells you to continue, run `akasha resume <task>`. Then run `akasha advance <task>`.

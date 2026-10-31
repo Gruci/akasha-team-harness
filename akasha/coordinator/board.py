@@ -336,7 +336,14 @@ def publish(root: Path, task: Task) -> str:
     """Put the task on the shared board, or update its issue. Return the issue address, or "" without GitHub.
 
     The issue stays open until the pull request merges. Akasha closes it when the task is done or cancelled. After
-    the write, the copy of the board of the hooks goes away (forget), also when a hook renewed it during the write."""
+    the write, the copy of the board of the hooks goes away (forget), also when a hook renewed it during the write.
+
+    Without GitHub, Akasha writes no issue, also when the task has one: then the decisions of people are records on
+    this computer, and on the issue they count only as decision comments. For example, origin is not on GitHub any
+    more. The task file keeps the changes, and when origin is on GitHub again, the next command for the task puts
+    them on the issue: the decisions count again from the comments only (flow.load)."""
+    if not available(root):
+        return ""
     title = f"[akasha] {task.title}"
     try:
         if task.board:

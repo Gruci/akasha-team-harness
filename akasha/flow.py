@@ -61,7 +61,10 @@ HELPER_NOTICES = {
                 "cannot bring it up to date. Do the handover again: it merges the default branch into the work copy "
                 "and tells the files that conflict",
 }
-_ignored: dict[str, list[tuple[board.Comment, str]]] = {}         # the decision comments that did not count, by task
+# The decision comments that did not count, by task, with the reason and True when Akasha trusts the author (_trusted)
+_ignored: dict[str, list[tuple[board.Comment, str, bool]]] = {}
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")        # the control characters except the line breaks
+_STOPS = ("/reject", "/cancel")               # the decisions that a hidden comment still makes: they stop something
 _comments: dict[str, list[board.Comment]] = {}                    # the comments of the last read, by task
 _overlaps: dict[str, list[overlap.Overlap]] = {}                  # the overlaps of the new contracts, by task
 _read_status: dict[str, str] = {}             # the status of each task before the decision comments of its last read
@@ -189,17 +192,22 @@ def load(root: Path, task_id: str, write: bool = True) -> Task:
     """The latest state of the task. LookupError when no computer and no issue has it.
 
     With GitHub, the issue holds the state, and Akasha takes only the fields of this computer (LOCAL_FIELDS) from the
-    task file. When the task file has changes that the issue did not get, for example after a failed board write,
-    and nobody wrote the issue since, the task file is newer. A task of Akasha 1.0.0 is in its task file on one
-    computer, and so is a task that has no issue, because this computer recorded it before origin was on GitHub or
-    its first board write failed. With `write`, such a task goes to the person on that computer (_adopt), and Akasha
-    puts a newer task file on the issue. A task file that knows an issue that Akasha cannot read does not go to this
-    person: another person can hold that task.
+    task file. When the issue tells that another person or another copy of the repository holds the task now, or
+    another status, Akasha saves that in the task file too, so that the hooks here do not tell old news. When the
+    task file has changes that the issue did not get, for example after a failed board write, and nobody wrote the
+    issue since, the task file is newer. A task of Akasha 1.0.0 is in its task file on one computer, and so is a task
+    that has no issue, because this computer recorded it before origin was on GitHub or its first board write failed.
+    With `write`, such a task goes to the person on that computer (_adopt), and Akasha puts a newer task file on the
+    issue. A task file that knows an issue that Akasha cannot read does not go to this person: another person can
+    hold that task. An issue body without a format is not proof that the task file is newer either (_upgrades).
 
     With GitHub, the approvals and the inspection results come only from the decision comments on the issue, not from
-    the issue body or the task file (_decide). A newer task file does not change the result of a decision either
-    (_keep_decisions). With `write`, a /resume or a /cancel that counted goes on the issue when this copy of the
-    repository holds the task or nobody holds it. Without GitHub, Akasha reads the task file."""
+    the issue body or the task file (_decide). A newer task file does not change the result of a decision either, and
+    it does not move the task past a gate (_keep_decisions). With `write`, a counted /resume goes on the issue when
+    this copy of the repository holds the task or nobody holds it, and a counted /cancel goes on the issue at once, so
+    that the other computers do not compare new tasks with a cancelled task. A decision on an issue of Akasha 1.0.0
+    goes on the issue only from the computer with the task file: the body of 1.0.0 has only some fields of the task.
+    Without GitHub, Akasha reads the task file."""
     try:
         local = tasks.load(root, task_id)
     except LookupError:
@@ -210,36 +218,61 @@ def load(root: Path, task_id: str, write: bool = True) -> Task:
         raise LookupError(f"no task {task_id} on this computer or on the shared task board")
     if shared is None:
         task = local
-    elif local is not None and (shared.format < tasks.FORMAT
+    elif local is not None and (_upgrades(root, local, shared)
                                 or (shared.revision == local.synced and local.revision > shared.revision)):
         task = local
         task.board = task.board or shared.board
         if shared.format >= tasks.FORMAT:
-            _keep_decisions(task, shared)
+            _keep_decisions(rules(root), task, shared)
     else:
         task = shared
         for name in tasks.LOCAL_FIELDS if local is not None else ():
             setattr(task, name, getattr(local, name))
         task.synced = task.revision
+        if local is not None and shared.format >= tasks.FORMAT and \
+                (task.holder, task.holder_host, task.status) != (local.holder, local.holder_host, local.status):
+            tasks.save(root, task)                    # for example, another person took the task over
     newer = task is local                             # this computer has changes that the issue did not get
     if write and newer and on_github and (not task.board if shared is None else shared.format < tasks.FORMAT):
         _adopt(root, task)                            # the first issue of the task in the new format
-    decided = _decide(root, task) and write and _holds(root, task)
+    whole = task is not shared or shared.format >= tasks.FORMAT      # Akasha 1.0.0 wrote only some fields
+    decided = _decide(root, task) and write and whole and (task.status == "cancelled" or _holds(root, task))
     if write and (decided or (newer and shared is not None)):
         _publish(root, task)
     return task
 
 
-def _keep_decisions(task: Task, shared: Task) -> None:
-    """A task file on this computer that is newer than the issue does not change the result of a decision of a person.
+def _upgrades(root: Path, local: Task, shared: Task) -> bool:
+    """True when the task file here writes the issue in the new format over an issue body without a format: the task
+    file of Akasha 1.0.0 (revision 0), or the task file of this copy of the repository when it holds the task. A task
+    file that handed off the task is old: Akasha 1.0.0 in the agent engine of the holder can have written the body."""
+    if shared.format >= tasks.FORMAT:
+        return False
+    return not local.revision or (bool(local.holder) and (local.holder, local.holder_host) == _who(root))
 
-    The requester stays. A stopped task stays stopped until a /resume counts (_decide), and a done or a cancelled task
-    stays so. The revision of the specification and the comments of the last stop and of the last /resume never go
-    back, and changed completion conditions or open questions get a new revision. Thus an old decision does not count
-    again."""
+
+def _keep_decisions(team: Team, task: Task, shared: Task) -> None:
+    """A task file on this computer that is newer than the issue does not change the result of a decision of a
+    person, and it does not move the task past a gate: the agent engine can edit the task file.
+
+    The requester, the holder, and the workflow stay. The stage does not go past the stage on the issue, so that the
+    next advance examines the gates again, but it can go back, for example after a change of the specification. The
+    risk level and the count of failed repairs do not go down. The status of the issue stays, except a stop on this
+    computer that the issue did not get: a stopped task stays stopped until a /resume counts (_decide). The revision
+    of the specification and the comments of the last stop and of the last /resume never go back, and changed
+    completion conditions or open questions get a new revision. Thus an old decision does not count again."""
     task.requester = shared.requester or task.requester
-    if shared.status != "open" and task.status != shared.status:
+    task.holder, task.holder_host, task.workflow = shared.holder, shared.holder_host, shared.workflow
+    flow = team.defined.get(task.workflow)
+    order = [stage.id for stage in flow.stages] if flow else []
+    if task.stage not in order or shared.stage not in order or order.index(task.stage) > order.index(shared.stage):
+        task.stage = shared.stage
+    if task.risk not in RISK_LEVELS or \
+            (shared.risk in RISK_LEVELS and RISK_LEVELS.index(shared.risk) > RISK_LEVELS.index(task.risk)):
+        task.risk, task.risk_reasons = shared.risk, shared.risk_reasons
+    if task.status != shared.status and (task.status, shared.status) != ("stopped", "open"):
         task.status, task.failures, task.resumed = shared.status, shared.failures, shared.resumed
+    task.failures = max(task.failures, shared.failures)
     if (task.conditions, task.open_questions) != (shared.conditions, shared.open_questions):
         task.spec_rev = max(task.spec_rev, shared.spec_rev + 1)
     task.spec_rev = max(task.spec_rev, shared.spec_rev)
@@ -286,24 +319,36 @@ def _decide(root: Path, task: Task) -> bool:
         found = []
     _comments[task.id] = found                        # for the news of the command (news)
     status = _read_status[task.id] = task.status
-    _ignored[task.id] = _decided(rules(root), task, found)
+    team = rules(root)
+    _ignored[task.id] = [(comment, reason, _trusted(team, task, comment))
+                         for comment, reason in _decided(team, task, found)]
     return task.status != status
 
 
 def _decided(team: Team, task: Task, comments: list[board.Comment]) -> list[tuple[board.Comment, str]]:
     """Make the approvals and the inspection results again from the decision comments only, the oldest first, and
-    apply /resume and /cancel. Return each decision comment that does not count, with the reason.
+    apply /resume and /cancel. Return each comment that does not count, with the reason.
 
-    An edited or a hidden comment never counts: a person with write access can edit the comment of another person,
-    and GitHub still shows the first author."""
+    A person with write access can edit, hide, or delete the comment of another person, and GitHub still shows the
+    first author. Thus an edit or a hidden comment never makes a decision, and it never brings back an earlier
+    decision: an edited comment never counts, and a hidden comment counts only as /reject or /cancel. Akasha cannot
+    see the text before an edit, so an edited comment of the requester also removes the inspection results before
+    it. The requester inspects again with a new comment."""
     task.approvals, task.accepted = {}, {}
     ignored = []
     for comment in comments:
         words = (comment.body.strip().splitlines() or [""])[0].split()
+        if comment.edited and task.accepted and _name(comment.author) == _name(task.requester):
+            task.accepted = {}
+            ignored.append((comment, "somebody edited a comment of the requester, so the inspections before it do not "
+                                     "count. The requester writes them again"))
+            continue
         if not words or words[0].lower() not in board.DECISIONS:
             continue
-        if comment.edited or comment.hidden:
-            reason = "somebody edited the comment" if comment.edited else "somebody hid the comment"
+        if comment.edited:
+            reason = "somebody edited the comment"
+        elif comment.hidden and words[0].lower() not in _STOPS:
+            reason = "somebody hid the comment"
         else:
             reason = _decision(team, task, comment, words)
         if reason:
@@ -403,9 +448,10 @@ def _cancelled(team: Team, task: Task, comment: board.Comment, reason: list[str]
 
 def ignored(task_id: str) -> list[str]:
     """The decision comments on the issue of the task that do not count, with the reason. The last read of the task
-    in this process found them."""
-    return [f"{comment.author}: {' '.join(comment.body.split())[:80]} — {reason}"
-            for comment, reason in _ignored.get(task_id, [])]
+    in this process found them. Anybody can write on the issues of a public repository, so Akasha shows the text of
+    a comment only when it trusts the author (_trusted), on one line and without control characters."""
+    return [f"{comment.author}" + (f": {' '.join(_CONTROL.sub(' ', comment.body).split())[:80]}" if trusted else "")
+            + f" — {reason}" for comment, reason, trusted in _ignored.get(task_id, [])]
 
 
 def _trusted(team: Team, task: Task, comment: board.Comment) -> bool:
@@ -470,7 +516,7 @@ def quoted(comments: list[board.Comment]) -> list[str]:
             told = HELPER_NOTICES[notice.group(1)].format(notice.group(2)[:12])
             lines.append(f"news — the helpers of Akasha ({comment.created[:10]}): {told}")
             continue
-        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", comment.body.replace(NOTICE_MARK, "")).strip()
+        text = _CONTROL.sub(" ", comment.body.replace(NOTICE_MARK, "")).strip()
         text = text[:NEWS_CHARS] + (" …" if len(text) > NEWS_CHARS else "")
         lines.append(f"news — {comment.author} wrote ({comment.created[:10]}):")
         lines += [f"  > {line}" for line in text.splitlines() or [""]]
@@ -575,7 +621,8 @@ def _examine_holder(root: Path, task: Task) -> None:
         problem = f"nobody holds the task {task.id}. Take it over first: akasha takeover {task.id}"
     elif task.holder == name:
         problem = (f"you hold the task {task.id} in another copy of the repository. Hand it off there with akasha "
-                   f"handoff {task.id}, then take it over here with akasha takeover {task.id}")
+                   f"handoff {task.id}, then take it over here with akasha takeover {task.id}. When that copy is "
+                   f"gone, run akasha takeover {task.id} --force here")
     else:
         problem = (f"{task.holder} holds the task {task.id}. Ask {task.holder} to hand it off with akasha handoff "
                    f"{task.id}, then take it over with akasha takeover {task.id}")
@@ -603,7 +650,10 @@ def _find(root: Path, task_id: str) -> Task | None:
 
 def _taken(root: Path, task_id: str) -> bool:
     """True when a task file, a branch on this computer or on the server, or an issue on the board has this id. The
-    branches have the prefixes of [work] or the default prefixes."""
+    branches have the prefixes of [work] or the default prefixes.
+
+    A server that did not answer in this command is not asked again (_server_branch), and the server must answer in
+    github.ANSWER_SECONDS. Without an answer, no branch on the server has the id."""
     team = rules(root)
     prefixes = (team.branch_prefix, team.wip_prefix, config.BRANCH_PREFIX, config.WIP_PREFIX)
     branches = [f"refs/heads/{prefix}{task_id}" for prefix in dict.fromkeys(prefixes)]
@@ -612,7 +662,10 @@ def _taken(root: Path, task_id: str) -> bool:
         return True
     if board.find(root, task_id) is not None:
         return True
-    return bool(workcopy.git(root, "ls-remote", "origin", *branches).stdout.strip())    # without a server: empty
+    if root in _unanswered:
+        return False
+    listed = workcopy.git(root, "ls-remote", "origin", *branches, timeout=github.ANSWER_SECONDS)
+    return bool(listed.stdout.strip())                # without a server: empty
 
 
 def _unique_id(root: Path, title: str) -> str:
@@ -1186,7 +1239,8 @@ def _decide_here(root: Path, task: Task, text: str, deciders: tuple[str, ...] | 
                               f"GitHub account on this computer is {name}")
     number = board.posted(root, task.board, text)
     task = load(root, task.id)
-    reason = next((why for comment, why in _ignored.get(task.id, []) if number and comment.number == number), "")
+    reason = next((why for comment, why, _shown in _ignored.get(task.id, []) if number and comment.number == number),
+                  "")
     if reason:
         raise PermissionError(f"Akasha wrote `{text}` on {task.board}, but the decision does not count: {reason}")
     return task
@@ -1256,22 +1310,13 @@ def cancel(root: Path, task_id: str, person: str = "", reason: str = "") -> Task
     preview database and the preview port of this computer.
 
     With GitHub, the requester or a developer writes `/cancel <reason>` on the issue, also when another person holds
-    the task. When this copy of the repository or nobody holds the task, the cancel goes on the issue at once
-    (_withdraw). Else the command closes the pull request at once with the GitHub account of this computer, and the
-    next command of the holder writes the cancel on the issue."""
+    the task. The cancel goes on the issue at once (load): first Akasha closes the pull request with the GitHub
+    account of this computer (_withdraw)."""
     team = rules(root)
     if board.available(root):
         task = _examine_active(_on_issue(root, task_id))
         deciders = (task.requester, *team.developers) if team.developers else None
-        task = _decide_here(root, task, " ".join(["/cancel", *reason.split()]), deciders, person)
-        if task.status == "cancelled" and not _holds(root, task):
-            try:
-                _close_pull_request(root, task)
-            except RuntimeError as error:
-                raise RuntimeError(f"Akasha counted the cancel of the task {task.id}. But {error}. Until the pull "
-                                   "request closes, GitHub can merge the cancelled change. The next Akasha command of "
-                                   f"{task.holder} for the task also closes it") from error
-        return task
+        return _decide_here(root, task, " ".join(["/cancel", *reason.split()]), deciders, person)
     _given(person)
     task = _examine_active(_held(root, task_id))
     task.status = "cancelled"
@@ -1317,7 +1362,7 @@ def preview(root: Path, task_id: str) -> tuple[Task, dict[str, str], tuple[str, 
     The port and the database are of this computer: the issue never holds them, and the output of the seed command
     stays here. The server check never runs the seed command."""
     team, task = rules(root), _examine_active(_held(root, task_id))
-    tree = _tree(task)
+    tree = _tree(root, task)
     port = resources.port(root, task)
     task.previewed = True                             # the cleanup command runs when this computer finishes the task
     tasks.save(root, task)                            # only the fields of this computer changed
@@ -1334,7 +1379,7 @@ def check(root: Path, task_id: str) -> runner.Result:
     Akasha saves nothing while the work copy has files outside the scope, for example files that a test made. A push
     that the server refused goes into the notes of the task and of the result (_push)."""
     team, task = rules(root), _held(root, task_id)
-    tree = _tree(task)
+    tree = _tree(root, task)
     result = runner.run(team, tree, workcopy.changed_files(task))
     if runner.passed(result.status) and not _strays(team, task):
         _commit(tree, task.title)
@@ -1344,8 +1389,26 @@ def check(root: Path, task_id: str) -> runner.Result:
     if failed:
         if stages.record_failure(task, "the check " + ", ".join(failed) + " failed"):
             _tell_stop(root, team, task)
+            _save_stopped(root, team, tree, task)
     _publish(root, task)
     return result
+
+
+def _save_stopped(root: Path, team: Team, tree: Path, task: Task) -> None:
+    """With GitHub, save the work of a task that stopped now on its wip branch, as a handoff does, so that a developer
+    can take the task over when its holder does not hand it off. A work copy with a secret key or a file outside the
+    scope stays only on this computer. Akasha never forces the push: when the push fails, the work stays here."""
+    if not task.board or not board.available(root) or workcopy.git(tree, "remote", "get-url", "origin").returncode:
+        return
+    changed, wips = workcopy.changed_files(task), _wip_branches(team, task)
+    if not wips or runner.secrets_status(tree, changed)[0] == "FAIL" or outside_scope(team, task, changed):
+        return
+    try:
+        _commit(tree, f"wip: {task.title}")
+    except RuntimeError:
+        return                                        # for example a commit hook of the team refused it
+    if workcopy.git(tree, "push", "-q", "origin", f"HEAD:refs/heads/{wips[0]}").returncode == 0:
+        task.wip = workcopy.git(tree, "rev-parse", "HEAD").stdout.strip()
 
 
 def _push(root: Path, team: Team, tree: Path, task: Task, result: runner.Result) -> runner.Result:
@@ -1368,10 +1431,9 @@ def _push(root: Path, team: Team, tree: Path, task: Task, result: runner.Result)
     if pushed.returncode and root not in _unanswered and workcopy.fetch(tree, task.branch).returncode == 0:
         checked = workcopy.git(tree, "rev-parse", "HEAD^{tree}").stdout.strip()
         if workcopy.git(tree, "merge", "--no-edit", "-q", remote).returncode:
-            workcopy.git(tree, "merge", "--abort")
             raise RuntimeError(f"the task branch {task.branch} on the server has commits that conflict with the work "
-                               f"copy. In {tree}, run git merge {remote}, repair the conflict, and commit. Then run the "
-                               "check again")
+                               f"copy.{_aborted(tree)} In {tree}, run git merge {remote}, repair the conflict, and "
+                               "commit. Then run the check again")
         default = _server_branch(root)
         found = workcopy.git(tree, "merge-base", "HEAD", f"origin/{default}").stdout.strip() if default else ""
         if found and _contains(tree, found, task.base):
@@ -1409,17 +1471,24 @@ def _on_branch(tree: Path, branch: str) -> bool:
     return workcopy.git(tree, "symbolic-ref", "-q", "HEAD").stdout.strip() == f"refs/heads/{branch}"
 
 
-def _tree(task: Task) -> Path:
+def _again(root: Path, task: Task) -> str:
+    """How to make the work copy of a task with a branch again. With GitHub, the takeover makes it from the work on
+    the server, else from the branch on this computer. Without GitHub, git makes it from the branch."""
+    if board.available(root):
+        return f"akasha takeover {task.id}"
+    return f"git worktree prune, then git worktree add {task.workcopy or '<folder>'} {task.branch}"
+
+
+def _tree(root: Path, task: Task) -> Path:
     """The work copy of the task on this computer. A folder that is not on the task branch is not the work copy:
     Akasha never commits or pushes there."""
     if not task.workcopy or not Path(task.workcopy).is_dir():
         raise ValueError("the task has no work copy on this computer — " + (
-            f"make it from the work on the server with akasha takeover {task.id}" if task.branch
-            else "advance it to the build stage first"))
+            f"make it again with {_again(root, task)}" if task.branch else "advance it to the build stage first"))
     if not _on_branch(Path(task.workcopy), task.branch):
         raise RuntimeError(f"git in {task.workcopy} is not on the branch {task.branch}, so the folder is not the work "
                            f"copy of the task. Check out {task.branch} there. Or examine the folder, save what you "
-                           f"need, remove it, and make the work copy again with akasha takeover {task.id}")
+                           f"need, remove it, and make the work copy again with {_again(root, task)}")
     return Path(task.workcopy)
 
 
@@ -1464,6 +1533,16 @@ def _examine_base(root: Path, task: Task) -> None:
         raise RuntimeError(f"the task builds on {task.builds_on}, which did not merge yet. Hand over after it merges")
 
 
+def _aborted(tree: Path) -> str:
+    """Stop a merge that failed, so that the work copy has no half merge. Return a sentence with the files that
+    conflict, for the message, or "" when git tells no file."""
+    listed = workcopy.git(tree, "-c", "core.quotePath=false", "diff", "--name-only", "--diff-filter=U")
+    workcopy.git(tree, "merge", "--abort")
+    found = [name for name in listed.stdout.splitlines() if name.strip()] if listed.returncode == 0 else []
+    more = f", and {len(found) - 10} more" if len(found) > 10 else ""
+    return f" The files that conflict: {', '.join(found[:10])}{more}." if found else ""
+
+
 def _merge_server(tree: Path, task: Task, branch: str) -> None:
     """Merge the task branch on the server, then the latest default branch, into the work copy, and move the base of
     the task to the default branch.
@@ -1473,18 +1552,16 @@ def _merge_server(tree: Path, task: Task, branch: str) -> None:
     task branch."""
     if workcopy.fetch(tree, task.branch).returncode == 0 and \
             workcopy.git(tree, "merge", "--no-edit", "-q", f"origin/{task.branch}").returncode:
-        workcopy.git(tree, "merge", "--abort")
-        raise RuntimeError(f"the task branch {task.branch} on the server has commits that conflict with the work copy. "
-                           f"In {tree}, run git merge origin/{task.branch}, repair the conflict, and commit. Then do "
-                           "the handover again")
+        raise RuntimeError(f"the task branch {task.branch} on the server has commits that conflict with the work "
+                           f"copy.{_aborted(tree)} In {tree}, run git merge origin/{task.branch}, repair the conflict, "
+                           "and commit. Then do the handover again")
     fetched = workcopy.git(tree, "fetch", "origin", branch)
     if fetched.returncode:
         raise RuntimeError(f"git fetch failed: {fetched.stderr.strip()[:300]}")
     merged = workcopy.git(tree, "merge", "--no-edit", f"origin/{branch}")
     if merged.returncode:
-        workcopy.git(tree, "merge", "--abort")
-        raise RuntimeError(f"the change conflicts with the latest {branch}. In {tree}, run git merge origin/{branch}, "
-                           "repair the conflict, and commit. Then do the handover again")
+        raise RuntimeError(f"the change conflicts with the latest {branch}.{_aborted(tree)} In {tree}, run git merge "
+                           f"origin/{branch}, repair the conflict, and commit. Then do the handover again")
     task.base = workcopy.git(tree, "rev-parse", f"origin/{branch}").stdout.strip() or task.base
 
 
@@ -1533,7 +1610,7 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
         raise ValueError("the pull request of this task merged — make a new request for more changes")
     task.pull_request = known["url"] if known.get("state") == "OPEN" else ""
     _publish(root, task)
-    tree = _tree(task)
+    tree = _tree(root, task)
     strays = _strays(team, task)
     if strays:
         raise RuntimeError(f"the work copy has files outside the scope: {', '.join(strays[:5])}. Remove them, add them "
@@ -1550,7 +1627,7 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
         pushed = _push_again(root, team, tree, task, branch)
     if pushed.returncode:
         raise RuntimeError(f"git push failed: {pushed.stderr.strip()[:300]}. Akasha never forces this push")
-    if task.wip:                                      # the task branch has the work of the last handoff now
+    if task.wip and _contains(tree, "HEAD", task.wip):    # the task branch has the work of the last handoff now
         _drop_wip(root, task)
         _publish(root, task)
     helped = team.server_rules == "akasha"            # the merge workflow of Akasha merges; GitHub has no auto-merge
@@ -1602,13 +1679,18 @@ def handoff(root: Path, task_id: str) -> Task:
     program works in, so the handoff does not run from inside the work copy. Without the work copy, the preview port
     of this computer is free. Only a finished task runs the cleanup command (_clear): the preview database stays, and
     the mark task.previewed stays with it. Thus when this computer takes the task over again and finishes it, the
-    cleanup command removes that database."""
+    cleanup command removes that database. A task with a branch, but without its work copy here and without its work
+    on the server, stays here: the takeover on this computer makes the work copy again from the branch here."""
     if not board.available(root):
         raise RuntimeError("the handoff needs the shared task board on GitHub")
     task = _held(root, task_id)
     if not tasks.active(task):
         raise ValueError(f"the task is {task.status} — only an open or stopped task can go to another person")
-    tree = _tree(task) if task.workcopy and Path(task.workcopy).is_dir() else None
+    tree = _tree(root, task) if task.workcopy and Path(task.workcopy).is_dir() else None
+    if tree is None and task.branch and not task.wip and workcopy.fetch(root, task.branch).returncode:
+        raise RuntimeError(f"the task {task.id} has no work copy on this computer, and its work is not on the server, "
+                           f"so another person could not continue it. Make the work copy again with akasha takeover "
+                           f"{task.id}, then do the handoff again")
     if tree is not None and Path.cwd().resolve().is_relative_to(tree.resolve()):
         raise RuntimeError(f"run the handoff in the main checkout {root}, not in the work copy: the handoff removes "
                            "the work copy, and a program cannot remove the folder that it works in")
@@ -1651,19 +1733,45 @@ def _contains(tree: Path, ref: str, commit: str) -> bool:
     return workcopy.git(tree, "merge-base", "--is-ancestor", commit, ref).returncode == 0
 
 
+def _fetched(root: Path, commit: str) -> bool:
+    """True when this computer has the commit, after Akasha fetched it from the server by its name when necessary.
+    GitHub gives a commit that a branch has, also a wip branch with a prefix that the team used before."""
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit):
+        return False                                  # the issue body gives the name: only a commit name goes to git
+    known = f"{commit}^{{commit}}"
+    if workcopy.git(root, "cat-file", "-e", known).returncode == 0:
+        return True
+    return workcopy.git(root, "fetch", "-q", "origin", commit).returncode == 0 and \
+        workcopy.git(root, "cat-file", "-e", known).returncode == 0
+
+
 def _work_on_server(root: Path, team: Team, task: Task) -> str:
     """Where the work copy of a task from another computer starts: the work of the last handoff, else the task branch
     on the server. A work copy or a branch of the task that this computer still has must go forward to it, so that
-    no old work of this computer replaces the newer work of another person."""
+    no old work of this computer replaces the newer work of another person.
+
+    The work copy never starts without the commit of the last handoff: the next handover deletes the wip branch.
+    When no wip branch has it, Akasha fetches the commit by its name, else the takeover stops. When the server has
+    no work of the task, because no check passed and nobody handed it off, the work copy starts from the branch of
+    the task on this computer, else from the base of the task. Then no committed work of the task is on another
+    computer."""
     wips, found = _wip_branches(team, task), set()
     for branch in (*(wips if task.wip else []), task.branch):
         if workcopy.fetch(root, branch).returncode == 0:
             found.add(branch)
     start = f"origin/{task.branch}" if task.branch in found else ""
-    handed = next((wip for wip in wips if wip in found
-                   and workcopy.git(root, "rev-parse", f"origin/{wip}").stdout.strip() == task.wip), "")
-    if handed and not (start and _contains(root, start, task.wip)):
-        start = f"origin/{handed}"
+    if task.wip and not (start and _contains(root, start, task.wip)):
+        start = next((f"origin/{wip}" for wip in wips if wip in found
+                      and workcopy.git(root, "rev-parse", f"origin/{wip}").stdout.strip() == task.wip), "") \
+            or (task.wip if _fetched(root, task.wip) else "")
+        if not start:
+            raise RuntimeError(f"the last handoff of the task {task.id} pushed the commit {task.wip[:12]}, and "
+                               f"Akasha cannot get it from the server: no branch {' or '.join(wips)} or "
+                               f"{task.branch} has it. Do the takeover again later. If a person deleted the branch, "
+                               f"push the commit to {wips[0] if wips else 'the wip branch'} from a computer that has "
+                               "it, then do the takeover again")
+    local = workcopy.git(root, "rev-parse", "--verify", "-q", f"refs/heads/{task.branch}").returncode == 0
+    start = start or (f"refs/heads/{task.branch}" if local else task.base)
     if not start:
         raise RuntimeError(f"the work of the task {task.id} is not on the server: no branch {' or '.join(wips)} and "
                            f"no branch {task.branch}. Ask {task.holder or 'the last holder'} to hand it off with "
@@ -1678,7 +1786,7 @@ def _work_on_server(root: Path, team: Team, task: Task) -> str:
                                f"Examine it and save what you need, remove it with git worktree remove --force {tree}, "
                                "then do the takeover again")
         moved = workcopy.git(tree, "merge", "--ff-only", "-q", start)
-    elif workcopy.git(root, "rev-parse", "--verify", "-q", f"refs/heads/{task.branch}").returncode == 0:
+    elif local and start != f"refs/heads/{task.branch}":
         if not _contains(root, start, task.branch):
             raise RuntimeError(f"the branch {task.branch} on this computer cannot go forward to the work on the server: "
                                f"it has other commits. Examine them, then delete the branch with git branch -D "
@@ -1692,14 +1800,18 @@ def _work_on_server(root: Path, team: Team, task: Task) -> str:
 
 
 @_command
-def takeover(root: Path, task_id: str) -> Task:
+def takeover(root: Path, task_id: str, force: bool = False) -> Task:
     """Hold a task that another person handed off, and continue it in this copy of the repository.
 
     The work copy starts from the work of the last handoff, or from the task branch on the server, and keeps the base
     of the task. The holder is a person in one copy of the repository: when the same person holds the task in another
     copy, that copy must hand it off first, else its work that is not on the server stays there. A developer can also
     take over a stopped task that its holder did not hand off, also after a /resume that only the holder can write on
-    the issue: the takeover writes it. Then Akasha tells the old holder on the issue."""
+    the issue: the takeover writes it.
+
+    With `force`, a person takes over an open task without the handoff, for example when the copy of the holder is
+    gone: the same GitHub account from another copy, or a developer. The work that the old copy did not push stays
+    only there. After each takeover without a handoff, Akasha tells the old holder on the issue."""
     if not board.available(root):
         raise RuntimeError("the takeover needs the shared task board on GitHub")
     team, task = rules(root), load(root, task_id)
@@ -1715,14 +1827,17 @@ def takeover(root: Path, task_id: str) -> Task:
     previous = task.holder
     forced = bool(previous) and (previous, task.holder_host) != (name, host)
     stopped = "stopped" in (task.status, _read_status.get(task.id))      # also when a /resume of this read opened it
-    if forced and not stopped:
+    if forced and not stopped and not force:
+        lost = "the work of the old copy that is not on the server stays only there"
         if previous == name:
             raise HolderError(f"you hold the task {task.id} in another copy of the repository. Hand it off there with "
-                              f"akasha handoff {task.id}, then take it over here")
+                              f"akasha handoff {task.id}, then take it over here. When that copy is gone, take the "
+                              f"task over with akasha takeover {task.id} --force: {lost}")
         raise HolderError(f"{previous} holds the task {task.id}. Ask {previous} to hand it off with akasha handoff "
-                          f"{task.id}")
-    if forced:
-        _examine_role(team, "developer", name)        # a stopped task waits for a developer
+                          f"{task.id}. When {previous} cannot hand it off, a developer takes the task over with akasha "
+                          f"takeover {task.id} --force: {lost}")
+    if forced and previous != name:
+        _examine_role(team, "developer", name)        # a task without a handoff waits for a developer
     start = _work_on_server(root, team, task) if task.branch else ""
     if start and not task.base:                       # a task of Akasha 1.0.0 can have no base
         task.base = workcopy.git(root, "merge-base", _default_ref(root), start).stdout.strip()
@@ -1731,7 +1846,8 @@ def takeover(root: Path, task_id: str) -> Task:
         _open_workcopy(root, team, task, start)
     _publish(root, task)
     if forced:
-        board.comment(root, task.board, f"@{previous} Akasha: {name} took over the stopped task {task.id} "
-                                        f"({task.title}). A work copy of the task on your computer stays there: "
-                                        "examine it, then remove it.")
+        board.comment(root, task.board, f"@{previous} Akasha: {name} took over the {'stopped ' if stopped else ''}task "
+                                        f"{task.id} ({task.title}) without a handoff, in another copy of the "
+                                        "repository. A work copy of the task on your computer stays there: examine "
+                                        "it, then remove it. Its work that was not on the server is not in the task.")
     return task

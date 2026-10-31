@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from akasha import config
 from akasha.config import Team
+from akasha.core.task import Task
 from akasha.infra import desired, github, server
 
 # The required check without [ci]. Akasha 1.0.0 had the same text without the concurrency group, the bash default,
@@ -283,9 +284,18 @@ class ApplyTests(unittest.TestCase):
                          (["Akasha wrote the files, but cannot reach GitHub to change the settings"], warned))
 
     def test_the_open_pull_requests_of_the_tasks_get_the_merge_label(self):
-        listed = [{"number": 4, "body": "## Why\n\n<!-- akasha-task: t-1 -->\n", "labels": []},
-                  {"number": 5, "body": "<!-- akasha-task: t-2 -->", "labels": [{"name": server.MERGE_LABEL}]},
-                  {"number": 6, "body": "A pull request of a person", "labels": []}]
+        address = "https://github.com/team/app/pull/{}".format
+
+        def pull(number: int, body: str, labels: tuple[str, ...] = (), fork: bool = False) -> dict:
+            return {"number": number, "url": address(number), "body": body, "isCrossRepository": fork,
+                    "labels": [{"name": name} for name in labels]}
+
+        listed = [pull(4, "## Why\n\n<!-- akasha-task: t-1 -->\n"),
+                  pull(5, "<!-- akasha-task: t-2 -->", [server.MERGE_LABEL]), pull(6, "A pull request of a person"),
+                  pull(7, "<!-- akasha-task: t-1 -->", fork=True),                 # anybody can copy the mark
+                  pull(8, "<!-- akasha-task: t-9 -->")]                          # no task on the board names it
+        tasks_ = [Task(id=f"t-{number}", title="x", workflow="feature", stage="handover",
+                       pull_request=address(number)) for number in (4, 5, 7)]
 
         def answers(root, *args, payload=None):
             return subprocess.CompletedProcess([], 0, json.dumps(listed) if args[:2] == ("pr", "list") else "{}", "")
@@ -293,6 +303,7 @@ class ApplyTests(unittest.TestCase):
         with patch("akasha.repo.origin", return_value="team/app"), patch("akasha.repo.me", return_value="admin-a"), \
                 patch("akasha.infra.github.repository", return_value=("team/app", "main")), \
                 patch("akasha.infra.github.settings", return_value={"permissions": {"admin": True}}), \
+                patch("akasha.coordinator.board.read", return_value=(tasks_, "github")), \
                 patch("akasha.infra.github.gh", side_effect=answers) as gh:
             github.apply(self.root)
         calls = [call.args[1:] for call in gh.call_args_list]

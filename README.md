@@ -106,7 +106,7 @@ An administrator set up the repository once. Then three people ask for changes o
 
 GitHub merges three commits in order — `#41 Show the tax on invoices`, `#42 Add a date filter`, `#43 Add an export button` — each with its own briefing. Nobody waited for an answer from another person.
 
-When two tasks overlap, the board decides:
+When two tasks overlap, Akasha applies these rules:
 
 | Overlap | What happens |
 |:--|:--|

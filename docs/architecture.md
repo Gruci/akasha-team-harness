@@ -94,7 +94,7 @@ The agent engine runs these commands. People do not have to remember them. The s
 | `resume` | Opens a stopped task again after a developer examined it. With GitHub, the same rule as `approve` |
 | `cancel` | Stops a task for good. With GitHub, the same rule as `approve`. It also closes the open pull request of the task, also when another person holds the task |
 | `handoff` | Saves the work so far on the server and frees the task, so that another person can take it over. Run it in the main checkout |
-| `takeover` | Holds a task that another person handed off, and makes its work copy on this computer |
+| `takeover` | Holds a task that another person handed off, and makes its work copy on this computer. With `--force`, it takes over an open task without the handoff, when the copy of the holder is gone |
 | `board` | Shows the tasks of all requesters, with the holder and the feature key of each task |
 | `infra` | Shows the GitHub settings that are not correct. With `--apply`, it corrects them when the GitHub account of this computer is an administrator |
 | `hook` | The entry point for the hooks of the agent engine: the session start, before a command or an edit, after an edit, and the end of a turn. Claude Code and Codex use the same hooks |

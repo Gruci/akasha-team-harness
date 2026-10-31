@@ -106,7 +106,7 @@ AI 가 다음을 묻습니다.
 
 GitHub 가 커밋 세 개를 차례로 병합합니다 — `#41 Show the tax on invoices`, `#42 Add a date filter`, `#43 Add an export button`. 커밋마다 브리핑이 따로 붙습니다. 아무도 다른 사람의 답을 기다리지 않았습니다.
 
-두 과업이 겹치면 보드가 정합니다.
+두 과업이 겹치면 Akasha 가 이 규칙을 적용합니다.
 
 | 겹침 | 일어나는 일 |
 |:--|:--|

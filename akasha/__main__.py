@@ -104,10 +104,14 @@ def _parser() -> argparse.ArgumentParser:
     for name, text in (("advance", "move the task to its next stage"), ("show", "show one task"),
                        ("handover", "open the pull request: GitHub or the merge helper of Akasha merges it"),
                        ("handoff", "save the work on the server and free the task for another person"),
-                       ("takeover", "hold a task that another person handed off, and continue it here"),
                        ("preview", "reserve the preview port of a task, run the seed command, and show the preview "
                                    "values")):
         commands.add_parser(name, help=text).add_argument("task")
+    takeover = commands.add_parser("takeover", help="hold a task that another person handed off, and continue it here")
+    takeover.add_argument("task")
+    takeover.add_argument("--force", action="store_true",
+                          help="take over an open task without its handoff, when the copy of its holder is gone: the "
+                               "same GitHub account, or a developer. The work that was not on the server is lost")
     check = commands.add_parser("check", help="run the required checks")
     check.add_argument("task", nargs="?")
     check.add_argument("--ci", action="store_true")
@@ -218,8 +222,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cancel":
         _show(flow.cancel(root, args.task, args.by, args.reason))
         return 0
-    if args.command in ("handoff", "takeover"):
-        _show(getattr(flow, args.command)(root, args.task))
+    if args.command == "handoff":
+        _show(flow.handoff(root, args.task))
+        return 0
+    if args.command == "takeover":
+        _show(flow.takeover(root, args.task, args.force))
         return 0
     if args.command == "preview":
         task, values, seeded = flow.preview(root, args.task)

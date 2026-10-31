@@ -182,6 +182,15 @@ class BoardTests(unittest.TestCase):
                     self.assertIn("gh auth status", str(stopped.exception))
                     self.assertIn("gh auth login", str(stopped.exception))
 
+    def test_without_github_akasha_writes_no_issue(self):
+        root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
+        fake = FakeBoard()
+        address = fake.add(board.body(task("t-1")))                    # origin was on GitHub before
+        with patch("akasha.coordinator.board.gh", fake):
+            self.assertEqual(board.publish(root, task("t-1", board=address, status="cancelled")), "")
+            self.assertEqual(board.publish(root, task("t-2")), "")
+        self.assertEqual((fake.calls, fake.issues[address]["state"], len(fake.issues)), ([], "OPEN", 1))
+
     def test_publish_examines_each_write(self):
         root = Path(tempfile.mkdtemp(prefix="akasha-board-"))
         fake = FakeBoard()

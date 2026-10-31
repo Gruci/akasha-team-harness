@@ -327,11 +327,15 @@ def _overlap_notices(root: Path, paths: list[Path]) -> list[str]:
 
 def turn_end(root: Path) -> int:
     """Tell the user about each task with a work copy on this computer that needs a person: a stopped task, or
-    changes outside the task scope. A task that this computer handed off has no work copy here. With GitHub, a
-    developer opens a stopped task again with the decision comment /resume on its issue."""
-    found, team = [], None
+    changes outside the task scope. A task that this computer handed off has no work copy here, and a task that
+    another copy of the repository holds now is not a task of this copy (flow.load saves its new holder here). With
+    GitHub, a developer opens a stopped task again with the decision comment /resume on its issue."""
+    found, team, here = [], None, None
     for task in tasks.all_tasks(root):
         if not task.workcopy or not Path(task.workcopy).is_dir():
+            continue
+        here = here or repo.host(root)
+        if task.holder_host and task.holder_host != here:
             continue
         if task.status == "stopped":
             found.append(f"Task {task.id} stopped after failed repairs. A developer must examine it"

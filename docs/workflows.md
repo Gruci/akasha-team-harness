@@ -15,12 +15,12 @@ A workflow is a list of stages. Each stage has exit conditions. A task goes to t
 | Exit condition | What Akasha measures |
 |:--|:--|
 | `conditions_clear` | The task has one or more completion conditions and no open question |
-| `requester_approved` | The requester approved the current revision of the specification. With GitHub, the requester writes `/approve spec r<N>` on the issue of the task |
+| `requester_approved` | The requester approved the specification. With GitHub, the requester writes `/approve spec r<N>` on the issue of the task for the current revision. Without GitHub, an approval stays after a change of the specification, as in Akasha 1.0.0 |
 | `impact_assessed` | The impact analysis has all five parts: features, data, contracts, tasks, and rollback |
 | `risk_approvals` | Each gate role that `[approval]` names for the risk level of the task approved. With GitHub, a person with the role writes `/approve risk <level>` |
 | `scope_respected` | Each changed file in the work copy matches the scope. The team context and the map folder are outside each scope, so that each task can update its map file. A task without a scope permits all files |
 | `checks_pass` | Each required check passed, or it was NOT_NEEDED because the change touches no file that it examines. No check failed. SKIP is not a pass |
-| `accepted` | The requester accepted each completion condition of the current revision. With GitHub, the requester writes `/accept <number> r<N>` |
+| `accepted` | The requester accepted each completion condition. With GitHub, the requester writes `/accept <number> r<N>` for the current revision. Without GitHub, an acceptance stays after a change of the specification, as in Akasha 1.0.0 |
 | `map_current` | The change updates the map file of the feature key of the task, or a file in the folder of its parts: for the key `billing`, `billing.md` or a file in `billing/` of the map folder. The product map of Akasha 1.0.0, `.akasha/context/product-map.md`, also counts. A task without a feature key, or with a key of Akasha 1.0.0 in another shape, can update each map file except `README.md`. Or the task records why the map does not change |
 | `infra_ready` | The required check, branch protection, auto-merge, and the server files on the default branch agree with the team config |
 | `pull_request_open` | The pull request of the task is open. The built-in workflows do not use it |
@@ -38,13 +38,15 @@ The specification has a revision, `r1`, `r2`, and so on. It goes up each time th
 
 With GitHub, each decision comment of the requester names the revision that the requester saw. A decision for an older revision does not count. A task after its specification stage goes back to that stage, so that the requester approves the new specification. A task with a pull request cannot change its specification, because GitHub can merge the pull request at any time. Record a new request.
 
+Without GitHub, the approval, the acceptances, and the stage stay after a change of the specification, as in Akasha 1.0.0.
+
 Each decision of a person, and who can write it, is in [Roles](roles.md).
 
 ## Failed repairs
 
 Each failed check counts as one failed repair. After three failed repairs, Akasha stops the task.
 
-1. The agent engine stops the work and tells the requester in simple words. With GitHub, Akasha writes a comment on the issue of the task for the developers. Akasha writes it once, when the task stops: a check of the stopped task counts one more failed repair, but writes no comment.
+1. The agent engine stops the work and tells the requester in simple words. With GitHub, Akasha writes a comment on the issue of the task for the developers. Akasha writes it once, when the task stops: a check of the stopped task counts one more failed repair, but writes no comment. Akasha also saves the work on the wip branch of the task, as a handoff does, so that a developer on another computer can take the task over. A work copy with a secret key or a file outside the scope stays only on the computer of the holder.
 2. A developer examines the problem.
 3. The developer writes the decision comment `/resume` on the issue, after the comment of Akasha. When the developer is the GitHub account of the computer, the agent engine runs `resume`, and Akasha writes the comment. Without GitHub, the agent engine runs `resume --by <developer>`. The count starts again at zero.
 

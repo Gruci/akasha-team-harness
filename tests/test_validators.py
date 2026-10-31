@@ -77,13 +77,21 @@ class GuardTests(unittest.TestCase):
                      "gh api graphql -f query='mutation { minimizeComment(input: {subjectId: \"x\"}) { x } }'",
                      "gh api graphql -f query='mutation { updateIssue(input: {id: \"x\", body: \"\"}) { x } }'",
                      "gh issue comment 5 --edit-last --body ok", "gh issue edit 5 --body-file note.md",
-                     "gh issue edit 5 -b x", "gh api -X PATCH repos/team/app/issues/5 -f state=closed"):
+                     "gh issue edit 5 -b x", "gh api -X PATCH repos/team/app/issues/5 -f state=closed",
+                     "gh pr create --head feature-x --label akasha-merge --fill", "gh pr create -l bug,akasha-merge",
+                     "gh pr edit 7 --add-label akasha-merge", "gh issue edit 7 --add-label=Akasha-Merge",
+                     "gh api repos/team/app/issues/7/labels -f 'labels[]=akasha-merge'",
+                     "gh api graphql -f query='mutation { addLabelsToLabelable(input: {}) { x } }'"):
             with self.subTest(line=line):
                 self.assertIsNotNone(self.stop(line))
         for line in ("git push", "git push origin", "git push -u origin HEAD"):        # in the work copy of a task
             with self.subTest(line=line):
                 self.assertIsNotNone(guard.check_command(line, work, self.root))
                 self.assertIsNone(guard.check_command("git push origin feature-x", work, self.root))
+        for line in ("git stash push -m wip", "git stash push -- src/a.py", "git commit -m push", "git -C . stash push",
+                     "gh pr create --label bug --fill", "gh pr edit 7 --add-label akasha-merged"):    # local commands
+            with self.subTest(line=line):
+                self.assertIsNone(guard.check_command(line, work, self.root))
 
     def test_the_guard_uses_the_names_of_work_in_the_team_config(self):
         team = Team(work_dir="tools/worktrees", branch_prefix="feat/", wip_prefix="wip/")

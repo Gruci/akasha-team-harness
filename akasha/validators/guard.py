@@ -16,6 +16,7 @@ from pathlib import Path
 from akasha.config import BRANCH_PREFIX, STATE_DIR, WIP_PREFIX, WORK_DIR, Team
 from akasha.coordinator.board import DECISIONS
 from akasha.core.task import Task
+from akasha.infra.server import MERGE_LABEL
 
 DEFAULT_BRANCHES = ("main", "master")
 TASK_BRANCHES = (BRANCH_PREFIX, WIP_PREFIX)             # Akasha pushes these branches itself, and those of [work]
@@ -38,6 +39,9 @@ _COMMENT_CHANGE = re.compile(r"\b(?:updateIssueComment|deleteIssueComment|minimi
 _ISSUE_API = re.compile(r"issues/\d+/?$")
 _ISSUE_CHANGE = re.compile(r"\bupdateIssue\b")
 _BODY_FLAGS = ("--body", "-b", "--body-file", "-F")
+_LABEL_FLAGS = ("--label", "-l", "--add-label")          # the flags of gh that give labels, with a list of names
+_LABEL_API = re.compile(r"issues/\d+/labels\b")
+_LABEL_CHANGE = re.compile(r"\baddLabelsToLabelable\b")   # GraphQL names the labels by their ids
 _TASK_PUSH = ("it pushes to or deletes a task branch on the server. Akasha pushes the task branches itself: run the "
               "Akasha command check, handoff, or handover")
 
@@ -84,6 +88,15 @@ def _git_folder(args: list[str], folder: Path | None) -> Path | None:
     return folder
 
 
+def _git_command(args: list[str]) -> tuple[str, list[str]]:
+    """The git command, for example push, and the words after it. The flags of git before the command are not the
+    command, for example `git -C <folder> push`. Thus `git stash push` is the command stash."""
+    number = 0
+    while number < len(args) and args[number].startswith("-"):
+        number += 2 if args[number] in _GIT_VALUES else 1
+    return (args[number].lower(), args[number + 1:]) if number < len(args) else ("", [])
+
+
 def _inside(path: Path, root: Path) -> bool:
     try:
         path.resolve().relative_to(root.resolve())
@@ -98,8 +111,8 @@ def _short_flag(arg: str, letter: str) -> bool:
 
 
 def _git_reason(args: list[str], in_work_copy: bool = False, branches: tuple[str, ...] = TASK_BRANCHES) -> str | None:
-    if "push" in args:
-        rest = args[args.index("push") + 1:]
+    command, rest = _git_command(args)
+    if command == "push":
         if any(arg.startswith("--force") or _short_flag(arg, "f") or (arg.startswith("+") and len(arg) > 1)
                for arg in rest):
             return "a force push replaces history on the server"
@@ -118,8 +131,7 @@ def _git_reason(args: list[str], in_work_copy: bool = False, branches: tuple[str
             return "it pushes all branches, also the task branches. Push one branch by its name"
         if in_work_copy and (len(named) < 2 or "HEAD" in targets):       # the current branch is the task branch
             return _TASK_PUSH
-    if "branch" in args:
-        rest = args[args.index("branch") + 1:]
+    if command == "branch":
         if any(flag in rest for flag in ("-D", "--delete", "-d")) and any(b in rest for b in DEFAULT_BRANCHES):
             return "it deletes the default branch"
     return None
@@ -191,12 +203,28 @@ def _changes_issue(verb: tuple[str, ...], args: list[str], texts: list[str]) -> 
         _method(args) == "PATCH" and any(_ISSUE_API.search(arg) for arg in args)))
 
 
+def _gives_merge_label(verb: tuple[str, ...], args: list[str], texts: list[str]) -> bool:
+    """True when gh gives an issue or a pull request the merge label of Akasha, also in a list of labels. GraphQL
+    names the labels by their ids, so each label change through GraphQL counts."""
+    if verb[:1] == ("api",):
+        return any(_LABEL_CHANGE.search(text) for text in texts) or (
+            any(_LABEL_API.search(arg) for arg in args) and any(MERGE_LABEL in text.lower() for text in texts))
+    if verb not in (("pr", "create"), ("pr", "edit"), ("issue", "create"), ("issue", "edit")):
+        return False
+    values = [args[number + 1] for number, arg in enumerate(args[:-1]) if arg in _LABEL_FLAGS]
+    values += [arg.split("=", 1)[1] for arg in args if arg.split("=", 1)[0] in _LABEL_FLAGS and "=" in arg]
+    return any(name.strip().lower() == MERGE_LABEL for value in values for name in value.split(","))
+
+
 def _gh_reason(args: list[str], line: str, commands: list[list[str]], cwd: Path) -> str | None:
     verb, texts = _gh_verb(args), _texts(line, commands, cwd)
     api = verb[:1] == ("api",)
     if verb == ("pr", "merge") or (api and any(_MERGE_API.search(text) for text in texts)):
         return ("it merges a pull request or turns on its auto-merge. GitHub, or the merge workflow of Akasha, merges "
                 "each pull request when the server check passes")
+    if _gives_merge_label(verb, args, texts):
+        return (f"it can give a pull request the label {MERGE_LABEL}. Akasha gives that label at the handover, and "
+                "where GitHub has no auto-merge, the merge workflow of Akasha merges each pull request with it")
     if _changes_comment(verb, args, texts):
         return ("it edits, deletes, or hides a comment. Then a later decision comment can stop counting, and an "
                 "earlier decision counts again")

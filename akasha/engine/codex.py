@@ -28,7 +28,8 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
    of `[context] map` in akasha.toml. Use the name of a map file when one fits: `billing` for `billing.md`.
    For a part of a large feature, use `<feature>/<part>`. Use only a to z, 0 to 9, and `-`.
    Record the task: `python -m akasha request "<title>" --feature <feature key>`. With GitHub, the requester is the
-   GitHub account of this computer. For another requester, add `--requester <GitHub name>`.
+   GitHub account of this computer. For another requester, add `--requester <GitHub name>`. Without GitHub, always
+   add `--requester <name>`.
    If an earlier task makes the same feature, add `--builds-on <earlier task>`.
    If Akasha shows an overlap, do the action that it shows.
    To change the key later, run `python -m akasha specify <task> --feature <feature key>`.
@@ -54,6 +55,7 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
    the preview with the preview command that it shows, in the work copy, and show the result to the requester.
    The requester writes `/accept <number> r<N>` or `/reject <number> r<N> <reason>` on the issue. If the requester
    is the GitHub account of this computer, run `python -m akasha accept <task> --condition <number> --result yes`.
+   Without GitHub, run that command with the answer of the requester: `--result yes` or `--result no`.
 9. Update the map file of the feature in the work copy, or record why it does not change:
    `python -m akasha impact <task> --map-unchanged "<reason>"`. A new map file has the title `# <Feature name>`
    and the lines Purpose, Screens, Data, APIs, and Depends on (the feature keys that the feature uses).
@@ -82,6 +84,8 @@ If the developer is the GitHub account of this computer and tells you to continu
 With GitHub, one person on one computer holds each task. If Akasha says that another person holds it, do not change it.
 To let another person continue a task, run `python -m akasha handoff <task>` in the main checkout.
 To continue a task that another person handed off, run `python -m akasha takeover <task>`.
+If the copy of the holder is gone, ask the user. When the user agrees, run
+`python -m akasha takeover <task> --force`: the work that the old copy did not push is not in the task.
 If Akasha says that it cannot read the shared task board or your GitHub name, ask the user to log in with
 `gh auth login`. If Akasha also says that it saved or recorded the task, continue with that task: when gh works
 again, run the command that Akasha shows, and do not record the task again. Else do the step again.

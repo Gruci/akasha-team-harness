@@ -169,7 +169,7 @@ def _relative(value: object, where: str, example: str, top: bool = True) -> str:
     path = PureWindowsPath(_text(value, where).strip())       # it reads both / and \ and finds each drive
     if path.anchor or ".." in path.parts or not (path.parts or top):
         raise ConfigError(f"{CONFIG_FILE}: {where} must be a folder in the repository, for example {example}. Do not "
-                          "use an absolute path or ..")
+                          "use an absolute path or .." + ("" if top else ", and do not use the top of the repository"))
     return "/".join(path.parts)
 
 
