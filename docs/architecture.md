@@ -55,9 +55,10 @@ flowchart LR
 | Server files | `.github/workflows/akasha.yml`, `akasha-merge.yml`, `akasha-watch.yml`, the Akasha block of CODEOWNERS, `.github/pull_request_template.md` | Yes |
 | Branch protection and repository settings | GitHub | No |
 | Shared task board | GitHub issues with the label `akasha` | No |
-| Task state | The issue of the task on the shared task board. Each computer also keeps the task in `.akasha/state/tasks/<task>.json`, with its work copy folder | No |
+| Task state | The issue of the task on the shared task board. Each computer also keeps the task in `.akasha/state/tasks/<task>.json`, with its work copy folder and its preview port | No |
 | The person and the copy of the repository | `.akasha/state/me.json` (the GitHub name, for one hour) and `.akasha/state/machine.json` (the random mark of this copy) | No |
 | Work copies | `.akasha/work/<task>/`, on the branch `akasha/<task>`. A handoff pushes the work to `akasha-wip/<task>`. `[work]` in `akasha.toml` can give another folder in the repository and other prefixes. Git ignores the folder: `.gitignore`, or `.git/info/exclude` on each computer | No |
+| Preview ports | `~/.akasha/ports.json` in the home folder of the person: the reserved ports of the previews of all copies of all repositories on this computer | No |
 | Notices | `.akasha/state/board.json` (the copy of the board for the hooks, five minutes at most), `.akasha/state/seen.json` (the overlap notices after an edit), and `.akasha/state/seen/<task>.json` (the last comment on the issue that this computer showed) | No |
 
 Each command of a task fetches the default branch from the server once. The team rules, the team workflows, and the start of each new work copy come from that branch, not from the checkout of the computer, which can be old. Without a server, Akasha uses the checkout, as in Akasha 1.0.0. When a server that is not on GitHub does not answer, Akasha uses the default branch as git fetched it last.
@@ -86,6 +87,7 @@ The agent engine runs these commands. People do not have to remember them. The s
 | `advance` | Moves the task to the next stage, or shows what blocks it. It compares a new contract of the real changes with the other tasks. It shows the new comments on the issue as news, apart from the blockers |
 | `show` | Shows one task: stage, risk, holder, feature key and map file, scope, the revision of the specification, the numbered conditions, impact, approvals, checks, preview values, the decision comments that do not count, and the news. It only reads the task |
 | `check` | Runs the required checks in the work copy. When each check passes or is NOT_NEEDED, it saves the work and pushes the task branch. It tells a push that the server refuses |
+| `preview` | Reserves the preview port of the task on this computer, runs the seed command of `[preview]` in the work copy, and shows the filled preview values. The agent engine runs it before it starts the preview for the inspection |
 | `accept` | Records the inspection of the requester, of one condition by its text or number, or of all conditions. With GitHub, the same rule as `approve` |
 | `brief` | Examines and records the briefing |
 | `handover` | Merges the task branch on the server and the latest default branch, checks the change again, opens the pull request with the label `akasha-merge`, and turns on auto-merge. It also shows the news |

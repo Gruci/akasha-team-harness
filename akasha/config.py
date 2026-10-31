@@ -44,7 +44,7 @@ _KEYS: dict[str, set[str] | None] = {
     "risk": {"high", "medium"},
     "approval": {"high", "medium"},
     "checks": None,                          # the team gives the check names (_checks)
-    "preview": {"command", "database"},
+    "preview": {"command", "database", "seed", "cleanup"},
     "contracts": None,                       # the team gives the contract names
     "workflows": {"enabled"},
     "server": {"rules"},
@@ -123,7 +123,7 @@ class Team:
     checks: dict[str, Check] = field(default_factory=dict)          # only the checks in required_checks run
     setup: str = ""                                                  # the command that prepares a new copy
     run_all_when: tuple[str, ...] = RUN_ALL_WHEN
-    preview: dict[str, str] = field(default_factory=dict)
+    preview: dict[str, str] = field(default_factory=dict)           # command, database, seed, and cleanup
     contracts: dict[str, tuple[str, ...]] = field(default_factory=dict)
     workflows: dict[str, Workflow] = field(default_factory=dict)     # the enabled workflows, for new requests
     defined: dict[str, Workflow] = field(default_factory=dict)       # all workflows, for the tasks that started

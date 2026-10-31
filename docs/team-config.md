@@ -147,8 +147,22 @@ The patterns of `only_when` and `run_all_when` use the pattern rules of `[risk]`
 |:--|:--|
 | `command` | The command that starts a preview |
 | `database` | The name of the preview database |
+| `seed` | The command that makes the preview database of the task and puts sample data in it. It must give the same result when it runs again |
+| `cleanup` | The command that removes the preview database of a finished task. It must not fail when the database is not there |
 
-Akasha replaces `{task}` with the task name and `{port}` with a port for the task. Thus each task gets its own values. The agent engine reads the filled values with `show`.
+Akasha replaces `{task}` with the task name and `{port}` with the preview port of the task on this computer. Thus each task gets its own values. Before the inspection, the agent engine runs `preview <task>`: Akasha reserves the port, runs `seed` in the work copy, and shows the filled values. `show` also shows them. Before the port is reserved, `show` shows a value with `{port}` as it is.
+
+When the pull request of a task merges, Akasha runs `cleanup` in the work copy, then removes the work copy and frees the port. `cleanup` runs only for a task that `preview` prepared on this computer. A cancelled task keeps its database, as it keeps its work copy. The server check never runs `seed` or `cleanup`. See [Preview resources](coordination.md#preview-resources).
+
+```toml
+[preview]
+command = "npm run dev -- --port {port}"
+database = "app_{task}"
+seed = "npm run db:seed -- app_{task}"
+cleanup = "npm run db:drop -- app_{task}"
+```
+
+> **CAUTION:** An Akasha plugin that is not updated refuses `seed` and `cleanup`. Make sure that each person updated the Akasha plugin before you add them.
 
 ## `[contracts]`
 

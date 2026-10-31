@@ -18,7 +18,7 @@ from akasha.config import STATE_DIR
 STATUSES = ("open", "stopped", "done", "cancelled")
 FORMAT = 2                  # the issue holds the whole task. Akasha 1.0.0 wrote only some fields: format 1
 # The fields that stay on one computer. The issue never holds them.
-LOCAL_FIELDS = ("workcopy", "synced", "setup_output")
+LOCAL_FIELDS = ("workcopy", "synced", "setup_output", "port")
 
 
 @dataclass
@@ -60,6 +60,7 @@ class Task:
     format: int = FORMAT
     synced: int = 0                                            # the revision of the issue that this computer saw last
     setup_output: str = ""                                     # the output of a setup command that failed here
+    port: int = 0                                              # the preview port that this computer reserved
 
 
 def active(task: Task) -> bool:

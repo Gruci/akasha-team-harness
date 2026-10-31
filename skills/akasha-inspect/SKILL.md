@@ -9,9 +9,11 @@ The session start notice gives the Akasha command. This skill writes it as `akas
 
 ## Procedure
 
-1. Run `akasha show <task>`. Read the preview values and the completion conditions.
-2. Start the preview with the preview command in the work copy of the task.
-3. Show each completion condition to the requester with sample data.
+1. Run `akasha show <task>`. Read the completion conditions.
+2. Run `akasha preview <task>`. Akasha reserves the port of the task on this computer, runs the seed command of the team in the work copy, and shows the filled preview values. Use only these values: another task can use a different port or database.
+   - If Akasha shows `[FAIL] seed`, read the output. Repair the cause, then run `akasha preview <task>` again. If the cause is outside the task, for example a database server that does not answer, tell the user.
+   - If Akasha shows no preview command, ask the user how to start the product. Use the port that Akasha shows.
+3. Start the preview with the preview command in the work copy of the task. Show each completion condition to the requester with sample data.
 4. For each condition, ask the requester: "Is this the correct result?"
 5. Record each answer. If the requester is the GitHub account of this computer, run `akasha accept <task> --condition <number> --result yes`, or `--result no --reason "<reason>"`. Else the requester writes `/accept <number> r<N>` or `/reject <number> r<N> <reason>` on the issue of the task. `akasha show <task>` shows the numbers and the revision `r<N>`.
 6. If an answer is no, repair the change in the work copy. Then do stage 4 of the akasha-request skill again.

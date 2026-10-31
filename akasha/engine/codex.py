@@ -47,9 +47,10 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
    what the task needs in that file, and name the other task in the impact analysis (`--tasks`).
 7. Run `python -m akasha check <task>`. Repair each failure. If Akasha says that it could not update the task branch
    on the server, tell the user.
-8. Show the result to the requester. The requester writes `/accept <number> r<N>` or `/reject <number> r<N> <reason>`
-   on the issue. If the requester is the GitHub account of this computer, run
-   `python -m akasha accept <task> --condition <number> --result yes`.
+8. Run `python -m akasha preview <task>`. It reserves the port of the task and prepares its preview database. Start
+   the preview with the preview command that it shows, in the work copy, and show the result to the requester.
+   The requester writes `/accept <number> r<N>` or `/reject <number> r<N> <reason>` on the issue. If the requester
+   is the GitHub account of this computer, run `python -m akasha accept <task> --condition <number> --result yes`.
 9. Update the map file of the feature in the work copy, or record why it does not change:
    `python -m akasha impact <task> --map-unchanged "<reason>"`. A new map file has the title `# <Feature name>`
    and the lines Purpose, Screens, Data, APIs, and Depends on (the feature keys that the feature uses).

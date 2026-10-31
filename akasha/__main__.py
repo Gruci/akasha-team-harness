@@ -99,7 +99,9 @@ def _parser() -> argparse.ArgumentParser:
     for name, text in (("advance", "move the task to its next stage"), ("show", "show one task"),
                        ("handover", "open the pull request and turn on auto-merge"),
                        ("handoff", "save the work on the server and free the task for another person"),
-                       ("takeover", "hold a task that another person handed off, and continue it here")):
+                       ("takeover", "hold a task that another person handed off, and continue it here"),
+                       ("preview", "reserve the preview port of a task, run the seed command, and show the preview "
+                                   "values")):
         commands.add_parser(name, help=text).add_argument("task")
     check = commands.add_parser("check", help="run the required checks")
     check.add_argument("task", nargs="?")
@@ -176,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         task, found = flow.start(root, args.title, args.requester, args.workflow, args.feature, args.scope,
                                  args.contract, args.builds_on)
         _show(task)
-        for note in task.notes:
+        for note in task.notes + flow.leftovers(root):
             print(f"  note — {note}")
         if flow.behind(root):                         # the main checkout is old: read the latest files on the server
             print(f"  note — {flow.behind(root)}")
@@ -214,12 +216,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in ("handoff", "takeover"):
         _show(getattr(flow, args.command)(root, args.task))
         return 0
+    if args.command == "preview":
+        task, values, seeded = flow.preview(root, args.task)
+        _show(task)
+        print(f"  preview port: {task.port}")
+        for name, value in values.items():
+            print(f"  preview {name}: {value}")
+        if seeded is not None:
+            status, detail = seeded
+            print(f"[{status}] seed" + (f"\n{detail}" if status != "PASS" and detail else ""))
+        return 0 if seeded is None or seeded[0] == "PASS" else 1
     if args.command == "advance":
         blocked = flow.advance(root, args.task)
         task = flow.load(root, args.task, write=False)
         _show(task)
         for reason in blocked:
             print(f"  blocked — {reason}")
+        for note in flow.leftovers(root):
+            print(f"  note — {note}")
         _overlaps(args.task)
         _uncounted(args.task)
         _news(root, task)
@@ -228,9 +242,13 @@ def main(argv: list[str] | None = None) -> int:
         task = flow.load(root, args.task, write=False)
         _show(task)
         team = flow.rules(root)
+        if resources.in_range(task.port):
+            print(f"  preview port: {task.port}")
         for name, template in team.preview.items():
-            if template:
-                print(f"  preview {name}: {resources.fill(template, task.id)}")
+            if resources.in_range(task.port) or "{port}" not in template:
+                print(f"  preview {name}: {resources.fill(template, task.id, task.port)}")
+            else:
+                print(f"  preview {name}: {template} — akasha preview {task.id} reserves the port")
         if task.feature:
             print(f"  feature: {task.feature}")
         print(f"  map file: {flow.map_file(team, task.feature) or f'any file in {team.map_dir}/'}")

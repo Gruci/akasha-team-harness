@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from akasha import __main__ as command_line
 from akasha import config, flow, setup
-from akasha.coordinator import board, overlap
+from akasha.coordinator import board, overlap, resources
 from akasha.core import stages, workcopy
 from akasha.core import task as tasks
 from akasha.engine import codex, hooks
@@ -56,6 +56,35 @@ def person(login: str = "dev-a", mark: str = "pc-a", fake: FakeBoard | None = No
             fake.login = login
             stack.enter_context(patch("akasha.coordinator.board.gh", fake))
         yield
+
+
+@contextmanager
+def reservations():
+    """The preview ports of the test, not of the person on this computer. Yield the file of the reservations."""
+    ports = Path(tempfile.mkdtemp(prefix="akasha-home-")) / "ports.json"
+    with patch("akasha.coordinator.resources.PORTS", ports):
+        yield ports
+
+
+def database_helper(folder: Path) -> tuple[str, Path]:
+    """The [preview] of a test, and the log of its seed and cleanup commands. Each command writes its words and its
+    folder in the log. A command fails while the folder has a file fail-<command>, for example fail-cleanup."""
+    script = folder / "database.py"
+    script.write_text("import os, sys\nfrom pathlib import Path\n\nhere = Path(__file__).parent\n"
+                      "if (here / f'fail-{sys.argv[1]}').exists():\n"
+                      "    sys.exit('the database server does not answer')\n"
+                      "with (here / 'log.txt').open('a', encoding='utf-8') as log:\n"
+                      "    log.write(' '.join(sys.argv[1:] + [os.getcwd()]) + '\\n')\n", encoding="utf-8")
+    run = f'"{sys.executable}" "{script}"'
+    return (f"[preview]\ncommand = 'npm run dev -- --port {{port}}'\ndatabase = 'app_{{task}}'\n"
+            f"seed = '{run} seed app_{{task}} {{port}}'\ncleanup = '{run} cleanup app_{{task}} {{port}}'\n",
+            folder / "log.txt")
+
+
+def logged(log: Path) -> list[tuple[str, ...]]:
+    """The commands in the log of database_helper, with their folders."""
+    lines = log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
+    return [tuple(line.split(" ", 3)) for line in lines]
 
 
 @contextmanager
@@ -402,6 +431,65 @@ class FlowTests(unittest.TestCase):
         self.assertIn("1234567", task.setup_output)                   # the output stays on this computer
         self.assertNotIn("1234567", board.body(task))
 
+    def test_a_preview_gets_its_own_port_and_database(self):
+        root, helper = make_repo(PASS), Path(tempfile.mkdtemp(prefix="akasha-database-"))
+        text, log = database_helper(helper)
+        with (root / "akasha.toml").open("a", encoding="utf-8") as file:
+            file.write(text)
+        workcopy.git(root, "commit", "-qam", "the preview")
+        self.assertEqual(flow.ci_check(root, None, "HEAD").status, {"secrets": "PASS", "tests": "PASS"})
+        self.assertEqual(logged(log), [])                                    # the server check never seeds
+        task, _ = flow.start(root, "Change the search", "ops-member", workflow="small")
+        safe, work = task.id.replace("-", "_"), Path(task.workcopy)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(root)
+        with reservations() as ports:
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(command_line.run(["show", task.id]), 0)
+            self.assertIn(f"preview command: npm run dev -- --port {{port}} — akasha preview {task.id} reserves the "
+                          "port", output.getvalue())
+            self.assertIn(f"preview database: app_{safe}\n", output.getvalue())
+            (helper / "fail-seed").write_text("", encoding="utf-8")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(command_line.run(["preview", task.id]), 1)
+            self.assertIn("[FAIL] seed\nthe database server does not answer", output.getvalue())
+            (helper / "fail-seed").unlink()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(command_line.run(["preview", task.id]), 0)
+            port = tasks.load(root, task.id).port
+            self.assertTrue(resources.in_range(port))
+            for line in (f"preview port: {port}", f"preview command: npm run dev -- --port {port}",
+                         f"preview database: app_{safe}", "[PASS] seed"):
+                self.assertIn(line, output.getvalue())
+            again, values, seeded = flow.preview(root, task.id)          # the seed runs again, and the port stays
+            self.assertEqual((again.port, values["database"], seeded), (port, f"app_{safe}", ("PASS", "")))
+            self.assertEqual([line[:3] for line in logged(log)], [("seed", f"app_{safe}", str(port))] * 2)
+            self.assertTrue(os.path.samefile(logged(log)[0][3], work))     # in the work copy
+            self.assertNotIn('"port"', board.body(again))
+            finished = tasks.load(root, task.id)
+            finished.stage, finished.pull_request = "handover", PULL_REQUEST
+            tasks.save(root, finished)
+            (helper / "fail-cleanup").write_text("", encoding="utf-8")
+            with patch("akasha.flow.github.merged", return_value=True):
+                self.assertEqual(flow.advance(root, task.id), [])
+            self.assertIn(f"the cleanup command of the preview failed for the finished task {task.id}: the database "
+                          "server does not answer", flow.leftovers(root)[0])
+            kept = tasks.load(root, task.id)                     # the work copy, the database, and the port stay
+            self.assertEqual((kept.status, kept.workcopy, kept.port), ("done", str(work), port))
+            (helper / "fail-cleanup").unlink()
+            flow.start(root, "Export the list", "ops-member")              # the next request tries again
+            self.assertEqual(flow.leftovers(root), [])
+            reserved = json.loads(ports.read_text(encoding="utf-8"))
+            with self.assertRaises(ValueError):
+                flow.preview(root, task.id)                                  # the task is done
+        cleared = tasks.load(root, task.id)
+        self.assertEqual((cleared.workcopy, cleared.port, work.exists(), reserved), ("", 0, False, {}))
+        self.assertEqual(logged(log)[-1][:3], ("cleanup", f"app_{safe}", str(port)))
+        self.assertEqual(len(logged(log)), 3)                    # the cleanup that failed wrote nothing
+
     def test_a_check_that_is_not_needed_does_not_stop_the_work(self):
         root = make_repo(PASS)
         (root / "akasha.toml").write_text(
@@ -571,6 +659,9 @@ class FlowTests(unittest.TestCase):
         self.assertIn("Akasha wrote akasha.toml", report[0])
         team = config.load(folder)
         self.assertEqual((team.required_checks, team.approval), (("secrets",), {}))
+        self.assertEqual(team.preview, {"database": "app_{task}"})
+        for key in ("# command = ", "# seed = ", "# cleanup = "):               # the administrator gives them
+            self.assertIn(key, (folder / config.CONFIG_FILE).read_text(encoding="utf-8"))
         self.assertIn("one map file for each feature key", (folder / config.MAP_DIR / "README.md").read_text("utf-8"))
         self.assertEqual((folder / config.LEGACY_MAP).read_text(encoding="utf-8"), "## Search\n")     # it stays
         self.assertIn("akasha:start", (folder / "AGENTS.md").read_text(encoding="utf-8"))
@@ -1326,6 +1417,20 @@ class SharedTaskTests(unittest.TestCase):
             flow.handoff(self.first, task.id)
             flow.takeover(self.first, task.id)                          # the setup passes in the new work copy
         self.assertEqual(tasks.load(self.first, task.id).setup_output, "")
+
+    def test_the_preview_port_stays_on_this_computer(self):
+        task, key = self.started(), os.path.normcase(str(self.first.resolve()))
+        with reservations() as ports:
+            with person("dev-a", "pc-a", self.fake):
+                port = flow.preview(self.first, task.id)[0].port
+            self.assertEqual(json.loads(ports.read_text(encoding="utf-8")), {key: {task.id: port}})
+            self.assertNotIn('"port"', self.fake.issues[task.board]["body"])
+            with person("dev-b", "pc-b", self.fake), self.assertRaises(flow.HolderError):
+                flow.preview(self.second, task.id)                  # only the holder prepares the preview
+            with person("dev-a", "pc-a", self.fake):
+                flow.handoff(self.first, task.id)
+            self.assertEqual(json.loads(ports.read_text(encoding="utf-8")), {})       # the work copy went away
+        self.assertEqual(tasks.load(self.first, task.id).port, 0)
 
     def test_a_developer_takes_over_a_stopped_task(self):
         self.team_rules('[roles]\ndevelopers = ["dev-c"]\n')            # the rules come from the server

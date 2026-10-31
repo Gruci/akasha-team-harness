@@ -1,6 +1,9 @@
 import json
+import os
+import socket
 import subprocess
 import tempfile
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -123,9 +126,9 @@ class BoardTests(unittest.TestCase):
                     notes=["the setup command failed in the work copy"], base="a" * 40, branch="akasha/x",
                     holder="dev-a", holder_host="pc-a", revision=3, wip="b" * 40, spec_rev=2, stopped_comment=104,
                     resumed=107, workcopy="C:/work/date-filter-0a1b", synced=3, setup_output="C:/Users/dev-a/.env: KEY",
-                    board="https://github.com/team/app/issues/1")
+                    port=4236, board="https://github.com/team/app/issues/1")
         text = board.body(mine)
-        self.assertEqual(board.parse(text), replace(mine, workcopy="", synced=0, setup_output="", board=""))
+        self.assertEqual(board.parse(text), replace(mine, workcopy="", synced=0, setup_output="", port=0, board=""))
         for name in tasks.LOCAL_FIELDS:                                      # the fields of one computer stay there
             self.assertNotIn(f'"{name}"', text)
         self.assertNotIn("C:/", text)
@@ -298,13 +301,75 @@ class BoardTests(unittest.TestCase):
 
 
 class ResourceTests(unittest.TestCase):
-    def test_each_task_gets_its_own_names(self):
-        first, second = resources.port("date-filter-0a1b"), resources.port("invoice-pdf-9f3c")
-        self.assertEqual(first, resources.port("date-filter-0a1b"))
-        self.assertTrue(resources.PORT_FIRST <= first < resources.PORT_FIRST + resources.PORT_COUNT)
-        self.assertNotEqual(first, second)
+    """The preview ports of the person on this computer, in a reservations file of the test."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="akasha-ports-"))
+        self.ports = Path(tempfile.mkdtemp(prefix="akasha-home-")) / ".akasha" / "ports.json"
+        reservations = patch("akasha.coordinator.resources.PORTS", self.ports)
+        reservations.start()
+        self.addCleanup(reservations.stop)
+
+    def held(self, root: Path, task_id: str) -> Task:
+        """A task with a work copy in the copy of the repository at root."""
+        work = root / ".akasha" / "work" / task_id
+        work.mkdir(parents=True)
+        mine = task(task_id, workcopy=str(work))
+        tasks.save(root, mine)
+        return mine
+
+    def reserved(self) -> dict:
+        return json.loads(self.ports.read_text(encoding="utf-8"))
+
+    def test_two_tasks_with_the_same_first_port_get_their_own_ports(self):
+        first, second = self.held(self.root, "task-000c"), self.held(self.root, "task-0022")
+        other = Path(tempfile.mkdtemp(prefix="akasha-ports-"))                  # another clone on this computer
+        with patch("akasha.coordinator.resources.busy", return_value=False):
+            self.assertEqual((resources.port(self.root, first), resources.port(self.root, second)), (4236, 4237))
+            self.assertEqual((first.port, second.port), (4236, 4237))
+            self.assertEqual(resources.port(self.root, first), 4236)                    # again the same port
+            self.assertEqual(resources.port(self.root, replace(first, port=0)), 4236)   # also from the reservation
+            self.assertEqual(resources.port(other, self.held(other, "task-000c")), 4238)
+            resources.release(self.root, second)
+            self.assertEqual(second.port, 0)
+            self.assertNotIn("task-0022", self.reserved()[os.path.normcase(str(self.root.resolve()))])
+            Path(first.workcopy).rmdir()                  # the work copy went away: nothing needs the port now
+            self.assertEqual(resources.port(self.root, second), 4236)
+        self.assertEqual(len(self.reserved()), 2)
+
+    def test_a_port_that_a_program_uses_on_ipv6_is_skipped(self):
+        try:
+            listener = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        except OSError:
+            self.skipTest("this computer has no IPv6")
+        self.addCleanup(listener.close)
+        try:
+            listener.bind(("::1", 4236))
+            listener.listen()
+        except OSError:
+            self.skipTest("this computer has no IPv6 on ::1, or a program uses the port 4236")
+        self.assertTrue(resources.busy(4236))
+        self.assertNotEqual(resources.port(self.root, self.held(self.root, "task-000c")), 4236)
+
+    def test_the_reservations_have_a_lock(self):
+        self.ports.parent.mkdir(parents=True)
+        lock = self.ports.with_name("ports.json.lock")
+        lock.write_text("", encoding="utf-8")
+        with patch("akasha.coordinator.resources.LOCK_SECONDS", 0.2), self.assertRaises(RuntimeError) as held:
+            resources.port(self.root, self.held(self.root, "task-000c"))
+        self.assertIn("another Akasha command holds the lock", str(held.exception))
+        old = time.time() - resources.STALE_SECONDS - 5                    # from a command that stopped
+        os.utime(lock, (old, old))
+        with patch("akasha.coordinator.resources.busy", return_value=False):
+            self.assertEqual(resources.port(self.root, tasks.load(self.root, "task-000c")), 4236)
+        self.assertFalse(lock.exists())
+
+    def test_the_values_get_the_task_name_and_only_a_port_in_the_range(self):
         self.assertEqual(resources.fill("app_{task}", "date-filter-0a1b"), "app_date_filter_0a1b")
-        self.assertEqual(resources.fill("--port {port}", "date-filter-0a1b"), f"--port {first}")
+        self.assertEqual(resources.fill("--port {port}", "date-filter-0a1b", 4236), "--port 4236")
+        for port in (0, 80, 4900, "4236 & del *", True, 4236.0):
+            with self.assertRaises(ValueError):
+                resources.fill("--port {port}", "date-filter-0a1b", port)
 
 
 if __name__ == "__main__":

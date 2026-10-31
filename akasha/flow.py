@@ -1,5 +1,5 @@
-"""The work procedure: request, advance, check, accept, handover, handoff, and takeover. The command line and the
-hooks use it.
+"""The work procedure: request, advance, check, preview, accept, handover, handoff, and takeover. The command line
+and the hooks use it.
 
 With GitHub, the issue of each task holds its state, and one person in one copy of the repository holds each task:
 the holder. Only the holder changes the task. The holder hands off the task, and another person takes it over on
@@ -27,7 +27,7 @@ from typing import ParamSpec, TypeVar
 
 from akasha import config, repo
 from akasha.config import RISK_LEVELS, Team
-from akasha.coordinator import board, overlap
+from akasha.coordinator import board, overlap, resources
 from akasha.core import handover as handover_document, risk, stages, workcopy
 from akasha.core import task as tasks
 from akasha.core.task import Task
@@ -70,6 +70,7 @@ _branches: dict[Path, str] = {}               # the default branch on the server
 _unanswered: set[Path] = set()                # the copies whose server did not answer in the current command
 _teams: dict[Path, Team] = {}                 # the team rules on the server, for the current command
 _behind: dict[Path, str] = {}                 # why the main checkout stays behind, after the last request
+_leftovers: dict[Path, dict[str, str]] = {}   # why the work copies of finished tasks stay, in the current command
 P, R = ParamSpec("P"), TypeVar("R")
 
 
@@ -86,6 +87,7 @@ def one_command() -> Iterator[None]:
         _branches.clear()
         _unanswered.clear()
         _teams.clear()
+        _leftovers.clear()
     _depth += 1
     try:
         yield
@@ -691,7 +693,7 @@ def _tidy(root: Path) -> None:
 
     With GitHub, Akasha skips the tasks that another person or computer holds, and the tasks that this computer
     handed off. A task of Akasha 1.0.0 (revision 0) has no holder yet, and this computer finishes it."""
-    who = _who(root)
+    who, team = _who(root), rules(root)
     for task in tasks.all_tasks(root):
         if who[0] and task.revision and (task.holder, task.holder_host) != who:
             continue
@@ -701,13 +703,40 @@ def _tidy(root: Path) -> None:
             except (board.BoardError, HolderError, ValueError):
                 pass        # for example a deleted issue, or a workflow that the team removed: `akasha advance` of the
                             # task tells it. The request reads and writes the board itself
-            task = tasks.load(root, task.id)
-        if task.status == "done" and task.workcopy:
-            try:
-                workcopy.remove(root, task)
-            except RuntimeError:
-                continue                  # the work copy has changes that are not saved; the next request tries again
+            continue                                  # advance removes the work copy when it finishes the task
+        if task.status == "done" and (task.workcopy or task.port):
+            _clear(root, team, task)                  # only the work copy and the port of this computer change
             tasks.save(root, task)
+
+
+def _clear(root: Path, team: Team, task: Task) -> None:
+    """Remove the work copy of a finished task and free its preview port. When `preview` prepared the preview on this
+    computer, the cleanup command of the team first removes the database of the task, in the work copy.
+
+    When the cleanup command fails, the work copy, the database, and the port stay, and `leftovers` tells it. A work
+    copy with changes that are not saved stays too. The next request tries again. After a cleanup that passed, the
+    port is free, so the cleanup command does not run again."""
+    tree = Path(task.workcopy) if task.workcopy else None
+    cleanup = team.preview.get("cleanup", "")
+    if cleanup and resources.in_range(task.port) and tree is not None and tree.is_dir():
+        status, detail = runner.shell(resources.fill(cleanup, task.id, task.port), tree)
+        if status != "PASS":
+            _leftovers.setdefault(root, {})[task.id] = (
+                f"the cleanup command of the preview failed for the finished task {task.id}: "
+                f"{' '.join(detail.split())[-300:] or 'no output'}. Its work copy {tree}, its preview database, and "
+                "its port stay, and the next request runs the cleanup command again. To stop that, remove the "
+                f"database yourself, then remove the work copy: git worktree remove {tree}")
+            return
+    resources.release(root, task)
+    try:
+        workcopy.remove(root, task)
+    except RuntimeError:
+        pass                              # the work copy has changes that are not saved; the next request tries again
+
+
+def leftovers(root: Path) -> list[str]:
+    """Why the work copies of finished tasks stayed in the current command: their cleanup command failed (_clear)."""
+    return list(_leftovers.get(root, {}).values())
 
 
 def _earlier(root: Path, task: Task) -> tuple[Task | None, str]:
@@ -935,11 +964,8 @@ def advance(root: Path, task_id: str) -> list[str]:
         blocked = stages.advance(task, _workflow(team, task), measured)
     if task.status == "open" and task.stage == "build" and not task.branch:      # also after a failed creation
         _open_workcopy(root, team, task)
-    if task.status == "done" and task.workcopy:
-        try:
-            workcopy.remove(root, task)
-        except RuntimeError:
-            pass                                      # the next request tries again
+    if task.status == "done" and (task.workcopy or task.port):
+        _clear(root, team, task)                      # when it fails, the next request tries again
     added = sorted(set(task.contracts) - contracts)
     found = _overlapping(root, replace(task, feature="", scope=[], contracts=added)) if added else []
     _publish(root, task)
@@ -1210,7 +1236,8 @@ def _examine_active(task: Task) -> Task:
 
 @_command
 def cancel(root: Path, task_id: str, person: str = "", reason: str = "") -> Task:
-    """Stop a task for good, for example when the requester withdraws the request. The work copy stays.
+    """Stop a task for good, for example when the requester withdraws the request. The work copy stays, and so do the
+    preview database and the preview port of this computer.
 
     With GitHub, the requester or a developer writes `/cancel <reason>` on the issue, also when another person holds
     the task. When this copy of the repository or nobody holds the task, the cancel goes on the issue at once
@@ -1262,6 +1289,23 @@ def accept(root: Path, task_id: str, condition: str | None, result: bool, reason
     target = str(task.conditions.index(_condition(task, condition)) + 1) if condition else "all"
     words = ["/accept" if result else "/reject", target, f"r{task.spec_rev}", *([] if result else reason.split())]
     return _decide_here(root, task, " ".join(words), _requester_account(task))
+
+
+@_command
+def preview(root: Path, task_id: str) -> tuple[Task, dict[str, str], tuple[str, str] | None]:
+    """Prepare the preview of the task on this computer, before the agent engine starts it for the inspection. Akasha
+    reserves the port of the task (resources.port) and runs the seed command of the team in the work copy, with the
+    placeholders filled. Return the task, the filled values of [preview], and the result of the seed command, or None
+    without a seed command.
+
+    The port and the database are of this computer: the issue never holds them, and the output of the seed command
+    stays here. The server check never runs the seed command."""
+    team, task = rules(root), _examine_active(_held(root, task_id))
+    tree = _tree(task)
+    port = resources.port(root, task)
+    tasks.save(root, task)                            # only the port of this computer changed
+    values = {name: resources.fill(template, task.id, port) for name, template in team.preview.items()}
+    return task, values, runner.shell(values["seed"], tree) if "seed" in values else None
 
 
 @_command
@@ -1538,7 +1582,8 @@ def handoff(root: Path, task_id: str) -> Task:
     and later tasks build on it. Akasha does not force the push, so a copy that is behind the server cannot write
     over newer work. The issue gets the work and the free task before the work copy and the local branch go away,
     so that a later takeover on this computer starts from the server. On Windows, nobody can remove a folder that a
-    program works in, so the handoff does not run from inside the work copy."""
+    program works in, so the handoff does not run from inside the work copy. Without the work copy, the preview port
+    of this computer is free. Only a finished task runs the cleanup command (_clear): the preview database stays."""
     if not board.available(root):
         raise RuntimeError("the handoff needs the shared task board on GitHub")
     task = _held(root, task_id)
@@ -1577,7 +1622,8 @@ def handoff(root: Path, task_id: str) -> Task:
             raise RuntimeError(f"Akasha handed off the task {task.id}: its work is on the server, and nobody holds it. "
                                f"But {error}. Close each program that uses {tree}, then remove the folder") from error
         workcopy.git(root, "branch", "-D", task.branch)
-        tasks.save(root, task)                        # only the work copy of this computer changed
+        resources.release(root, task)                 # the preview database of this computer stays
+        tasks.save(root, task)                        # only the work copy and the port of this computer changed
     return task
 
 

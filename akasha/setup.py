@@ -53,7 +53,9 @@ def _team_config(root: Path) -> str:
         lines.append(f'tests = "{packs[0].tests}"')
     if packs and packs[0].lint:
         lines.append(f'lint = "{packs[0].lint}"')
-    lines += ["", "[preview]", '# command = "npm run dev -- --port {port}"', 'database = "app_{task}"']
+    lines += ["", "[preview]", '# command = "npm run dev -- --port {port}"', 'database = "app_{task}"',
+              '# seed = "npm run db:seed -- app_{task}"     # makes the database of the task with sample data',
+              '# cleanup = "npm run db:drop -- app_{task}"  # removes the database of a finished task']
     return "\n".join(lines) + "\n"
 
 

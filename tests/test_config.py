@@ -168,6 +168,16 @@ class ConfigTests(unittest.TestCase):
             config.load(self.repo('[ci]\npython = "3.10"\n'))
         self.assertIn("3.11 or higher", str(refused.exception))
 
+    def test_the_preview_has_a_seed_and_a_cleanup_command(self):
+        team = config.load(self.repo('[preview]\ncommand = "npm run dev -- --port {port}"\ndatabase = "app_{task}"\n'
+                                     'seed = "npm run db:seed -- app_{task}"\n'
+                                     'cleanup = "npm run db:drop -- app_{task}"\n'))
+        self.assertEqual(team.preview["seed"], "npm run db:seed -- app_{task}")
+        self.assertEqual(list(team.preview), ["command", "database", "seed", "cleanup"])
+        for text in ('[preview]\nprepare = "npm run db:seed"\n', '[preview]\nseed = ""\n', '[preview]\ncleanup = 1\n'):
+            with self.subTest(text=text), self.assertRaises(config.ConfigError):
+                config.load(self.repo(text))
+
     def test_the_setup_records_who_enforces_the_server_rules(self):
         root = self.repo('[roles]\nadministrators = ["admin"]\n')
         self.assertEqual(config.load(root).server_rules, "github")

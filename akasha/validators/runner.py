@@ -81,6 +81,12 @@ def prepare(team: Team, folder: Path) -> tuple[str, str]:
     return _command(team.setup, folder) if team.setup else ("PASS", "")
 
 
+def shell(command: str, folder: Path) -> tuple[str, str]:
+    """Run one command of the team in the folder, for example the seed command of a preview: PASS or FAIL, and the
+    end of the output."""
+    return _command(command, folder)
+
+
 def needed(check: Check, changed: list[str], run_all_when: tuple[str, ...]) -> bool:
     """True when the check must run: it has no only_when, a changed file matches only_when, or a changed file
     matches run_all_when. The patterns are relative to the top of the repository."""

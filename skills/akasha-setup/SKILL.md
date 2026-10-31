@@ -22,9 +22,10 @@ Akasha examines the repository first. Do only the part that the repository needs
    - Which folders contain high-risk code, for example data changes, permissions, or payments?
    - Must a person approve a change in these folders before the merge? If yes, which GitHub names?
    - Which command starts a preview of the product?
+   - Does the preview need its own database? If yes, which command makes it with sample data, and which command removes it?
    - Which command installs the dependencies of the project in a new copy?
    - Which command runs the tests?
-4. Write each answer into `akasha.toml`. For a person gate, write the names in `[roles] developers` and remove the `#` in `[approval]`.
+4. Write each answer into `akasha.toml`. For a person gate, write the names in `[roles] developers` and remove the `#` in `[approval]`. Write the preview commands in `[preview]`: `command`, `seed`, and `cleanup`. Use `{port}` for the port of the preview and `{task}` in the name of the database, for example `app_{task}`, so that each task gets its own port and database. The seed command must give the same result when it runs again. The cleanup command must not fail when the database is not there.
 5. Read the last lines of the output of `akasha setup`:
    - If the owner must change the plan or make the repository public, tell the user. The server rules cannot go on before that.
    - If the user is not an administrator, tell the user to ask an administrator. The work can start now. The handover waits for the server rules.
