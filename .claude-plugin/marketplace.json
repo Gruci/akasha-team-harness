@@ -1,13 +1,13 @@
 {
   "name": "akasha",
-  "description": "Akasha: a team harness for coding agents.",
+  "description": "Akasha: a light team harness for coding agents.",
   "owner": {"name": "Daehyun Kim", "url": "https://github.com/Gruci"},
   "plugins": [
     {
       "name": "akasha",
       "source": "./",
-      "description": "Requests, AI impact analysis, checks, inspection, and auto-merge with a one-minute briefing for the whole team.",
-      "version": "1.0.0"
+      "description": "A person approves a preview; the AI plans, has the plan reviewed by another AI, builds, checks, and lands the change.",
+      "version": "2.0.0"
     }
   ]
 }

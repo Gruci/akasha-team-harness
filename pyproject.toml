@@ -4,15 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "akasha-team-harness"
-version = "1.0.0"
-description = "Let any person on your team build one product with an AI agent. The AI makes the technical decisions; people decide what to make."
+version = "2.0.0"
+description = "A light team harness for coding agents: a person approves a preview, and the AI plans, has the plan reviewed by another AI, builds, checks, and lands the change."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "Daehyun Kim"}]
 
+[project.scripts]
+akasha = "akasha.__main__:entry"
+
 [tool.setuptools.packages.find]
 include = ["akasha*"]
 
 [tool.setuptools.package-data]
-akasha = ["workflows/*.toml", "validators/packs/*.toml", "infra/templates/*"]
+akasha = ["packs/*.toml", "templates/*"]

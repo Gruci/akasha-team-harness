@@ -1,74 +1,50 @@
 ---
 name: akasha-setup
-description: Set up Akasha in a repository, or turn on its server rules. Use when the user says "Set up Akasha" or "Akasha 설정해줘", or when the session start notice says that the repository does not use Akasha yet or that its server rules are off, or when Akasha says that the GitHub app of Akasha is not set up.
+description: Set up Akasha in a repository as its administrator: the team rules, the GitHub settings, and the files that bring Akasha to each teammate. Use when the person says "Set up Akasha" or "Akasha 설정해줘", or when the session start notice says that the repository does not use Akasha yet or that the server rules are off.
 ---
 
-# Set up Akasha
+# Set up Akasha (administrator)
 
-The session start notice gives the Akasha command. This skill writes it as `akasha`.
+The administrator sets up the repository once. After the setup, each teammate only asks for changes and approves
+previews. The session start notice gives the Akasha command; this skill writes it as `akasha`. Talk with the person in
+their language and in simple words.
 
-Akasha examines the repository first. Do only the part that the repository needs.
+## Steps
 
-## Procedure
+1. Run `akasha doctor`. Repair each FIX line with the person before you continue.
+2. Run `akasha setup`. It writes `akasha.toml` with the usual commands of the main language, and the other files.
+3. Ask the person these questions, one at a time, and write each answer into `akasha.toml`:
+   - Who are the administrators? (GitHub names) → `[team] admins`
+   - Which folders are risky, for example the database, the data writes, the deployment? Who must review a change
+     there? → `[risk] paths` and `[team] reviewers`. A change of these paths waits for a reviewer before the merge.
+     Keep the list short: each risky path makes a person wait.
+   - Does the repository have its own CI on GitHub? What are the names of its required checks? → `[ci] required`.
+     Without a CI, Akasha adds its own check, which runs `[checks]` on GitHub.
+   - Which commands check a change? → `[checks]`: one table `[checks.<name>]` for each command, with `cwd` and
+     `only_when` for a part in its own folder, and the name in `required`.
+   - Which team documents must the AI read before the preview (design, words on the screen), before the plan
+     (architecture, rules), and for the review? → `[guides] preview`, `plan`, and `review`.
+   - Does the repository already use the folder `.akasha/work` or branches that start with `akasha/`? → `[work]`.
+4. Run `akasha setup` again. It writes CODEOWNERS and the workflow files from the answers.
+5. If the person administers the repository on GitHub, ask them to approve the GitHub changes, then run
+   `akasha setup --apply`. It turns on the branch protection, or records that GitHub cannot protect the branch on
+   this plan. Tell the person the result in simple words. If the person does not administer the repository, tell them
+   to ask an administrator to run it on their own computer.
+6. If the team has its own CI, tell the person that each push of a draft pull request starts that CI. To save the
+   time of the runners, the CI can skip drafts:
 
-1. Run `akasha setup`.
-2. If Akasha says that the repository is ready, tell the user that Akasha is ready. If Akasha also says that it updated `AGENTS.md` or `.codex/hooks.json`, an update of Akasha changed the files that Codex reads, or Akasha removed a byte order mark from `.codex/hooks.json`: a JSON reader can refuse it. If Akasha says that it added a folder to `.gitignore`, the team changed `[work]`. Then make a new branch, commit these files on it, and open a pull request. Stop here.
-   Akasha keeps the other text of `AGENTS.md` and the other hooks in `.codex/hooks.json`. If Akasha says that `.codex/hooks.json` is not JSON, tell the user: Akasha did not change it. The user repairs the file or removes it. Then run `akasha setup` again.
-   If Akasha says that this checkout is old, tell the user to pull the default branch with the command that Akasha shows. If Akasha says that a newer Akasha wrote the files, tell the user to update Akasha, then run `akasha setup` again. Do not change these files yourself.
-   If Akasha says that git tracks files in the work folder of `[work]`, tell the user: an administrator sets `[work] folder` in `akasha.toml` to a folder that git does not track. Then run `akasha setup` again.
-   If Akasha says that the default branch on the server already has `akasha.toml`, the setup is done, and this checkout is old. Tell the user to pull the default branch with the command that Akasha shows. Then run `akasha setup` again.
-3. If Akasha wrote `akasha.toml`, the repository did not use Akasha yet. Ask the user these questions. Ask one question at a time.
-   - Which GitHub names are the administrators?
-   - Which folders contain high-risk code, for example data changes, permissions, or payments?
-   - Must a person approve a change in these folders before the merge? If yes, which GitHub names?
-   - Which command starts a preview of the product?
-   - Does the preview need its own database? If yes, which command makes it with sample data, and which command removes it?
-   - Which command installs the dependencies of the project in a new copy?
-   - Which command runs the tests?
-4. Write each answer into `akasha.toml`. For a person gate, write the names in `[roles] developers` and remove the `#` in `[approval]`. Write the preview commands in `[preview]`: `command`, `seed`, and `cleanup`. Use `{port}` for the port of the preview and `{task}` in the name of the database, for example `app_{task}`, so that each task gets its own port and database. The seed command must give the same result when it runs again. The cleanup command must not fail when the database is not there.
-   - If parts of the project are in their own folders with their own commands, for example a frontend, write one check for each part: a table `[checks.<name>]` with `command`, `cwd`, and `only_when`, and its name in `required`. `only_when` is relative to the top of the repository, for example `frontend/**`.
-   - If the repository already has branches that start with `akasha/` or `akasha-wip/`, or a folder `.akasha/work`, write other values in `[work]`.
-   - If the user wants the server check on a runner of the team or with another Python, write them in `[ci]`.
-   - [Team config](../../docs/team-config.md) tells each key.
-5. Read the last lines of the output of `akasha setup`:
-   - If the owner must change the plan or make the repository public, tell the user. The server rules cannot go on before that.
-   - If the user is not an administrator, tell the user to ask an administrator. The work can start now. The handover waits for the server rules.
-   - If Akasha shows a GitHub warning, tell the user. A warning does not stop the work or the handover.
-   - If the warning says that a CODEOWNERS line of the team has no effect on some files, tell the administrator which line. The Akasha block decides the owners of these files.
-   - If the warning says that the GitHub app of Akasha is not set up, tell the administrator to make it. Do the steps in [Make the GitHub app of Akasha](#make-the-github-app-of-akasha).
-   - If the user is an administrator, ask the user to approve the GitHub changes. Then run `akasha setup --approve-infra <GitHub name>`. The name must be the GitHub account of this computer: Akasha asks GitHub, and only an administrator of the repository can change the settings. If this output shows a GitHub warning, tell the user before the pull request.
-6. Make a new branch. Commit the new and changed files on it and open a pull request.
-   The files are `akasha.toml`, `.akasha/context/map/README.md`, `AGENTS.md`, `.codex/hooks.json`, `.gitignore`, and the files in `.github/`.
-7. Ask an administrator to merge the pull request. Then run `akasha infra`. Make sure that it shows no problem.
+   ```yaml
+   on:
+     pull_request:
+       types: [opened, synchronize, reopened, ready_for_review]
+   jobs:
+     checks:
+       if: ${{ !github.event.pull_request.draft }}
+   ```
+
+7. Make a new branch, commit the files that `akasha setup` wrote, open a pull request, and ask the administrator to
+   merge it. Before this merge, the main checkout is free to change. After it, each change is an Akasha task.
+8. Tell the person how teammates join: install the plugin once (`/plugin install akasha@akasha`), log in with
+   `gh auth login`, and open the repository. The akasha-join skill helps each of them.
 
 > **CAUTION:** Do not change the GitHub settings without the approval of an administrator.
-
-> **NOTE:** Codex needs Akasha installed with pip: `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"`.
-
-## Make the GitHub app of Akasha
-
-The helper workflows of Akasha use the token of this app. With the app, the pull requests of the tasks come up to date when the default branch moves, and a merge of the helpers starts the other workflows, for example a deployment. Make the app in each repository, also when GitHub merges.
-
-An administrator of the repository does these steps on GitHub. Tell the steps to the administrator one at a time.
-
-1. On GitHub, open **Settings** → **Developer settings** → **GitHub Apps** → **New GitHub App**. For a repository of an organization, open the settings of the organization.
-2. Give the app a name, for example `akasha-<repository>`, and a homepage URL, for example the address of the repository. Clear **Webhook** → **Active**.
-3. Give the app these repository permissions. Then select **Only on this account**, and **Create GitHub App**.
-
-   | Permission | Access |
-   |:--|:--|
-   | Contents | Read and write |
-   | Pull requests | Read and write |
-   | Issues | Read and write |
-   | Workflows | Read and write |
-   | Checks | Read-only |
-
-4. On the page of the app, select **Generate a private key**. GitHub downloads a `.pem` file.
-5. Select **Install App**, then the account of the repository. Select **Only select repositories**, and the repository.
-6. Ask the administrator for the Client ID on the page of the app. Run `gh variable set AKASHA_APP_CLIENT_ID --body <Client ID>`.
-7. Tell the administrator to run this command in a terminal: `gh secret set AKASHA_APP_KEY < <path of the .pem file>`. Then the administrator deletes the `.pem` file, or keeps it in a safe place.
-8. Run `akasha infra`. Make sure that it does not show the notice about the GitHub app.
-
-> **CAUTION:** Do not open or read the private key. Only the administrator stores it.
-
-> **NOTE:** Without the Workflows permission, the helpers cannot merge or undo a change in `.github/workflows/`. Without the app, the secret `AKASHA_TOKEN` with a token of a person also starts other workflows, but the token belongs to that person.
