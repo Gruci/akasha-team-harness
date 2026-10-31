@@ -15,6 +15,7 @@ from pathlib import Path
 from akasha.task import PLAN, Task, digest, load, record, save
 
 MARK = re.compile(r"AKASHA-REVIEW:\s*([a-z0-9][a-z0-9-]*)\s+([0-9a-f]{12})\s+(PASS|CHANGES)\b", re.I)
+REVIEWER = "akasha-reviewer"
 
 
 def plan_digest(task: Task) -> str:
@@ -35,12 +36,14 @@ def note(root: Path, task: Task, verdict: str, sha: str, source: str) -> None:
     save(root, task)
 
 
-def _last_text(path: str) -> str:
-    """The text of the last answer of the agent in a transcript file (JSON lines)."""
+def _answers(path: str) -> tuple[str, str]:
+    """The text of the last answer of the agent in a transcript file (JSON lines), and the last report that it
+    handed back with the SubagentHandback tool (in auto mode the report goes there)."""
     try:
-        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines() if path else []
     except OSError:
-        return ""
+        lines = []
+    text, handback = "", ""
     for line in reversed(lines):
         try:
             entry = json.loads(line)
@@ -50,25 +53,35 @@ def _last_text(path: str) -> str:
         if not isinstance(message, dict) or message.get("role") != "assistant":
             continue
         content = message.get("content")
-        if isinstance(content, str):
-            return content
-        return "\n".join(block.get("text", "") for block in content or [] if isinstance(block, dict))
-    return ""
+        blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content or []
+        for block in (item for item in blocks if isinstance(item, dict)):
+            if not text and block.get("type") == "text":
+                text = str(block.get("text") or "")
+            if not handback and block.get("type") == "tool_use" and block.get("name") == "SubagentHandback":
+                handback = str((block.get("input") or {}).get("message") or "")
+        if text and handback:
+            break
+    return text, handback
 
 
-def on_subagent_stop(root: Path, payload: dict) -> str:
-    """Record each review mark in the last answer of a subagent. The mark counts only for the plan as it is now."""
-    text = str(payload.get("last_assistant_message") or "") or _last_text(
-        str(payload.get("agent_transcript_path") or payload.get("transcript_path") or ""))
+def on_subagent_stop(root: Path, payload: dict, agent: str = "claude") -> str:
+    """Record each review mark of the reviewer agent. The mark counts only for the plan as it is now. In Claude Code
+    only the akasha-reviewer agent reviews: a mark of another subagent does not count. Codex has no such agent, and
+    its rules ask for a separate reviewer."""
+    if agent == "claude" and str(payload.get("agent_type") or "").split(":")[-1] != REVIEWER:
+        return ""
+    last, handback = _answers(str(payload.get("agent_transcript_path") or ""))
+    text = f"{payload.get('last_assistant_message') or last}\n{handback}"
     told = []
-    for task_id, sha, verdict in MARK.findall(text):
+    marks = dict.fromkeys((name.lower(), sha.lower(), verdict.upper()) for name, sha, verdict in MARK.findall(text))
+    for task_id, sha, verdict in marks:
         try:
-            task = load(root, task_id.lower())
+            task = load(root, task_id)
         except LookupError:
             continue
-        if sha.lower() != plan_digest(task):
+        if sha != plan_digest(task):
             told.append(f"the review mark of {task_id} is for another version of the plan")
             continue
-        note(root, task, verdict, sha.lower(), "reviewer")
-        told.append(f"the reviewer gave {verdict.upper()} to the plan of {task_id}")
+        note(root, task, verdict, sha, "reviewer")
+        told.append(f"the reviewer gave {verdict} to the plan of {task_id}")
     return "; ".join(told)

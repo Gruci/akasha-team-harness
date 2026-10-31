@@ -8,15 +8,16 @@ import re
 from pathlib import Path
 
 from akasha import SOURCE, config, repo
+from akasha.checks import matches
 from akasha.config import CONFIG_FILE, HELP_LABEL, LABEL, Team
 
 TEMPLATES = Path(__file__).parent / "templates"
 CODEOWNERS_FILES = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")
+ADMIN_PATHS = (CONFIG_FILE, ".github/**") + CODEOWNERS_FILES       # the rules of the team and the GitHub files
 START, END = "# akasha:start", "# akasha:end"
 NO_PLAN = "Upgrade to GitHub Pro"            # GitHub Free has no branch protection for a private repository
 CHECK_FILE = ".github/workflows/akasha.yml"
 WATCH_FILE = ".github/workflows/akasha-watch.yml"
-TEMPLATE_FILE = ".github/pull_request_template.md"
 RUNS_ON_MARK, PYTHON_MARK, SOURCE_MARK = "@@AKASHA_RUNS_ON@@", "@@AKASHA_PYTHON@@", "@@AKASHA_SOURCE@@"
 PLAIN_LABEL = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9.]+)+")
 LABELS = {LABEL: ("6d28d9", "A task of Akasha"), HELP_LABEL: ("d93f0b", "Waits for an administrator")}
@@ -47,6 +48,30 @@ def codeowners(team: Team) -> str:
     if admins:
         lines += [f"/{path} {admins}" for path in (CONFIG_FILE, ".github/", "CODEOWNERS")]
     return "\n".join(lines + [END]) + "\n"
+
+
+def reviews_needed(team: Team, files: list[str], authors: set[str]) -> list[tuple[str, set[str]]]:
+    """For each kind of file of a change that needs a review: the first such file, and the people of whom one must
+    approve it. The administrators own the rules of the team and the GitHub files, and the reviewers own the risky
+    paths. When none of the owners is free, because they made the change, the other group reviews. The same rule
+    holds where GitHub cannot enforce CODEOWNERS (a private repository on GitHub Free)."""
+    needs = []
+    for patterns, owners, others in ((ADMIN_PATHS, team.admins, team.reviewers),
+                                     (team.risk_paths, team.reviewers, team.admins)):
+        path = next((name for name in files if any(matches(name, item) for item in patterns)), "")
+        people = ((set(owners) - authors) or (set(others) - authors)) if owners else set()
+        if path and people:
+            needs.append((path, people))
+    return needs
+
+
+def review_states(reviews: object) -> dict[str, str]:
+    """The latest review of each person on a pull request: APPROVED, CHANGES_REQUESTED, or DISMISSED."""
+    states = {}
+    for item in reviews if isinstance(reviews, list) else []:
+        if isinstance(item, dict) and item.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
+            states[str((item.get("user") or {}).get("login") or "").lower()] = item["state"]
+    return states
 
 
 def block(text: str) -> str:
@@ -104,6 +129,21 @@ def repository(root: Path) -> dict:
 
 def is_admin(root: Path) -> bool:
     return bool((repository(root).get("permissions") or {}).get("admin"))
+
+
+def guards_checks(branch: dict, team: Team) -> bool:
+    """True when the protection of a branch (as `repos/{slug}/branches/{name}` tells it) requires each check of the
+    team: only then GitHub stops a merge before the checks pass."""
+    required = ((branch.get("protection") or {}).get("required_status_checks") or {}) if branch.get("protected") else {}
+    names = set(required.get("contexts") or []) | {item.get("context") for item in required.get("checks") or []}
+    return bool(required) and set(team.status_checks) <= names
+
+
+def protected(root: Path, team: Team) -> bool | None:
+    """True when GitHub protects the default branch now with the checks of the team, None when GitHub does not
+    answer. Any collaborator can ask."""
+    found = repo.gh_json(root, "api", f"repos/{repo.origin(root)}/branches/{repo.default_branch(root)}")
+    return guards_checks(found, team) if isinstance(found, dict) else None
 
 
 def _protection(root: Path, slug: str, branch: str) -> dict | None:

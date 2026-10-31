@@ -21,8 +21,8 @@ BRANCH_PREFIX = "akasha/"                    # the branch of each task: <prefix>
 LABEL = "akasha"                             # the label of each pull request of a task: the open ones are the board
 HELP_LABEL = "akasha-help"                   # a task that waits for an administrator
 SERVER_RULES = ("github", "akasha")          # who stops a merge without the checks: GitHub, or Akasha on each computer
-GUIDE_STEPS = ("preview", "plan", "build", "review")
-CHECK_KEYS = ("command", "cwd", "only_when", "command_windows")
+GUIDE_STEPS = ("join", "preview", "plan", "build", "review")
+CHECK_KEYS = ("command", "cwd", "only_when", "command_windows", "ready")
 CHECK_SETTINGS = ("required", "setup", "run_all_when")
 RESERVED_CHECKS = CHECK_SETTINGS + ("secrets",)
 ONE_LINE_CHECKS = ("tests", "lint")          # a check with one command line: tests = "<command>"
@@ -45,9 +45,10 @@ _KEYS: dict[str, set[str] | None] = {
     "risk": {"paths"},
     "checks": None,                          # the team names its checks
     "ci": {"required", "runs-on", "python"},
-    "work": {"folder", "branch_prefix"},
+    "work": {"folder", "branch_prefix", "records"},
     "guides": set(GUIDE_STEPS),
     "server": {"rules"},
+    "deploy": {"workflow"},
 }
 
 
@@ -62,6 +63,7 @@ class Check:
     cwd: str = ""                            # the folder of the command, with / between the parts. "" is the top
     only_when: tuple[str, ...] = ()          # the check runs only when a changed file matches. () is each change
     command_windows: str = ""                # the command on Windows, for cmd.exe
+    ready: str = ""                          # a command that passes when this computer can run the check (doctor)
 
 
 @dataclass(frozen=True)
@@ -78,8 +80,10 @@ class Team:
     python: str = PYTHON
     work_dir: str = WORK_DIR
     branch_prefix: str = BRANCH_PREFIX
+    records_dir: str = RECORDS_DIR
     guides: dict[str, tuple[str, ...]] = field(default_factory=dict)    # step -> team files to read in that step
     server_rules: str = "github"
+    deploy_workflow: str = ""                # the workflow that puts a merged change live, for example "Deploy"
 
     @property
     def status_checks(self) -> tuple[str, ...]:
@@ -125,14 +129,16 @@ def _relative(value: object, where: str, example: str, top: bool = True) -> str:
     return "/".join(path.parts)
 
 
-def _work_folder(value: object) -> str:
-    folder = _relative(value, "[work] folder", WORK_DIR, top=False)
+def _folder(value: object, key: str, example: str, others: tuple[str, ...]) -> str:
+    """A folder of Akasha in the repository, apart from .git, the state of Akasha, and the other folders."""
+    folder = _relative(value, f"[work] {key}", example, top=False)
     parts = folder.lower().split("/")
     if any(re.fullmatch(WINDOWS_NAMES, part.split(".")[0]) for part in parts):
-        raise ConfigError(f"{CONFIG_FILE}: [work] folder {folder} has a device name of Windows")
-    for other in (".git", STATE_DIR.as_posix(), RECORDS_DIR):
+        raise ConfigError(f"{CONFIG_FILE}: [work] {key} {folder} has a device name of Windows")
+    for other in (".git", STATE_DIR.as_posix(), *others):
+        other = other.lower()
         if (folder.lower() + "/").startswith(other + "/") or (other + "/").startswith(folder.lower() + "/"):
-            raise ConfigError(f"{CONFIG_FILE}: [work] folder {folder} cannot be {other}, in it, or around it")
+            raise ConfigError(f"{CONFIG_FILE}: [work] {key} {folder} cannot be {other}, in it, or around it")
     return folder
 
 
@@ -163,7 +169,8 @@ def _check(name: str, value: object) -> Check:
     return Check(command=_text(value.get("command"), f"{where} command"),
                  cwd=_relative(value.get("cwd", "."), f"{where} cwd", "frontend"), only_when=only_when,
                  command_windows=_text(value["command_windows"], f"{where} command_windows")
-                 if "command_windows" in value else "")
+                 if "command_windows" in value else "",
+                 ready=_text(value["ready"], f"{where} ready") if "ready" in value else "")
 
 
 def _runs_on(value: object) -> tuple[str, ...]:
@@ -212,6 +219,8 @@ def team_from(data: dict) -> Team:
         raise ConfigError(f"{CONFIG_FILE}: [server] rules must be {' or '.join(SERVER_RULES)}")
     named = {name: _check(name, value) for name, value in checks.items()
              if name not in CHECK_SETTINGS or isinstance(value, dict)}
+    work_dir = _folder(work.get("folder", WORK_DIR), "folder", WORK_DIR, ())
+    deploy = data.get("deploy", {})
     return Team(
         admins=_names(team.get("admins", []), "[team] admins"),
         reviewers=_names(team.get("reviewers", []), "[team] reviewers"),
@@ -224,10 +233,12 @@ def team_from(data: dict) -> Team:
         ci_required=_strings(ci.get("required", []), "[ci] required"),
         runs_on=_runs_on(ci.get("runs-on", list(RUNS_ON))),
         python=_python(ci.get("python", PYTHON)),
-        work_dir=_work_folder(work.get("folder", WORK_DIR)),
+        work_dir=work_dir,
         branch_prefix=_prefix(work.get("branch_prefix", BRANCH_PREFIX)),
+        records_dir=_folder(work.get("records", RECORDS_DIR), "records", "docs/tasks", (work_dir,)),
         guides=_guides(data.get("guides", {})),
         server_rules=rules,
+        deploy_workflow=_text(deploy["workflow"], "[deploy] workflow") if "workflow" in deploy else "",
     )
 
 

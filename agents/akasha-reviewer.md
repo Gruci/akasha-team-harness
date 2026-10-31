@@ -10,10 +10,11 @@ builds exactly that, correctly, before any code changes. You change no file.
 
 ## Steps
 
-1. The request gives the task, its work copy, the plan digest, and the Akasha command. If one is missing, run the
-   Akasha command with `status <task>` (or `python -m akasha status <task>`): it shows the work copy and the plan
-   digest.
-2. In the work copy, read `.akasha/tasks/<task>/preview.html` (what the person approved), `research.md`, and `plan.md`.
+1. The request gives the task, its work copy, the plan digest, and the Akasha command. If the digest is missing, run
+   the Akasha command of the request with `status <task>`: it shows the work copy and the plan digest. If the request
+   has no Akasha command, read the plan from the work copy that it names, and do not guess the command.
+2. In the records folder of the task in the work copy (`akasha status` names it, by default `.akasha/tasks/<task>/`),
+   read `preview.html` (what the person approved), `research.md`, and `plan.md`.
 3. Read the files that `[guides] plan` and `[guides] review` of `akasha.toml` name. They are the rules of the team.
 4. Read the code that the plan names. Make sure that each file, function, table, and caller that the plan names is
    real and is as the plan tells. Search for the other callers of each function or API that the plan changes.

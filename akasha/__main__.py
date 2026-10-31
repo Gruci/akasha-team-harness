@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 
 from akasha import VERSION, board, checks, config, flow, land, repo, retro, setup
-from akasha.task import all_local, load
+from akasha.task import all_local, load, records
 
-EXIT = {land.MERGED: 0, land.CLOSED: 0, land.WAITING: 3}
+EXIT = {land.MERGED: 0, land.CLOSED: 0, land.DEPLOYED: 0, land.WAITING: 3, land.DEPLOYING: 3}
 
 
 def _root() -> Path:
@@ -33,18 +33,19 @@ def _parser() -> argparse.ArgumentParser:
     preview.add_argument("task")
     preview.add_argument("--text", default="", help="make a plain preview from this text when there is none")
     preview.add_argument("--no-open", action="store_true", help="do not open the browser")
-    review = commands.add_parser("review", help="record a self-review where no reviewer agent exists")
+    review = commands.add_parser("review", help="record a self-review where no reviewer agent exists (not in Claude "
+                                                "Code)")
     review.add_argument("task")
     review.add_argument("--verdict", choices=("pass", "changes"), required=True)
     check = commands.add_parser("check", help="run the checks of the team in the work copy")
     check.add_argument("task", nargs="?")
-    check.add_argument("--only", nargs="*", default=[])
+    check.add_argument("--only", nargs="*", default=[], help="run only these checks and save nothing")
     check.add_argument("--ci", action="store_true", help="the server check runs this")
     check.add_argument("--config", type=Path)
     check.add_argument("--base", default="origin/main")
     landing = commands.add_parser("land", help="make the pull request ready and merge it when the checks pass")
     landing.add_argument("task")
-    landing.add_argument("--wait", type=float, default=0, help="seconds to wait for the merge")
+    landing.add_argument("--wait", type=float, default=0, help="seconds to wait for the merge and the deployment")
     status = commands.add_parser("status", help="the tasks on this computer and the next step of each")
     status.add_argument("task", nargs="?")
     commands.add_parser("board", help="the open tasks of the team")
@@ -86,7 +87,7 @@ def _status(root: Path, task_id: str | None) -> int:
     for task in tasks:
         plan = flow.review.plan_digest(task)
         print(f"{task.id} · {task.title} · {task.status}" + (f" · {task.pr}" if task.pr else ""))
-        print(f"  work copy: {task.workcopy}" + (f" · plan digest: {plan}" if plan else ""))
+        print(f"  work copy: {task.workcopy} · records: {records(task)}/" + (f" · plan digest: {plan}" if plan else ""))
         print(f"  next: {flow.next_step(task)}")
     return 0
 
@@ -126,7 +127,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if all(good for good, _text in found) else 1
     if args.command == "start":
         task, notes = flow.start(root, args.title, args.name, tuple(args.scope))
-        print(f"Task {task.id}: {task.title}\n  work copy: {task.workcopy}" + (f"\n  board: {task.pr}" if task.pr else ""))
+        print(f"Task {task.id}: {task.title}\n  work copy: {task.workcopy}\n  records: {records(task)}/"
+              + (f"\n  board: {task.pr}" if task.pr else ""))
         print("\n".join(f"  {line}" for line in notes))
         print(f"  next: {flow.next_step(task)}")
         return 0
@@ -159,8 +161,9 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(board.lines(entries, repo.me(root))) or "No open task.")
         return 0
     if args.command == "resume":
-        task = flow.resume(root, args.task, args.force)
-        print(f"Task {task.id} continues here: {task.workcopy}\n  next: {flow.next_step(task)}")
+        task, notes = flow.resume(root, args.task, args.force)
+        print(f"Task {task.id} continues here: {task.workcopy}")
+        print("\n".join(f"  {line}" for line in notes + [f"next: {flow.next_step(task)}"]))
         return 0
     if args.command == "handoff":
         print(flow.handoff(root, args.task))

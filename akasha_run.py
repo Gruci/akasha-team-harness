@@ -4,10 +4,12 @@ import sys
 from pathlib import Path
 
 if sys.version_info < (3, 11):
-    # A hook must not break the session of a person with an old Python: tell it once, and let the work go on
-    print(f"Akasha needs Python 3.11 or higher, and this is Python {sys.version.split()[0]}. Install a newer Python "
-          "and make it the first python on PATH.", file=sys.stderr)
-    sys.exit(0 if "hook" in sys.argv[1:2] else 2)
+    # hook.sh picks a newer Python. Where it did not run, the agent sees the problem at the start of the session
+    reason = (f"Akasha needs Python 3.11 or higher, and this is Python {sys.version.split()[0]}. Ask the person to "
+              "install a newer Python, then to restart the agent app.")
+    hook = sys.argv[1:2] == ["hook"]
+    print(f"[AKASHA] {reason}" if hook else reason, file=sys.stdout if hook else sys.stderr)
+    sys.exit(0 if hook else 2)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

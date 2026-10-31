@@ -3,7 +3,7 @@ from pathlib import Path
 
 from akasha.guard import check_command, check_edit
 from akasha.task import Task
-from tests.helpers import Repository
+from tests.helpers import Repository, run
 
 
 class CommandTests(unittest.TestCase):
@@ -23,9 +23,46 @@ class CommandTests(unittest.TestCase):
 
     def test_lets_the_usual_work_run(self):
         for line in ("git status", "git push origin akasha/x", "git commit -m main", "gh pr view 5", "gh pr list",
-                     "rm -rf build", "python -m pytest", "cat .akasha/state/tasks/a.json", "git log main"):
+                     "rm -rf build", "python -m pytest", "cat .akasha/state/tasks/a.json", "git log main",
+                     "git commit -C HEAD"):
             with self.subTest(line=line):
                 self.assertFalse(self.stopped(line))
+
+
+class CurrentBranchTests(unittest.TestCase):
+    """A push without a branch name, in the main checkout on main, went to main (audit F12)."""
+
+    def setUp(self):
+        self.repo = Repository()
+        self.root = self.repo.root
+
+    def tearDown(self):
+        self.repo.close()
+
+    def test_a_push_of_the_current_branch_is_examined(self):
+        for line in ("git push", "git push origin", "git push origin HEAD", "git push origin @", "git -C . push",
+                     "git push --all", "git push origin :", "git push origin +:", "cd x && git push",
+                     "git worktree add worktrees/x -b x"):
+            with self.subTest(line=line):
+                self.assertIsNotNone(check_command(line, self.root, self.root))
+        self.assertIsNone(check_command("git push origin HEAD:akasha/x", self.root, self.root))
+        run(self.root, "git", "switch", "-q", "-c", "akasha/x")
+        for line in ("git push", "git push -u origin HEAD", f"git -C {self.root.as_posix()} push"):
+            with self.subTest(line=line):
+                self.assertIsNone(check_command(line, self.root, self.root))
+
+    def test_a_work_copy_outside_akasha_is_closed(self):
+        """A git worktree in an ignored folder went around the approval and the review (audit F04)."""
+        (self.root / ".gitignore").write_text(".akasha/state/\n.akasha/work/\nworktrees/\n", encoding="utf-8")
+        inner, outer = self.root / "worktrees" / "x", Path(self.repo.folder.name) / "outer"
+        run(self.root, "git", "worktree", "add", "-q", "-b", "x", str(inner))
+        run(self.root, "git", "worktree", "add", "-q", "-b", "y", str(outer))
+        for path in (inner / "app.py", outer / "app.py"):
+            with self.subTest(path=path):
+                found = check_edit(path, self.root, [], True, lambda task: "")
+                self.assertIn("not an Akasha task", found or "")
+        self.assertIsNone(check_edit(inner / "app.py", self.root, [Task(id="x", title="X", workcopy=str(inner))],
+                                     True, lambda task: ""))
 
 
 class EditTests(unittest.TestCase):

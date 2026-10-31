@@ -24,20 +24,26 @@ def report(root: Path) -> list[str]:
         lines.append("Failed checks on this computer: " + ", ".join(f"{name} {count}" for name, count in
                                                                      checks.most_common(5)))
     if server:
-        lines.append("Checks that failed on GitHub after they passed here: " + ", ".join(
+        lines.append("On this computer, failed on GitHub after they passed here: " + ", ".join(
             f"{name} {count}" for name, count in server.most_common(5)))
     if blocks:
-        lines.append("Stopped actions: " + "; ".join(f"{count}× {reason}" for reason, count in blocks.most_common(5)))
+        lines.append("Stopped actions on this computer: " + "; ".join(f"{count}× {reason}" for reason, count in
+                                                                      blocks.most_common(5)))
     merged = repo.gh_json(root, "pr", "list", "--label", LABEL, "--state", "merged", "--limit", str(MERGED_SHOWN),
                           "--json", "body") if repo.origin(root) else None
     tasks = [task for item in merged or [] if (task := parse_block(item.get("body") or "")) is not None]
     if tasks:
         failures: Counter[str] = Counter()
+        on_server: Counter[str] = Counter()
         for task in tasks:
             failures.update(task.stats.get("check_failures") or {})
+            on_server.update(task.stats.get("server_check_failures") or {})
         rounds = [int(task.stats.get("review_rounds", 0)) for task in tasks if task.stats.get("review_rounds")]
         lines.append(f"The last {len(tasks)} merged tasks of the team: " + (", ".join(
             f"{name} failed {count}×" for name, count in failures.most_common(5)) or "no failed checks"))
+        if on_server:
+            lines.append("Of the team, failed on GitHub after they passed on a computer: " + ", ".join(
+                f"{name} {count}×" for name, count in on_server.most_common(5)))
         if rounds:
             lines.append(f"Plan reviews: {sum(rounds) / len(rounds):.1f} rounds on average")
     return lines or ["Nothing repeats yet."]
