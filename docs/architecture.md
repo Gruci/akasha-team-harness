@@ -51,7 +51,7 @@ flowchart LR
 | Team rules | `akasha.toml` | Yes |
 | Team workflows | `.akasha/workflows/*.toml` | Yes |
 | Team context | `.akasha/context/*.md` | Yes |
-| Product map | One file for each feature key in `.akasha/context/map/`, or in the folder of `[context] map`. Akasha 1.0.0 had one file, `.akasha/context/product-map.md`, and it stays | Yes |
+| Product map | One file for each feature key in `.akasha/context/map/`, or in the folder of `[context] map` | Yes |
 | Server files | `.github/workflows/akasha.yml`, `akasha-merge.yml`, `akasha-watch.yml`, the Akasha block of CODEOWNERS, `.github/pull_request_template.md` | Yes |
 | Branch protection and repository settings | GitHub | No |
 | Shared task board | GitHub issues with the label `akasha` | No |
@@ -61,7 +61,7 @@ flowchart LR
 | Preview ports | `~/.akasha/ports.json` in the home folder of the person: the reserved ports of the previews of all copies of all repositories on this computer | No |
 | Notices | `.akasha/state/board.json` (the copy of the board for the hooks, five minutes at most), `.akasha/state/seen.json` (the overlap notices after an edit), and `.akasha/state/seen/<task>.json` (the last comment on the issue that this computer showed) | No |
 
-Each command of a task fetches the default branch from the server once. The team rules, the team workflows, and the start of each new work copy come from that branch, not from the checkout of the computer, which can be old. Without a server, Akasha uses the checkout, as in Akasha 1.0.0. When a server that is not on GitHub does not answer, Akasha uses the default branch as git fetched it last.
+Each command of a task fetches the default branch from the server once. The team rules, the team workflows, and the start of each new work copy come from that branch, not from the checkout of the computer, which can be old. Without a server, Akasha uses the checkout. When a server that is not on GitHub does not answer, Akasha uses the default branch as git fetched it last.
 
 ## Three enforcement layers
 
@@ -81,7 +81,7 @@ The agent engine runs these commands. People do not have to remember them. The s
 |:--|:--|
 | `setup` | Writes `akasha.toml`, the guide of the map folder, and the files that Codex reads. It keeps the other text of `AGENTS.md` and the other hooks of `.codex/hooks.json` at their places, and it does not change a `.codex/hooks.json` that is not JSON. It removes a byte order mark from `.codex/hooks.json`. In a repository that is ready, it writes only the files that Codex reads again, when the default branch does not have them as this Akasha makes them, and the work folder of `[work]` in `.gitignore` when git does not ignore it yet, and tells you to commit them. When the default branch has them and this checkout does not, it tells you to pull. When a newer Akasha wrote the rules or the hooks of Akasha in them, it does not write the older rules back and tells you to update Akasha. A change of the team in these files, for example its own hooks, does not count. It stops when git tracks files in the work folder of `[work]`. With the approval of an administrator, it also changes the GitHub settings |
 | `request` | Records a new task and shows overlaps. With GitHub, the requester is your GitHub account, or the account that `--requester` names. `--feature <key>` gives the feature key: lower-case letters, digits, and `-`, with `/` between the parts of a large feature. `--builds-on` stacks it on an earlier task. It brings the main checkout forward to the latest default branch, or tells how far it stays behind |
-| `specify` | Adds completion conditions, open questions, or file patterns of the scope. `--builds-on ""` stops building on the earlier task. `--requester <GitHub name>` gives a GitHub account to a requester that is not one, for example a name that Akasha 1.0.0 recorded. `--feature <key>` changes the feature key. After a change of the scope or of the feature key, Akasha compares what changed with the other tasks |
+| `specify` | Adds completion conditions, open questions, or file patterns of the scope. `--builds-on ""` stops building on the earlier task. `--requester <GitHub name>` gives a GitHub account to a requester that is not one. `--feature <key>` changes the feature key. After a change of the scope or of the feature key, Akasha compares what changed with the other tasks |
 | `impact` | Records the impact analysis, a reason why the map file of the feature does not change, or a change of behavior that an earlier requester accepted |
 | `approve` | Records the approval of a requester or of a gate role. With GitHub, it writes the decision comment only for the GitHub account of this computer, else it tells the comment that the person must write. Without GitHub, `--by` names the person |
 | `advance` | Moves the task to the next stage, or shows what blocks it. It compares a new contract of the real changes with the other tasks. It shows the new comments on the issue as news, apart from the blockers |

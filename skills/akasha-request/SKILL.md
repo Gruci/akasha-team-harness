@@ -25,7 +25,7 @@ With GitHub, each decision of a person is a decision comment on the issue of the
 - If the person is another account, the command stops and tells the comment. Give the person the comment and the issue address. Then wait. Run `akasha advance <task>` again later.
 - Never write a decision comment with `gh`. Do not edit, delete, or hide a comment, and do not change the body of an issue. The guard stops these commands.
 - If Akasha says that a decision comment does not count, tell the person the reason and the correct comment.
-- If Akasha says that the requester is not a GitHub account, for example in a task of Akasha 1.0.0, ask the user for the GitHub name of the requester. Then run `akasha specify <task> --requester <GitHub name>`.
+- If Akasha says that the requester is not a GitHub account, ask the user for the GitHub name of the requester. Then run `akasha specify <task> --requester <GitHub name>`.
 
 Without GitHub, add `--by <name>` to `approve`, `resume`, and `cancel`.
 
@@ -87,7 +87,7 @@ If the requester withdraws the request, run `akasha cancel <task> --reason "<rea
 
 > **CAUTION:** Never record an approval for a person who did not give it.
 
-> **NOTE:** With GitHub, when the completion conditions or the open questions change, the specification gets a new revision. The requester approves it again, and the task goes back to the specification stage. A task with a pull request keeps its specification: record the new conditions as a new request. Without GitHub, the approval and the acceptances stay, as in Akasha 1.0.0.
+> **NOTE:** With GitHub, when the completion conditions or the open questions change, the specification gets a new revision. The requester approves it again, and the task goes back to the specification stage. A task with a pull request keeps its specification: record the new conditions as a new request. Without GitHub, the approval and the acceptances stay.
 
 ## When the request changes the work of an earlier requester
 
@@ -113,7 +113,7 @@ To continue the task of another person:
 1. Run `akasha board`. Find the task and its holder. If a person holds the task, ask that person to hand it off. If you hold it in another copy of the repository, hand it off there first. Do not continue before the handoff.
 2. Run `akasha takeover <task>`. Akasha makes the work copy from the work on the server, and you hold the task.
 3. If Akasha says that a work copy or a branch on this computer cannot go forward to the work on the server, tell the user. The user examines it and removes it. Then do step 2 again.
-   - If Akasha says that the work of the task is not on the server, or that Akasha 1.0.0 recorded the task on another computer, ask the person that Akasha names to hand off the task there. Then do step 2 again.
+   - If Akasha says that the work of the task is not on the server, ask the person that Akasha names to hand off the task there. Then do step 2 again.
 4. Run `akasha show <task>`. Continue at the stage that Akasha shows.
 
 > **NOTE:** A developer can take over a stopped task without a handoff, also after the developer wrote `/resume`. Akasha tells the old holder on the issue. When the task stopped, Akasha saved its work on the server, except when the work copy had a secret key or a file outside the scope.
@@ -142,7 +142,7 @@ To continue the task of another person:
 3. If Akasha stops the task after three failed repairs, stop the work. Tell the requester in simple words that a developer must examine the problem.
 4. With GitHub, the developer writes `/resume` on the issue of the task. If the developer is the GitHub account of this computer and tells you to continue, run `akasha resume <task>`. Then run `akasha advance <task>`.
 5. Update the map file of the feature in the work copy for each screen, table, or API that the change adds or changes. `akasha show <task>` names the file. If nothing changes, record why: `akasha impact <task> --map-unchanged "<reason>"`.
-   - If the file does not exist, make it with this shape. `README.md` of the map folder shows the same shape. A repository that Akasha 1.0.0 set up can have no `README.md` there.
+   - If the file does not exist, make it with this shape. `README.md` of the map folder shows the same shape.
 
      ```markdown
      # <Feature name>

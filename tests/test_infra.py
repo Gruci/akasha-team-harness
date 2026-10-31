@@ -398,7 +398,9 @@ class StatusTests(unittest.TestCase):
         self.assertNotIn("/plugin update", github.UPDATE)
         self.assertIn('pip install --force-reinstall "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"',
                       github.UPDATE)
+        self.assertIn("claude plugin uninstall akasha@akasha", github.UPDATE)
         self.assertIn("claude plugin install akasha@akasha", github.UPDATE)
+        self.assertNotIn("plugins/cache", github.UPDATE)
         self.push({".github/workflows/akasha.yml": None})
         self.assertEqual(self.status(), [".github/workflows/akasha.yml is missing on main"])
 

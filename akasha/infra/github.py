@@ -22,10 +22,9 @@ RECORD_AGE = 3600                                      # one hour, in seconds
 ANSWER_SECONDS = 10                                    # git waits this long for the server to tell its default branch
 _NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no branch protection for private repositories
 # How to get a fix of Akasha. The version stays 1.0.0, so /plugin update and a plain pip install keep the old copy.
-# Claude Code fetches the plugin again only when its folder in the plugin cache is missing.
-UPDATE = ("in Claude Code, close Claude Code, remove the folder .claude/plugins/cache/akasha in your home folder, run "
-          "`claude plugin install akasha@akasha` in a terminal, and open Claude Code again; for Codex, run "
-          f'`pip install --force-reinstall "{SOURCE}"`')
+# Claude Code takes the version of a plugin from plugin.json; an uninstall and a new install get the new copy.
+UPDATE = ("in a terminal, run `claude plugin uninstall akasha@akasha` and then `claude plugin install akasha@akasha`, "
+          f'and open Claude Code again; for Codex, run `pip install --force-reinstall "{SOURCE}"`')
 _HEAD = re.compile(r"^ref: refs/heads/(\S+)\tHEAD$", re.M)        # the answer of git ls-remote --symref origin HEAD
 APP_VARIABLE = "AKASHA_APP_CLIENT_ID"                  # the variable with the Client ID of the GitHub app
 NO_APP = (f"the GitHub app of Akasha is not set up: the variable {APP_VARIABLE} is missing in the repository and in "

@@ -20,7 +20,7 @@ The session start notice gives the Akasha command. This skill writes it as `akas
 6. If an answer is no, repair the change in the work copy. Then do stage 4 of the akasha-request skill again.
 7. When all answers are yes, run `akasha advance <task>`.
 8. If Akasha says that the server rules are not on, tell an administrator. Correct the GitHub settings with the akasha-setup skill.
-   - If Akasha says that a server file is different from the file that the Akasha on this computer makes, tell the user to update Akasha first. The version stays 1.0.0, so `/plugin update` and a plain `pip install` keep the old copy. In Claude Code, the user closes Claude Code, removes the folder `.claude/plugins/cache/akasha` in the home folder, runs `claude plugin install akasha@akasha` in a terminal, and opens Claude Code again. For Codex, the user runs `pip install --force-reinstall "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"`. Then run `akasha advance <task>` again. If the file is still different, tell an administrator.
+   - If Akasha says that a server file is different from the file that the Akasha on this computer makes, tell the user the steps in the message of Akasha. Then run `akasha advance <task>` again. If the file is still different, tell an administrator to set up Akasha again.
 9. Continue with the akasha-handover skill.
 
 > **CAUTION:** Only the requester can accept a result. Do not accept a result for the requester.

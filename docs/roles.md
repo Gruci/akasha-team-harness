@@ -37,7 +37,7 @@ A team can add a person gate for a risk level in `[approval]`, for example a dev
 
 ## Who decides what
 
-With GitHub, each decision of a person is a decision comment on the issue of the task. GitHub shows the account that wrote each comment, so the comment tells who decided. Without GitHub, Akasha records the name that the agent engine gives, as in Akasha 1.0.0.
+With GitHub, each decision of a person is a decision comment on the issue of the task. GitHub shows the account that wrote each comment, so the comment tells who decided. Without GitHub, Akasha records the name that the agent engine gives.
 
 | Decision | Who | With GitHub | Without GitHub |
 |:--|:--|:--|:--|

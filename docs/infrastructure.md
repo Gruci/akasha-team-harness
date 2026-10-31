@@ -31,27 +31,18 @@ The helpers are always installed. Before they merge or undo, they examine the de
 
 The check runs on each pull request and on each merge queue run. It runs on the machine of `[ci] runs-on` with the Python of `[ci] python` in `akasha.toml`, by default `ubuntu-latest` and Python 3.12. Its steps use bash, also on a Windows runner:
 
-1. It installs Akasha. The repository variable `AKASHA_SOURCE` can name another source, for example a mirror or a fork. It installs Akasha again on each run, also when the machine has it: a runner of the team keeps its Python between runs, and an update of Akasha keeps the version 1.0.0.
+1. It installs Akasha. The repository variable `AKASHA_SOURCE` can name another source, for example a mirror or a fork. It installs Akasha again on each run, also when the machine has it: a runner of the team keeps its Python between runs.
 2. It takes `akasha.toml` from the default branch.
 3. It runs the `setup` command of the team.
 4. It runs the required checks on the files that the pull request changes. A check with `only_when` runs only when the pull request changes a file that it examines, or a file of `run_all_when`. Akasha runs in the UTF-8 mode of Python, so that it can write each result also on a Windows runner.
 
 The rules come from the default branch. Thus a pull request that makes the checks weaker cannot pass with its own rules.
 
-Akasha makes `akasha.yml` from its template and `[ci]`. The examination of the server rules compares `akasha.yml` on the default branch with the file that the Akasha of this computer makes from `[ci]` on the default branch. It does the same for the two helpers. A fix of Akasha keeps the version 1.0.0, so two computers can make different files. When a file is different, the handover of the task waits, and Akasha tells the person to [update Akasha](#update-akasha). When Akasha is up to date and the file is still different, an administrator sets up Akasha again.
+Akasha makes `akasha.yml` from its template and `[ci]`. The examination of the server rules compares `akasha.yml` on the default branch with the file that the Akasha of this computer makes from `[ci]` on the default branch. It does the same for the two helpers. When a file is different, the handover of the task waits until an administrator sets up Akasha again.
 
 The merge and watch helpers always run on `ubuntu-latest`, because they can write to the repository. [Team config](team-config.md) tells the keys of `[ci]` and what a Windows runner needs.
 
 > **CAUTION:** In a public repository, a pull request from a fork runs its code in the required check. On a runner of the team, that code runs on a machine of the team. In this condition, Akasha shows a warning. `infra --apply` and `setup --approve-infra` show it for the team config in the checkout, when they write `akasha.yml`. `infra` and `setup` show it for the team config on the default branch. The warning does not stop a handover.
-
-### Update Akasha
-
-A fix of Akasha keeps the version 1.0.0, so `/plugin update` and a plain `pip install` keep the copy that they have. Claude Code keeps a plugin by its version, and it fetches the plugin again only when its folder in the plugin cache is missing. pip keeps an installed version 1.0.0. These steps get the fix:
-
-| Agent engine | Update |
-|:--|:--|
-| Claude Code | Close Claude Code. Remove the folder `.claude/plugins/cache/akasha` in your home folder. Run `claude plugin install akasha@akasha` in a terminal, then open Claude Code again |
-| Codex | `pip install --force-reinstall "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"` |
 
 ## GitHub branch protection and auto-merge
 
@@ -87,8 +78,6 @@ The watch undoes on the latest default branch on the server. When another push c
 
 When GitHub does not answer, the helpers do nothing, and their run fails. For example, the watch does not read a failed answer as "no merged pull request".
 
-A merge helper file of Akasha 1.0.0 also works with this Akasha, until an administrator runs `infra --apply`. It merges after the check passes, when the owners approved. That file does not run after an approval. Thus a pull request that waits for an owner merges after the next run of its check.
-
 > **CAUTION:** GitHub protection stops a bad change before it merges. The watch undoes it right after it arrives. For a change of data, the undo of the code does not undo the data.
 
 ## Pull requests that are behind
@@ -122,7 +111,7 @@ A merge or a push with the workflow token starts no other workflow, for example 
 | Repository secret `AKASHA_APP_KEY` | A private key of the app |
 | Permissions of the app | Contents, Pull requests, Issues, and Workflows: read and write. Checks: read |
 
-The helpers use the first token that they have: the token of the app, the secret `AKASHA_TOKEN`, then the workflow token. The `update` job of `akasha-watch` runs only with the app. Without the app and without `AKASHA_TOKEN`, the helpers work as in Akasha 1.0.0: they do not bring a pull request up to date, and where GitHub has no auto-merge, the merge helper asks for the handover again on a pull request that is behind, once for each commit.
+The helpers use the first token that they have: the token of the app, the secret `AKASHA_TOKEN`, then the workflow token. The `update` job of `akasha-watch` runs only with the app. Without the app and without `AKASHA_TOKEN`, the helpers do not bring a pull request up to date, and where GitHub has no auto-merge, the merge helper asks for the handover again on a pull request that is behind, once for each commit.
 
 An app is better than a personal token in `AKASHA_TOKEN`: it belongs to no person, its token expires after one hour, and it can have access to one repository only.
 
