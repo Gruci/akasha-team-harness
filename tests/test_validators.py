@@ -81,7 +81,10 @@ class GuardTests(unittest.TestCase):
                      "gh pr create --head feature-x --label akasha-merge --fill", "gh pr create -l bug,akasha-merge",
                      "gh pr edit 7 --add-label akasha-merge", "gh issue edit 7 --add-label=Akasha-Merge",
                      "gh api repos/team/app/issues/7/labels -f 'labels[]=akasha-merge'",
-                     "gh api graphql -f query='mutation { addLabelsToLabelable(input: {}) { x } }'"):
+                     "gh api graphql -f query='mutation { addLabelsToLabelable(input: {}) { x } }'",
+                     "gh pr review 7 --approve", "gh pr review 7 -a -b ok", "gh -R team/app pr review 7 --approve",
+                     "gh api repos/team/app/pulls/7/reviews -f event=APPROVE",
+                     "gh api graphql -f query='mutation { addPullRequestReview(input: {event: APPROVE}) { x } }'"):
             with self.subTest(line=line):
                 self.assertIsNotNone(self.stop(line))
         for line in ("git push", "git push origin", "git push -u origin HEAD"):        # in the work copy of a task
@@ -89,7 +92,9 @@ class GuardTests(unittest.TestCase):
                 self.assertIsNotNone(guard.check_command(line, work, self.root))
                 self.assertIsNone(guard.check_command("git push origin feature-x", work, self.root))
         for line in ("git stash push -m wip", "git stash push -- src/a.py", "git commit -m push", "git -C . stash push",
-                     "gh pr create --label bug --fill", "gh pr edit 7 --add-label akasha-merged"):    # local commands
+                     "gh pr create --label bug --fill", "gh pr edit 7 --add-label akasha-merged",
+                     "gh pr review 7 --comment -b 'looks ok'", "gh pr review 7 --request-changes -b 'see the test'",
+                     "gh api repos/team/app/pulls/7/reviews"):                       # not an approval
             with self.subTest(line=line):
                 self.assertIsNone(guard.check_command(line, work, self.root))
 

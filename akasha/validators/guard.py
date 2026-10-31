@@ -34,6 +34,9 @@ _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")   # a variable before a co
 _DECISION = re.compile(r"(?:^|[\"']|\\n)\s*(?:" + "|".join(map(re.escape, DECISIONS)) + r")\b", re.I | re.M)
 # A merge through the REST API or through GraphQL, also the auto-merge
 _MERGE_API = re.compile(r"pulls/\d+/merge\b|\b(?:mergePullRequest|enablePullRequestAutoMerge)\b")
+# A pull request review through the REST API or through GraphQL, and its approval event
+_REVIEW_API = re.compile(r"pulls/\d+/reviews\b|\b(?:addPullRequestReview|submitPullRequestReview)\b")
+_APPROVE_EVENT = re.compile(r"\bAPPROVE\b")
 _COMMENT_API = re.compile(r"issues/comments/\d+")
 _COMMENT_CHANGE = re.compile(r"\b(?:updateIssueComment|deleteIssueComment|minimizeComment)\b")
 _ISSUE_API = re.compile(r"issues/\d+/?$")
@@ -216,12 +219,23 @@ def _gives_merge_label(verb: tuple[str, ...], args: list[str], texts: list[str])
     return any(name.strip().lower() == MERGE_LABEL for value in values for name in value.split(","))
 
 
+def _approves_review(verb: tuple[str, ...], args: list[str], texts: list[str]) -> bool:
+    """True when gh approves a pull request: `gh pr review --approve`, or a review with the event APPROVE."""
+    if verb == ("pr", "review"):
+        return any(arg == "--approve" or _short_flag(arg, "a") for arg in args)
+    return verb[:1] == ("api",) and any(_REVIEW_API.search(text) for text in texts) and \
+        any(_APPROVE_EVENT.search(text) for text in texts)
+
+
 def _gh_reason(args: list[str], line: str, commands: list[list[str]], cwd: Path) -> str | None:
     verb, texts = _gh_verb(args), _texts(line, commands, cwd)
     api = verb[:1] == ("api",)
     if verb == ("pr", "merge") or (api and any(_MERGE_API.search(text) for text in texts)):
         return ("it merges a pull request or turns on its auto-merge. GitHub, or the merge workflow of Akasha, merges "
                 "each pull request when the server check passes")
+    if _approves_review(verb, args, texts):
+        return ("it approves a pull request with the GitHub account of this computer. A code owner examines and "
+                "approves each change of the files that they own on GitHub, in person")
     if _gives_merge_label(verb, args, texts):
         return (f"it can give a pull request the label {MERGE_LABEL}. Akasha gives that label at the handover, and "
                 "where GitHub has no auto-merge, the merge workflow of Akasha merges each pull request with it")
