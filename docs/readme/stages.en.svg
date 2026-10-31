@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="392" viewBox="0 0 1000 392" role="img" aria-label="Six stages with an Akasha gate between each. 1 Request: the completion conditions are clear; the requester answers. 2 Specification: impact recorded and the requester approves. 3 Build: only files in the scope changed. 4 Checks: all required checks pass; after three failed repairs a developer steps in. 5 Inspection: the requester accepts in a preview and the product map shows the change. 6 Handover: the server check passes and GitHub merges one commit. The AI, Claude Code or Codex, does the work of every stage.">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="392" viewBox="0 0 1000 392" role="img" aria-label="Six stages with an Akasha gate between each. 1 Request: the completion conditions are clear; the requester answers. 2 Specification: impact recorded and the requester approves. 3 Build: only files in the scope changed. 4 Checks: all required checks pass; after three failed repairs a developer steps in. 5 Inspection: the requester accepts in a preview and the product map shows the change. 6 Handover: the server check passes and GitHub merges one commit. The AI does the work of every stage.">
 <style>
 text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;fill:#e6edf3}
 .title{font-size:22px;font-weight:700}
@@ -77,7 +77,7 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun
 <circle cx="828.0" cy="158" r="11" fill="#0d1117" stroke="#a78bfa" stroke-width="2"/>
 <path d="M825.0,153 L830.0,158 L825.0,163" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 <rect x="17" y="238" width="966" height="32" rx="8" fill="#0c2d6b" fill-opacity=".45" stroke="#1f6feb"/>
-<text x="500" y="259" class="ai" text-anchor="middle">The AI — Claude Code or Codex — does the work of every stage</text>
+<text x="500" y="259" class="ai" text-anchor="middle">The AI does the work of every stage</text>
 <circle cx="29" cy="363" r="5" fill="#a78bfa"/>
 <text x="40" y="368" class="small">Akasha gate</text>
 <circle cx="150" cy="363" r="5" fill="#f0883e"/>

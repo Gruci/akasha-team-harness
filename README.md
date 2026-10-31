@@ -99,9 +99,9 @@ An administrator set up the repository once. Then three people ask for changes o
 
 | Who | Asks | The shared task board |
 |:--|:--|:--|
-| Operations, with Claude Code | "Add a date filter to the customer search." | A new task with its own work copy |
-| Finance, with Claude Code | "Show the tax on invoices." | No overlap with the date filter.<br>Both run in parallel |
-| Sales, with Codex, a bit later | "Add an export button to the customer search." | The same feature as the date filter.<br>The task starts from that branch.<br>It hands over after the date filter merges |
+| Operations | "Add a date filter to the customer search." | A new task with its own work copy |
+| Finance | "Show the tax on invoices." | No overlap with the date filter.<br>Both run in parallel |
+| Sales, a bit later | "Add an export button to the customer search." | The same feature as the date filter.<br>The task starts from that branch.<br>It hands over after the date filter merges |
 
 GitHub merges three commits in order — `#41 Show the tax on invoices`, `#42 Add a date filter`, `#43 Add an export button` — each with its own briefing. Nobody waited for an answer from another person.
 
@@ -169,7 +169,7 @@ Each decision of a person is a comment on the issue of the task, from that perso
 | **Administrator** | Sets up the repository once: the team rules in `akasha.toml`, the GitHub settings, and the GitHub app | Configure each setting by hand |
 | **Requester** — anyone on the team | Says what to make, how it looks, and how it is used.<br>Approves the specification and accepts the result with comments | Read code or judge technical risk |
 | **Developer** — optional | Approves a gated risk level, when `[approval]` names one.<br>Opens a task again after three failed repairs | Watch each task |
-| **The AI** — Claude Code or Codex | Asks the questions, runs the commands, and shows the results.<br>Implementation, scope, impact, tests, the briefing, and the map file | Ask people technical questions |
+| **The AI** | Asks the questions, runs the commands, and shows the results.<br>Implementation, scope, impact, tests, the briefing, and the map file | Ask people technical questions |
 
 * * *
 
