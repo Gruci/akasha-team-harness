@@ -15,7 +15,7 @@
 Each person asks for a change in plain words and approves a preview of it. That is their only step.<br>
 The AI plans, another AI reviews the plan, and the AI builds, checks, and lands the change.
 
-<img src="https://img.shields.io/badge/version-1.0.0-7c3aed" alt="Version 1.0.0">
+<img src="https://img.shields.io/badge/version-1.0.1-7c3aed" alt="Version 1.0.1">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -40,7 +40,7 @@ start: is this what we want? Akasha puts the person there, and puts machines eve
 |:--|:--|:--|
 | What the person checks | A technical plan, or nothing | One preview they can see: a mockup of the screen, or a diagram of the flow and the data |
 | The plan | Nobody reads it, or one developer reads all of them | Another AI reviews it against the preview and the code until it passes |
-| The approval | The AI can write "approved" | Only a typed "승인" (or another word of a short list) of the person approves, in the session that showed the preview, and only that version of it |
+| The approval | The AI can write "approved" | An approval needs a message that the person typed in the session that showed the preview. It holds their exact words, for that version of the preview |
 | Many people | Each person's AI works its own way, and nobody sees the others | The open pull requests are the board. Overlaps show up when a task starts and at each edit |
 | "Done" | A claim | The checks of the team pass on GitHub, and the change merges as one commit with its records |
 | Months later | Nobody knows why it looks like this | The preview, the plan, and the summary merge with the change |
@@ -64,14 +64,16 @@ for you. If something is missing, the AI tells you what and how.
 **3. Ask for a change**
 
 ```
-Show the average next to the total on the fund screen.
+Add a button that downloads the order list as a CSV file.
 ```
 
-The AI asks until it is clear, then opens a preview in the browser. Type **"승인"** (approve), or tell what to change.
-The AI does the rest and tells you when the change is merged, and when the deployment put it live.
+The AI asks until it is clear, then opens a preview in the browser. Approve it in your own words, in any language, or
+tell what to change. The AI does the rest and tells you when the change is merged, and when the deployment put it
+live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"` in that Python.
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.1"` in that Python
+> (on Windows `py -3 -m pip install …`).
 
 * * *
 
@@ -99,7 +101,7 @@ flowchart LR
 | 5. Check | The checks of the team run | Each required check passes |
 | 6. Land | The pull request gets ready, comes up to date, and merges | The checks pass on GitHub; a risky path also needs a reviewer, and the team rules an administrator |
 
-The hooks hold the AI on these steps: they record the approval from the message of the person, record the verdict of
+The hooks hold the AI on these steps: they keep the message of the person for the approval, record the verdict of
 the reviewer agent, stop a change of the code before the gates, stop a change in the main checkout or in a work copy
 outside Akasha, and stop a force push, a push to the default branch, and a merge by hand. They examine the repository
 that a tool acts on, also from a session in another folder. [How it works](docs/how-it-works.md) tells each detail.
@@ -108,13 +110,15 @@ that a tool acts on, also from a session in another folder. [How it works](docs/
 
 ## Many People at the Same Time
 
+Each person, from any team, works on their own task at the same time as the others.
+
 | Situation | What happens |
 |:--|:--|
-| Two people plan the same files | The board shows the other task and its holder when a task starts |
-| Two people change the same file | Each AI hears of it after the edit. The task that lands later takes the earlier change |
-| Two tasks land at the same time | The first merges. Akasha brings the second up to date, and it merges after its checks pass again |
+| A new task plans files that open tasks already plan | The board shows those tasks and their holders when the task starts |
+| Tasks change the same file | Each AI hears of it after the edit. A task that lands later takes the earlier changes |
+| Several tasks are ready at once | They merge one by one. Akasha brings each later one up to date, and it merges after its checks pass again |
 | A person stops, and someone else continues | `handoff` saves the work and frees the task; `resume` continues it on any computer. The old computer lets go of it |
-| Two teams pick the same name | The second start refuses it and picks another |
+| A task name is already in use | The start refuses it, and the AI picks another |
 | The AI is stuck | It asks the administrators on the pull request |
 
 * * *
@@ -148,14 +152,16 @@ deployment and tells when the change is live.
 
 | Guarantees | How |
 |:--|:--|
-| Only the person approves a preview | The approval comes from the hook of the message, only for a whole approval word, in the session that showed the preview, with its digest |
+| An approval comes from a message of the person | Only the hook of the prompt keeps the message, in the session that showed the preview. The approval holds the exact words and the digest of the preview |
 | The code waits for the approval and a reviewed plan | The guard stops each edit of the code before both |
 | A change that failed the checks does not merge through Akasha | The landing waits for the required checks to really run and pass on GitHub |
+| A risky change merges only with a review of the version that merges | The approval of a reviewer covers the commit that they saw; a later change of a risky file needs a new review |
 | Each change can be found and undone | One squash commit with its summary and its records |
 
 | Does not guarantee | Know this |
 |:--|:--|
 | A sandbox | The hooks keep a cooperative AI on the procedure. They do not stop a person |
+| The meaning of an approval | The AI reads whether the message approves, in any language. The pull request shows the exact words, so anyone can see it |
 | Protection on GitHub Free before a merge | A person with write access can merge by hand. The watch tells the administrators after the push |
 | A merge while nobody runs Akasha on GitHub Free | A change that waits for a review merges when its holder's AI lands it again after the review |
 | The business logic | The preview, the review, and the checks of the team examine it. Add a check when a problem repeats (`akasha retro`) |
@@ -178,6 +184,7 @@ deployment and tells when the change is live.
 
 | Version | Changes |
 |:--|:--|
+| **v1.0.1** | Ready for several teams on one repository that keeps its own harness: approval in any language from a message that the person typed in the session of the preview; reviews bound to the commit that the reviewer saw; the merge path follows the live branch protection; people of `[team] own_procedure` keep the repository's own procedure; rules can live in `.github/akasha.toml`; exact Akasha commands run without a permission prompt; deploy follow-up; `akasha ask` for questions that are not a change; unknown settings of a newer Akasha are a notice, not a stop. |
 | **v1.0.0** | First release. |
 
 * * *

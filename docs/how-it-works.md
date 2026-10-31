@@ -9,7 +9,7 @@ checks its plan in place of a person. Machines check the result. GitHub merges i
 | Step | Who | What happens |
 |:--|:--|:--|
 | 1. Request | The person | Says what they want, in their own words. The AI asks until it is clear |
-| 2. Preview | The person | Looks at the preview in the browser. Says "승인" (approve), or what to change |
+| 2. Preview | The person | Looks at the preview in the browser. Says "approve", or what to change |
 | 3. Plan | The AI and the reviewer | The AI writes the research and the plan. The akasha-reviewer agent reviews the plan until it passes |
 | 4. Build | The AI | Changes the code in its own work copy, with a test for each behavior of the preview |
 | 5. Check | The AI and the checks | Runs the checks of the team until they pass |
@@ -33,15 +33,17 @@ The approval is the only decision of a person, so Akasha takes it only from the 
 
 - The agent engine runs `akasha preview <task>`. Akasha opens the preview and keeps its digest, and in Claude Code
   also the session that showed it.
-- The person answers in the chat. The hook of the prompt (`UserPromptSubmit`) reads the message. Only a whole message
-  from a short closed list approves: "승인", "네", "넵", "좋아요", "진행해 주세요", "이대로 진행", "ok", "go ahead",
-  "LGTM", and a few more, with or without spaces, marks, and a polite end. Each other message is feedback, for example
-  "좋아요, 표는 아래로" or "아직 승인 안 해요", and the agent engine changes the preview.
-- The hook also runs for prompts that the person did not type: the notice of a background task, a scheduled prompt,
-  a prompt of `/loop`. Such a prompt does not approve, because it is not a whole approval word. The approval also
-  counts only in the session that showed the preview, and only within a day after it showed it. Where the agent
-  engine gives no session (Codex), the work copy of the session decides, and only when one preview waits.
-- A choice in a tool such as AskUserQuestion is not recorded: the AI asks in plain chat.
+- The person answers in the chat, in their own words and in any language. The hook of the prompt
+  (`UserPromptSubmit`) keeps the message, and only that hook writes it: the agent engine cannot make one up.
+- The agent engine reads the message. When it approves the preview as it is, without asking for a change, the agent
+  engine runs `akasha approve <task>`. Akasha records the approval with the exact words of the person, and the pull
+  request shows them. A message that asks for a change or asks a question is feedback, and the agent engine changes
+  the preview.
+- `akasha approve` refuses without a message of the person after the preview was shown, in the session that showed
+  it, within a day. The hook also runs for prompts that the person did not type, for example the notice of a
+  background task: Akasha does not keep those. Where the agent engine gives no session (Codex), the work copy of the
+  session decides, and only when one preview waits.
+- A choice in a tool such as AskUserQuestion is not a message of the person: the AI asks in plain chat.
 - The approval holds the digest of the preview that the person saw. When the preview changes after the approval, the
   task needs a new approval. The digest ignores the line ends, so an approval stays valid on another computer. A
   person who continues a task with `akasha resume` before its approval sees the preview again first.
@@ -76,6 +78,11 @@ Another AI reviews the plan, in place of a person who reads it.
 
 The hooks examine the repository that a tool acts on, not only the folder of the session: a session that started in
 another folder meets the same rules when it edits the repository or runs `git -C <repository>`.
+
+The people of `[team] own_procedure` keep the own procedure of the repository: Akasha does not stop their work outside
+its tasks (their own work copies, edits in the main checkout, their merges). For everyone else, Akasha's procedure
+comes first, and the session start and each prompt say so. The rules on pushes, force pushes, `.env`, and
+`.akasha/state` hold for everyone.
 
 After an edit, Akasha also tells the agent engine when another open task plans or changes the same file. It does not
 stop the work: the task that lands later takes the earlier change.
@@ -115,8 +122,11 @@ for the reviews that the change needs, and follows the pull request:
 | Everything passed | Merges the pull request as one squash commit, with the summary as its body |
 | `[deploy] workflow` is set | After the merge, waits for the deployment and says DEPLOYED, DEPLOY_FAILED, or DEPLOYING |
 
-A change of a risky path needs the approval of a reviewer, and a change of `akasha.toml`, `.github/`, or CODEOWNERS
-the approval of an administrator. The person who made the change does not count.
+A change of a risky path needs the approval of a reviewer, and a change of the rules of the team (`akasha.toml`,
+`.github/`, CODEOWNERS, and the files of `[guides]`, which each AI follows) the approval of an administrator. The
+person who made the change does not count. An approval covers the version that the reviewer saw: when a file of that
+kind changes after it, the change needs a new review. Akasha asks the reviewers at the first check that touches such
+a file, so that they review while the work goes on.
 
 Who merges depends on GitHub. Before each landing, Akasha asks GitHub whether its protection of the default branch
 requires each check of the team:
@@ -129,7 +139,7 @@ requires each check of the team:
 In both cases the merge comes from the account of the person, so the workflows after a merge start, for example a
 deployment. Where Akasha merges, a merge happens only while `akasha land` runs: a change that waits for a review
 merges when the AI of the person who holds it lands it again after the review, in the same session or when the person
-says "이어서 해 줘" in a later one.
+asks it to continue in a later one.
 
 Akasha never removes work that did not reach GitHub: when a pull request merged or closed, or another person took the
 task, while the work copy has an edit or a commit that GitHub lacks, Akasha keeps the work copy and says so. A work
@@ -138,14 +148,16 @@ sees the end of the deployment, also across a new session.
 
 ## Many people at the same time
 
+Each person, from any team, holds their own tasks. Any number of tasks can be open at once.
+
 | Situation | What happens |
 |:--|:--|
-| Two people plan the same files | `akasha start` and the board show the other task and its holder |
-| Two people change the same file | The hook tells each of them after the edit. The task that lands later takes the earlier change, or stops with CONFLICT |
-| Two tasks land at the same time | The first merges. The second is behind: Akasha brings it up to date, and it merges after its checks pass again |
+| A new task plans files that open tasks already plan | `akasha start` and the board show those tasks and their holders |
+| Tasks change the same file | The hook tells each of them after the edit. A task that lands later takes the earlier changes, or stops with CONFLICT |
+| Several tasks are ready at once | They merge one by one. Each later one is behind: Akasha brings it up to date, and it merges after its checks pass again |
 | A person stops, and another person or computer continues | `akasha handoff <task>` saves the work and frees the task. `akasha resume <task>` continues it anywhere |
 | Another person took a task with `akasha resume --force` | The old computer stops pushing, landing, and closing it, and removes its copy at the next session start |
-| Two teams pick the same name for a task | The second start refuses the name: on the board, on the server, and in the records of an earlier task |
+| A task name is already in use | The start refuses the name: on the board, on the server, and in the records of an earlier task |
 | A person is stuck | `akasha help <task> "<text>"` asks the administrators on the pull request |
 
 ## Where Akasha keeps its data

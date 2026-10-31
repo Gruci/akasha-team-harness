@@ -9,7 +9,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from akasha import board, checks, config, pr, repo, review, trace, work
+from akasha import approval, board, checks, config, github, pr, repo, review, trace, work
 from akasha.config import Team
 from akasha.task import PLAN, PREVIEW, SUMMARY, Task, all_local, digest, forget, load, new_id, record, records, save
 
@@ -25,8 +25,9 @@ def gate(task: Task) -> str:
     """What the task still needs before its code can change, or "" when it is ready to build."""
     if task.status == "preview" or not task.approval:
         return (f"The person did not approve its preview yet. Write the preview at {records(task)}/{PREVIEW}, "
-                f"show it with `akasha preview {task.id}`, and ask the person to type '승인' as their own chat message "
-                "(an answer in a choice tool such as AskUserQuestion is not recorded).")
+                f"show it with `akasha preview {task.id}`, and ask the person in the chat. When their own message "
+                f"approves it, run `akasha approve {task.id}` (an answer in a choice tool such as AskUserQuestion is "
+                "not a message of the person).")
     if digest(record(task, PREVIEW)) != task.approval.get("preview_sha"):
         return f"The preview changed after the approval. Show it again with `akasha preview {task.id}`."
     if not review.passed(task):
@@ -49,7 +50,10 @@ def next_step(task: Task) -> str:
                     f"the screen, or a diagram of the flow and the data) at {records(task)}/{PREVIEW}.")
         if not task.shown_at or digest(record(task, PREVIEW)) != task.preview_sha:
             return f"Show the preview: `akasha preview {task.id}`."
-        return "Wait for the person to approve the preview, or change it as the person tells."
+        if time.time() - task.shown_at > approval.MAX_AGE:
+            return f"The person saw the preview more than a day ago. Show it again: `akasha preview {task.id}`."
+        return (f"Wait for the message of the person. When it approves the preview, run `akasha approve {task.id}`; "
+                "else change the preview as the person tells.")
     missing = gate(task)
     if missing:
         return missing
@@ -97,11 +101,15 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = ()) -
     record(task, PREVIEW).parent.mkdir(parents=True, exist_ok=True)
     save(root, task)
     notes = [f"overlap — {line}" for line in board.overlaps(task, [], entries)]
-    notes += _prepare(team, path)
+    risky = [item for item in task.scope if github.reviews_needed(team, [item], {task.owner})]
+    if risky:
+        notes.append(f"review — the task plans {', '.join(risky[:3])}: a reviewer or an administrator approves it "
+                     "before the merge. Tell the person now")
     if online:
         pushed = ""
         try:
-            work.commit(path, f"akasha: start {task.title}", allow_empty=True)
+            # No CI run for a commit without a change: GitHub skips the workflows of a head commit with [skip ci]
+            work.commit(path, f"akasha: start {task.title} [skip ci]", allow_empty=True)
             work.push(path, task.branch, adopt=False)         # rejected: another task took the name a moment ago
             pushed = work.head(path)
             task.pr = pr.create(root, task, branch)
@@ -119,7 +127,7 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = ()) -
         save(root, task)
         pr.update(root, task)
         board.forget(root)
-    return task, notes
+    return task, notes + _prepare(team, path)        # after the pull request: a slow setup does not lose the task
 
 
 def _prepare(team: Team, path: Path) -> list[str]:
@@ -154,8 +162,9 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
     changed = bool(task.approval) and task.approval.get("preview_sha") != sha
     if changed:
         task.approval, task.status = {}, "preview"
-    # Claude Code gives its commands the session: only a prompt of that session approves this preview
-    task.preview_sha, task.shown_at, task.shown_in = sha, time.time(), os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    # Claude Code gives its commands the session: only a message of that session, after now, approves this preview
+    task.preview_sha, task.shown_at, task.shown_in = sha, time.time(), approval.session(root)
+    task.heard = {}
     save(root, task)
     if board.available(root) and task.number:
         work.commit(Path(task.workcopy), f"akasha: preview of {task.title}")
@@ -168,8 +177,23 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
         webbrowser.open(path.resolve().as_uri())
     again = " The preview changed after the approval, so the person approves it again." if changed else ""
     return task, (f"Showed {path} in the browser.{again} Tell the person in simple words what they see, and ask them "
-                  "in plain chat to answer '승인' or to tell what to change. Only a chat message that the person types "
-                  "approves it, and Akasha records it: do not ask with AskUserQuestion or another choice tool.")
+                  "in plain chat whether to build it like this, or what to change. When their own message approves "
+                  f"it, run `akasha approve {task.id}`. Do not ask with AskUserQuestion or another choice tool: only a "
+                  "message that the person types counts.")
+
+
+def approve(root: Path, task_id: str) -> tuple[Task, str]:
+    """Record the approval of the person from their last message after the preview, in this session."""
+    task = load(root, task_id)
+    problem = approval.approve(root, task, approval.session(root))
+    if problem:
+        raise ValueError(problem)
+    if board.available(root) and task.number:
+        pr.update(root, task)
+    return task, (f"Recorded the approval of {task.approval['by']}: \"{task.approval['words']}\". Do not ask the person "
+                  "anything more unless the plan must change what they approved. Next, without stopping: write "
+                  "research.md and plan.md in the records folder of the task, ask the akasha-reviewer agent to review "
+                  "the plan until it passes, then build, run `akasha check`, write summary.md, and run `akasha land`.")
 
 
 def self_review(root: Path, task_id: str, verdict: str) -> Task:
@@ -193,7 +217,10 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
     tree = Path(task.workcopy)
     repo.git(tree, "add", "-A")          # some checks list the files with git ls-files: new files must be in the index
     before = set(work.untracked(tree))
-    result = checks.run(team, tree, checks.changed_files(tree, task.base), only)
+    # The changes of the task only: after a merge of the default branch, its newer files are not changes of the task
+    base = repo.git(tree, "merge-base", "HEAD", f"origin/{repo.default_branch(root)}").stdout.strip() or task.base
+    changed = checks.changed_files(tree, base)
+    result = checks.run(team, tree, changed, only)
     notes = []
     made = sorted(set(work.untracked(tree)) - before)
     if made:                                          # for example __pycache__ of the tests: never into a commit
@@ -222,9 +249,23 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
                 work.push(tree, task.branch)
             except RuntimeError as error:
                 notes.append(f"note — {error}. The landing pushes again")
+            notes += _ask_reviews(root, team, task, changed)
             pr.update(root, task)
     save(root, task)
     return result, notes
+
+
+def _ask_reviews(root: Path, team: Team, task: Task, changed: list[str]) -> list[str]:
+    """Ask the reviewers of a risky change now, not only at the landing, so that they review while the work goes on."""
+    asked, notes = set(task.stats.get("reviews_asked") or []), []
+    for path, people, _patterns in github.reviews_needed(team, changed, {repo.me(root, kept=True), task.owner}):
+        new = sorted(people - asked)
+        if new and repo.gh(root, "pr", "edit", str(task.number), "--add-reviewer", ",".join(new)).returncode == 0:
+            asked |= set(new)
+        notes.append(f"review — the task changes {path}: {', '.join('@' + name for name in sorted(people))} approves "
+                     "it before the merge. Tell the person")
+    task.stats["reviews_asked"] = sorted(asked)
+    return notes
 
 
 def _assignees(found: dict | None) -> list[str]:
@@ -371,6 +412,21 @@ def ask_help(root: Path, task_id: str, text: str) -> str:
         raise RuntimeError(f"gh pr comment failed: {done.stderr.strip()[:200]}")
     trace.note(root, "help", task=task.id, text=text[:300])
     return f"asked {people or 'the team'} on {task.pr}"
+
+
+def ask(root: Path, text: str) -> str:
+    """Ask the administrators a question that is not a change of the repository, for example about the data or the
+    server, in an issue. GitHub tells them."""
+    team, me = rules(root), repo.me(root)
+    people = " ".join(f"@{name}" for name in team.admins)
+    first = text.strip().splitlines()[0][:80] if text.strip() else "a question"
+    repo.gh(root, "label", "create", config.HELP_LABEL, "--color", "d93f0b", "--description", "Waits for an admin")
+    done = repo.gh(root, "issue", "create", "--label", config.HELP_LABEL, "--title", f"[akasha] {first}",
+                   "--body", f"{people}\n\n{text.strip()}\n\n— asked by @{me or 'unknown'} through Akasha".strip())
+    if done.returncode:
+        raise RuntimeError(f"gh issue create failed: {done.stderr.strip()[:200]}")
+    trace.note(root, "ask", text=text[:300])
+    return f"asked {people or 'the team'}: {done.stdout.strip().splitlines()[-1] if done.stdout.strip() else ''}"
 
 
 def tidy(root: Path, timeout: float = 20) -> list[str]:

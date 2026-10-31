@@ -18,7 +18,7 @@ case "$1" in
   SessionStart|UserPromptSubmit) echo "[AKASHA] $reason" ;;
   PreToolUse)
     top=$(git rev-parse --show-toplevel 2>/dev/null)
-    if [ "$2" = "edit" ] && [ -n "$top" ] && [ -f "$top/akasha.toml" ]; then
+    if [ "$2" = "edit" ] && [ -n "$top" ] && { [ -f "$top/akasha.toml" ] || [ -f "$top/.github/akasha.toml" ]; }; then
       echo "$reason Akasha stops each edit until then." >&2
       exit 2
     fi ;;

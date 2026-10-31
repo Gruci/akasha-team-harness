@@ -51,6 +51,17 @@ class CurrentBranchTests(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertIsNone(check_command(line, self.root, self.root))
 
+    def test_a_person_of_the_own_procedure_keeps_it(self):
+        """The administrator who built the own harness of MIS keeps working with it after the setup (adoption)."""
+        for line in ("git worktree add worktrees/x -b x", "gh pr merge 5 --squash"):
+            with self.subTest(line=line):
+                self.assertIsNone(check_command(line, self.root, self.root, own=True))
+        for line in ("git push origin main", "git push --force", "gh pr review 5 --approve"):
+            with self.subTest(line=line):
+                self.assertIsNotNone(check_command(line, self.root, self.root, own=True))
+        self.assertIsNone(check_edit(self.root / "app.py", self.root, [], True, lambda task: "", own=True))
+        self.assertIsNotNone(check_edit(self.root / ".env", self.root, [], True, lambda task: "", own=True))
+
     def test_a_work_copy_outside_akasha_is_closed(self):
         """A git worktree in an ignored folder went around the approval and the review (audit F04)."""
         (self.root / ".gitignore").write_text(".akasha/state/\n.akasha/work/\nworktrees/\n", encoding="utf-8")

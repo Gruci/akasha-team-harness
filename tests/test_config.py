@@ -55,13 +55,32 @@ workflow = "Deploy to server"
         self.assertEqual(team.deploy_workflow, "Deploy to server")
 
     def test_mistakes_are_refused(self):
-        for text in ('[nope]\nx = 1', '[team]\nowners = []', '[checks]\nfoo = "x"', '[checks.secrets]\ncommand = "x"',
+        for text in ('[checks]\nfoo = "x"', '[checks.secrets]\ncommand = "x"', '[team]\nadmins = "a"',
                      '[ci]\npython = "3.10"', '[work]\nfolder = ".akasha/state"', '[work]\nfolder = "../x"',
                      '[work]\nbranch_prefix = "a b/"', '[server]\nrules = "maybe"', '[checks.a]\ncwd = "x"',
                      '[work]\nrecords = ".akasha/work/x"', '[work]\nfolder = "w"\nrecords = "w"',
-                     '[deploy]\nworkflow = ""', '[deploy]\nname = "x"'):
+                     '[deploy]\nworkflow = ""', '[team]\n'):
             with self.subTest(text=text), self.assertRaises(ConfigError):
-                config.parse(text)
+                config.parse(text if text != '[team]\n' else 'team = 1')
+
+    def test_settings_of_a_newer_akasha_are_a_notice(self):
+        """A newer Akasha wrote a key that an older one on another computer does not know (critic)."""
+        team = config.parse('[nope]\nx = 1\n[team]\nadmins = ["a"]\nowners = []\n[deploy]\nname = "x"\n'
+                            '[checks]\nrequired = ["t"]\n[checks.t]\ncommand = "x"\nlater = 1\n')
+        self.assertEqual(team.admins, ("a",))
+        self.assertEqual(team.unknown, ("[nope]", "[team] owners", "[deploy] name", "[checks.t] later"))
+
+    def test_the_rules_can_live_in_the_github_folder(self):
+        """A repository can allow only listed files at the top, as MIS does with its gate of root files."""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".github").mkdir()
+            (root / ".github" / "akasha.toml").write_text('[team]\nown_procedure = ["@Owner"]\n', encoding="utf-8")
+            self.assertEqual(config.place(root), root / ".github" / "akasha.toml")
+            self.assertEqual(config.load(root).own_procedure, ("owner",))
+            config.set_server_rules(root, "akasha")
+            self.assertFalse((root / "akasha.toml").exists())
+            self.assertEqual(config.load(root).server_rules, "akasha")
 
     def test_set_server_rules_keeps_the_other_lines(self):
         with tempfile.TemporaryDirectory() as folder:

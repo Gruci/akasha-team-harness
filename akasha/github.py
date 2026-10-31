@@ -50,28 +50,50 @@ def codeowners(team: Team) -> str:
     return "\n".join(lines + [END]) + "\n"
 
 
-def reviews_needed(team: Team, files: list[str], authors: set[str]) -> list[tuple[str, set[str]]]:
-    """For each kind of file of a change that needs a review: the first such file, and the people of whom one must
-    approve it. The administrators own the rules of the team and the GitHub files, and the reviewers own the risky
-    paths. When none of the owners is free, because they made the change, the other group reviews. The same rule
-    holds where GitHub cannot enforce CODEOWNERS (a private repository on GitHub Free)."""
+def reviews_needed(team: Team, files: list[str], authors: set[str]) -> list[tuple[str, set[str], tuple[str, ...]]]:
+    """For each kind of file of a change that needs a review: the first such file, the people of whom one must approve
+    it, and the patterns of that kind. The administrators own the rules of the team: akasha.toml, the GitHub files, and
+    the guides that each AI follows ([guides]). The reviewers own the risky paths. When none of the owners is free,
+    because they made the change or the team named none, the other group reviews. The same rule holds where GitHub
+    cannot enforce CODEOWNERS (a private repository on GitHub Free)."""
+    rules = ADMIN_PATHS + tuple(name for names in team.guides.values() for name in names)
     needs = []
-    for patterns, owners, others in ((ADMIN_PATHS, team.admins, team.reviewers),
+    for patterns, owners, others in ((rules, team.admins, team.reviewers),
                                      (team.risk_paths, team.reviewers, team.admins)):
         path = next((name for name in files if any(matches(name, item) for item in patterns)), "")
-        people = ((set(owners) - authors) or (set(others) - authors)) if owners else set()
+        people = (set(owners) - authors) or (set(others) - authors)
         if path and people:
-            needs.append((path, people))
+            needs.append((path, people, tuple(patterns)))
     return needs
 
 
-def review_states(reviews: object) -> dict[str, str]:
-    """The latest review of each person on a pull request: APPROVED, CHANGES_REQUESTED, or DISMISSED."""
+def review_states(reviews: object) -> dict[str, tuple[str, str]]:
+    """The latest review of each person on a pull request: APPROVED, CHANGES_REQUESTED, or DISMISSED, and the commit
+    that the person reviewed."""
     states = {}
     for item in reviews if isinstance(reviews, list) else []:
         if isinstance(item, dict) and item.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
-            states[str((item.get("user") or {}).get("login") or "").lower()] = item["state"]
+            states[str((item.get("user") or {}).get("login") or "").lower()] = (item["state"],
+                                                                                  str(item.get("commit_id") or ""))
     return states
+
+
+def approved(root: Path, states: dict[str, tuple[str, str]], people: set[str], patterns: tuple[str, ...],
+             head: str) -> bool:
+    """True when one of the people approved, and no file of the patterns changed between the commit that they reviewed
+    and the head: a later change of a risky file needs a new review. GitHub Free does not dismiss an old approval."""
+    for name in people:
+        state, reviewed = states.get(name, ("", ""))
+        if state != "APPROVED":
+            continue
+        if not reviewed or reviewed == head:
+            return True
+        changed = repo.gh(root, "api", f"repos/{repo.origin(root)}/compare/{reviewed}...{head}", "--jq",
+                          ".files[].filename")
+        if changed.returncode == 0 and not any(matches(path, item) for path in changed.stdout.split()
+                                               for item in patterns):
+            return True
+    return False
 
 
 def block(text: str) -> str:

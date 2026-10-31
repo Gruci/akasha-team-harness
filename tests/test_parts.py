@@ -1,4 +1,4 @@
-"""The parts around the task: the board, the review mark, the approval words, the files of Codex and Claude Code,
+"""The parts around the task: the board, the review mark, the files of Codex and Claude Code,
 the GitHub files, and the watch."""
 
 import json
@@ -8,25 +8,22 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from akasha import approval, board, claude, codex, config, github, review, watch
+from akasha import board, claude, codex, config, github, review, watch
 from akasha.task import Task, block, parse_block
 
 
-class ApprovalWordTests(unittest.TestCase):
-    def test_short_approvals(self):
-        for text in ("승인", "승인합니다!", "ㅇㅇ", "네", "넵", "네네", "좋아 진행해", "ok, go ahead", "LGTM", "이대로 진행",
-                     "그대로 진행해 주세요", "좋아요 👍", "진행해주세요."):
-            with self.subTest(text=text):
-                self.assertTrue(approval.is_approval(text))
-
-    def test_feedback_is_not_an_approval(self):
-        """The whole message decides: a refusal, a "not yet", or a request with a yes in it is feedback (audit F01)."""
-        for text in ("승인 말고 버튼 색 바꿔", "좋아 근데 제목은 고쳐", "승인?", "아니", "no", "not yet",
-                     "좋아요 그런데 표 하나 더 추가해 줘", "진행 상황 알려줘 그리고 이 부분 다시 설명해 줄래요 길게",
-                     "아직 승인 안 해요", "좋아요, 표 아래로 옮겨줘", "outlook 화면처럼 만들어줘", "PR 진행 상황 확인",
-                     "좋아, 이제 엑셀 내보내기 기능 만들어줘", "ok but change the title"):
-            with self.subTest(text=text):
-                self.assertFalse(approval.is_approval(text))
+class VersionTests(unittest.TestCase):
+    def test_the_version_is_the_same_in_each_place(self):
+        """Claude Code keeps a plugin by its version: a release that does not change it never reaches a computer."""
+        import tomllib
+        from akasha import SOURCE, VERSION
+        top = Path(__file__).resolve().parents[1]
+        plugin = json.loads((top / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        market = json.loads((top / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+        project = tomllib.loads((top / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertEqual({plugin["version"], market["plugins"][0]["version"], project["project"]["version"]},
+                         {VERSION})
+        self.assertTrue(SOURCE.endswith(f"@v{VERSION}"))
 
 
 class TaskBlockTests(unittest.TestCase):
@@ -118,7 +115,7 @@ class FileTests(unittest.TestCase):
     def test_agents_md_keeps_the_text_of_the_team(self):
         text = codex.agents_text("# Team\n\nOur rules.\n")
         self.assertEqual(codex.agents_text(text), text)
-        self.assertTrue(text.startswith("# Team"))
+        self.assertTrue(text.startswith("# Team") and text.rstrip().endswith(codex.END))     # the heading stays first
 
     def test_claude_settings_turn_the_plugin_on_and_keep_the_rest(self):
         text = claude.settings_text(json.dumps({"hooks": {"Stop": []}, "enabledPlugins": {"x@y": True}}))
@@ -135,7 +132,7 @@ class FileTests(unittest.TestCase):
             (root / "CLAUDE.md").write_text("# Team\n\n4단계 워크플로우\n", encoding="utf-8")
             self.assertIn("CLAUDE.md", claude.write(root))
             text = (root / "CLAUDE.md").read_text(encoding="utf-8")
-            self.assertTrue(text.startswith("# Team"))
+            self.assertTrue(text.startswith("# Team") and codex.START in text)     # MIS requires its own opening
             self.assertIn("replaces every other procedure", text)
             self.assertEqual(claude.write(root), [])
 
@@ -154,18 +151,42 @@ class GitHubFileTests(unittest.TestCase):
         self.assertEqual(github.protection(own_ci)["required_status_checks"]["contexts"], ["checks"])
 
     def test_who_must_review(self):
-        team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b"]\n[risk]\npaths = ["db/**"]\n')
-        self.assertEqual(github.reviews_needed(team, ["app.py"], {"me"}), [])
-        self.assertEqual(github.reviews_needed(team, ["db/x.sql"], {"me"}), [("db/x.sql", {"b"})])
-        self.assertEqual(github.reviews_needed(team, ["db/x.sql"], {"b"}), [("db/x.sql", {"a"})])
-        self.assertEqual(github.reviews_needed(team, [".github/workflows/ci.yml"], {"me"}),
-                         [(".github/workflows/ci.yml", {"a"})])
-        self.assertEqual(github.reviews_needed(team, ["akasha.toml"], {"a", "b"}), [])
-        self.assertEqual(github.review_states([{"user": {"login": "B"}, "state": "APPROVED"},
+        team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b"]\n[risk]\npaths = ["db/**"]\n'
+                            '[guides]\npreview = ["design/UX.md"]\n')
+
+        def who(files, authors):
+            return [(path, people) for path, people, _patterns in github.reviews_needed(team, files, authors)]
+        self.assertEqual(who(["app.py"], {"me"}), [])
+        self.assertEqual(who(["db/x.sql"], {"me"}), [("db/x.sql", {"b"})])
+        self.assertEqual(who(["db/x.sql"], {"b"}), [("db/x.sql", {"a"})])
+        self.assertEqual(who([".github/workflows/ci.yml"], {"me"}), [(".github/workflows/ci.yml", {"a"})])
+        self.assertEqual(who(["design/UX.md"], {"me"}), [("design/UX.md", {"a"})])    # a guide of each AI is a rule
+        self.assertEqual(who(["akasha.toml"], {"a", "b"}), [])
+        self.assertEqual(github.review_states([{"user": {"login": "B"}, "state": "APPROVED", "commit_id": "c1"},
                                                {"user": {"login": "b"}, "state": "COMMENTED"},
                                                {"user": {"login": "c"}, "state": "APPROVED"},
                                                {"user": {"login": "c"}, "state": "CHANGES_REQUESTED"}]),
-                         {"b": "APPROVED", "c": "CHANGES_REQUESTED"})
+                         {"b": ("APPROVED", "c1"), "c": ("CHANGES_REQUESTED", "")})
+
+    def test_an_approval_covers_only_the_version_that_the_reviewer_saw(self):
+        """A risky file changed after the approval merged without a new review on GitHub Free (critic)."""
+        states = {"b": ("APPROVED", "old")}
+        later = subprocess.CompletedProcess([], 0, "app.py\ndb/x.sql\n", "")
+        with patch("akasha.repo.gh", return_value=later), patch("akasha.repo.origin", return_value="o/r"):
+            self.assertFalse(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "new"))
+            self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("web/**",), "new"))
+        self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "old"))
+        self.assertFalse(github.approved(Path.cwd(), states, {"c"}, ("db/**",), "old"))
+
+    def test_without_reviewers_the_administrators_review_a_risky_path(self):
+        team = config.parse('[team]\nadmins = ["a"]\n[risk]\npaths = ["db/**"]\n')
+        self.assertEqual([need[:2] for need in github.reviews_needed(team, ["db/x.sql"], {"me"})], [("db/x.sql", {"a"})])
+
+    def test_a_long_output_keeps_its_start_and_its_end(self):
+        from akasha.checks import _short
+        text = "FAIL rule 2 in a.py\n" + "ok\n" * 3000 + "12 problems"
+        short = _short(text)
+        self.assertTrue(short.startswith("FAIL rule 2") and short.endswith("12 problems") and len(short) < 3100)
 
     def test_only_a_protection_with_the_checks_of_the_team_counts(self):
         """A protection that requires one approval and no checks let an auto-merge merge before the checks (review)."""
@@ -190,8 +211,8 @@ class GitHubFileTests(unittest.TestCase):
 
 
 class WatchTests(unittest.TestCase):
-    team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b"]\n[risk]\npaths = ["db/**"]\n[ci]\n'
-                        'required = ["checks"]\n')
+    team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b"]\nown_procedure = ["a"]\n[risk]\npaths = ["db/**"]\n'
+                        '[ci]\nrequired = ["checks"]\n')
 
     def answers(self, pulls, runs, reviews=()):
         def api(_root, path):
@@ -205,10 +226,20 @@ class WatchTests(unittest.TestCase):
         return api
 
     def reason(self, pulls, runs, reviews=(), changed=("app.py",), setup=False):
-        found = subprocess.CompletedProcess([], 1 if setup else 0, "", "")
         with patch("akasha.watch._api", self.answers(pulls, runs, reviews)), \
-                patch("akasha.repo.names", return_value=list(changed)), patch("akasha.repo.git", return_value=found):
+                patch("akasha.repo.names", return_value=list(changed)), \
+                patch("akasha.config.shown", return_value=None if setup else "[team]\n"):
             return watch._reason(Path.cwd(), "o/r", self.team, "s")
+
+    def test_the_own_procedure_of_the_repository_is_in_order(self):
+        """The administrator kept merging with the own procedure of MIS, and each merge became an issue (adoption)."""
+        good = [{"name": "checks", "conclusion": "success"}]
+        own = [{"number": 6, "merged_at": "x", "head": {"sha": "h", "ref": "harness-x--ab12cd34"},
+                "user": {"login": "A"}, "body": "no block"}]
+        self.assertEqual(self.reason(own, good, changed=["db/x.sql"]), "")
+        self.assertIn("before checks passed", self.reason(own, []))
+        own[0]["head"]["ref"] = "akasha/x"
+        self.assertIn("not an Akasha task", self.reason(own, good))
 
     def test_reasons(self):
         body = block(Task(id="t", title="T", approval={"by": "me"}, review={"verdict": "PASS"}))

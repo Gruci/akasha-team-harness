@@ -25,8 +25,8 @@ def _api(root: Path, path: str):
 
 def _team_at(root: Path, commit: str) -> Team:
     """The team rules before the push, as branch protection uses them."""
-    shown = repo.git(root, "show", f"{commit}:{config.CONFIG_FILE}")
-    return config.parse(shown.stdout) if shown.returncode == 0 else config.load(root)
+    text = config.shown(root, commit)
+    return config.parse(text) if text is not None else config.load(root)
 
 
 def _passed(root: Path, slug: str, sha: str, names: tuple[str, ...]) -> list[str]:
@@ -52,8 +52,12 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
     missing = _passed(root, slug, pull["head"]["sha"], team.status_checks)
     if missing:
         return f"pull request #{pull['number']} merged before {', '.join(missing)} passed"
-    if repo.git(root, "cat-file", "-e", f"{sha}^1:{config.CONFIG_FILE}").returncode:
+    if config.shown(root, f"{sha}^1") is None:
         return ""                                     # the setup of Akasha itself: no task yet
+    author = str((pull.get("user") or {}).get("login") or "").lower()
+    if author in team.own_procedure and not str((pull.get("head") or {}).get("ref") or "").startswith(
+            team.branch_prefix):
+        return ""                                     # the own procedure of the repository, of a person who keeps it
     task = parse_block(pull.get("body") or "")
     if task is None:
         return f"pull request #{pull['number']} was not an Akasha task"
@@ -62,12 +66,12 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
     if task.review.get("verdict") != "PASS":
         return f"pull request #{pull['number']} merged without a passed plan review"
     changed = repo.names(root, "diff", "--name-only", "--no-renames", f"{sha}^1", sha)
-    needs = github.reviews_needed(team, changed, {str((pull.get("user") or {}).get("login") or "").lower()})
+    needs = github.reviews_needed(team, changed, {author})
     if not needs:
         return ""
     states = github.review_states(_api(root, f"repos/{slug}/pulls/{pull['number']}/reviews?per_page=100"))
-    for path, people in needs:
-        if not any(states.get(name) == "APPROVED" for name in people):
+    for path, people, patterns in needs:
+        if not github.approved(root, states, people, patterns, str(pull["head"]["sha"])):
             return f"pull request #{pull['number']} changed {path} without the review of one of {sorted(people)}"
     return ""
 

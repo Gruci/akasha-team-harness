@@ -1,8 +1,9 @@
 # Team config
 
-`akasha.toml` holds the rules of the team for one repository. The administrators own it: a change of it, or of
-`.github/`, lands only with the review of an administrator. Each command reads it from the default branch as git
-fetched it last, so that each computer uses the merged rules, also when its checkout is old.
+`akasha.toml` holds the rules of the team for one repository, at the top of the repository or in `.github/` (for a
+repository that allows only listed files at the top). The administrators own it: a change of it, or of `.github/`,
+lands only with the review of an administrator. Each command reads it from the default branch as git fetched it last,
+so that each computer uses the merged rules, also when its checkout is old.
 
 ## Example
 
@@ -54,8 +55,8 @@ rules = "akasha"                   # setup writes it
 | Key | Value |
 |:--|:--|
 | `admins` | The GitHub names of the administrators. They own `akasha.toml`, `.github/`, and CODEOWNERS: a change of them waits for the review of an administrator. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch |
-| `reviewers` | The GitHub names that review a change of a path of `[risk]`. The landing waits for the approval of one of them |
-
+| `reviewers` | The GitHub names that review a change of a path of `[risk]`. The landing waits for the approval of one of them. Without reviewers, the administrators review |
+| `own_procedure` | The GitHub names of the people who keep the own procedure of the repository outside Akasha, for example the administrator who built it. Akasha does not stop their work outside its tasks (their own work copies, edits in the main checkout, their merges), and the watch accepts their pull requests when the checks passed. The other rules (a force push, a push to the default branch, `.env`) stay |
 Where GitHub protects the branch, it enforces CODEOWNERS. On a private repository on GitHub Free it does not, so
 Akasha reads the reviews of the pull request itself before it merges, and the watch reports a merge by hand without
 them. The person who made the change does not count: when no reviewer is free, an administrator reviews, and the
@@ -115,7 +116,7 @@ The files of the team that the AI reads in each step. The session start notice n
 
 | Key | Value |
 |:--|:--|
-| `folder` | The folder of the work copies, in the repository. The default is `.akasha/work`. Git must not track files in it |
+| `folder` | The folder of the work copies, in the repository. The default is `.akasha/work`, or a `worktrees` folder that the repository already ignores. Git must not track files in it |
 | `branch_prefix` | The prefix of the task branches. The default is `akasha/` |
 | `records` | The folder of the records of the tasks (preview, research, plan, summary), which go into git. The default is `.akasha/tasks`. Choose a folder that the own checkers of the team skip, for example a Markdown checker. A task keeps the folder that was set when it started |
 
