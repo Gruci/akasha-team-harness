@@ -2,6 +2,7 @@
 
 import io
 import json
+import subprocess
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -97,6 +98,17 @@ class SetupTests(unittest.TestCase):
         payload = {"cwd": str(self.root), "tool_name": "Edit", "tool_input": {"file_path": str(self.root / "a.py")}}
         with patch("akasha.hooks._payload", return_value=payload), redirect_stdout(out), redirect_stderr(io.StringIO()):
             self.assertEqual(hooks.main("claude", "PreToolUse"), 0)
+
+    def test_a_setup_after_the_first_one_writes_into_the_work_copy_of_a_task(self):
+        setup.run(self.root)
+        for args in (("add", "-A"), ("commit", "-q", "-m", "setup"), ("push", "-q", "origin", "main")):
+            subprocess.run(["git", *args], cwd=self.root, capture_output=True)
+        task, _notes = flow.start(self.root, "Rules", name="rules")
+        tree = Path(task.workcopy)
+        (tree / ".claude" / "settings.json").unlink()
+        lines = setup.run(tree)
+        self.assertTrue((tree / ".claude" / "settings.json").is_file())
+        self.assertIn("work copy of the task", lines[-1])
 
     def test_doctor_names_each_problem(self):
         found = dict((text, good) for good, text in setup.doctor(self.root))
