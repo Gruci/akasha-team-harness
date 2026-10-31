@@ -78,7 +78,7 @@ class Landing(unittest.TestCase):
             patcher = patch(target, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.files, self.runs, self.merge_error = ["app.py"], None, ""
+        self.files, self.runs, self.branch_runs, self.merge_error = ["app.py"], None, None, ""
         self.gh = patch("akasha.repo.gh", side_effect=self.github).start()
         patch("akasha.pr.gh", self.gh).start()
         patch("akasha.repo.me", return_value="me").start()
@@ -97,7 +97,8 @@ class Landing(unittest.TestCase):
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
         (records / "preview.html").write_text("<html>p</html>", encoding="utf-8")
         flow.preview(self.root, task.id, show=False)
-        approval.on_prompt(self.root, self.root, "승인")
+        approval.on_prompt(self.root, self.root, "approve")
+        flow.approve(self.root, task.id)
         (records / "plan.md").write_text("plan", encoding="utf-8")
         task = load(self.root, task.id)
         review.note(self.root, task, "PASS", review.plan_digest(task), "reviewer")
@@ -123,7 +124,8 @@ class Landing(unittest.TestCase):
         if "--paginate" in args:
             return done("\n".join(self.files))
         if args[:2] == ("run", "list"):
-            return done(json.dumps(self.runs)) if self.runs is not None else done("", 1, "could not find any workflows")
+            runs = self.branch_runs if "--branch" in args else self.runs
+            return done(json.dumps(runs)) if runs is not None else done("", 1, "could not find any workflows")
         if args[:2] == ("pr", "merge") and "--match-head-commit" in args and self.merge_error:
             return done("", 1, self.merge_error)
         return done()
@@ -303,6 +305,42 @@ class LandTests(Landing):
         self.assertEqual(state, land.DEPLOY_FAILED)
         with self.assertRaises(LookupError):
             load(self.root, self.task.id)
+
+    def test_a_newer_deployment_takes_the_place_of_a_cancelled_one(self):
+        """A deploy workflow with a concurrency group cancels a waiting run when a newer merge comes (review)."""
+        self.deploying()
+        self.runs = [{"status": "completed", "conclusion": "cancelled", "createdAt": "2026-11-01T10:00:00Z"}]
+        self.branch_runs = [{"status": "in_progress", "createdAt": "2026-11-01T10:05:00Z"}] + self.runs
+        state, _lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.DEPLOYING)
+        self.branch_runs[0] = {"status": "completed", "conclusion": "success", "url": "u2",
+                               "createdAt": "2026-11-01T10:05:00Z"}
+        state, lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.DEPLOYED)
+        self.assertIn("u2", lines[-1])
+
+    def test_a_deployment_that_a_person_cancelled_ends_the_follow(self):
+        self.deploying()
+        self.runs = [{"status": "completed", "conclusion": "cancelled", "createdAt": "2026-11-01T10:00:00Z", "url": "u"}]
+        self.branch_runs = list(self.runs)
+        state, _lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.DEPLOYING)                   # a newer run can still come
+        task = load(self.root, self.task.id)
+        task.checks["merged_at"] = time.time() - land.DEPLOY_GRACE - 1
+        save(self.root, task)
+        state, _lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.DEPLOY_FAILED)
+
+    def test_a_conflict_names_the_files(self):
+        other = Path(self.repo.folder.name) / "other"
+        run(Path(self.repo.folder.name), "git", "clone", "-q", str(self.repo.origin), str(other))
+        (other / "app.py").write_text("print('another team')\n", encoding="utf-8")
+        for args in (("-c", "user.name=O", "-c", "user.email=o@x", "commit", "-q", "-am", "other"),
+                     ("push", "-q", "origin", "main")):
+            run(other, "git", *args)
+        state, lines = self.land(view(self.head))
+        self.assertEqual(state, land.CONFLICT)
+        self.assertIn("app.py", lines[0])
 
     def test_a_deployment_that_never_shows_ends_the_follow(self):
         self.deploying()

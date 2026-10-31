@@ -18,7 +18,7 @@ from akasha.repo import write_whole
 
 STATUSES = ("preview", "approved", "landing", "merged", "closed")
 TASK_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,59}")
-LOCAL_ONLY = ("workcopy", "shown_in")           # this computer and this session only. They never go on GitHub
+LOCAL_ONLY = ("workcopy", "shown_in", "heard")  # this computer and this session only. They never go on GitHub
 BLOCK = re.compile(r"<!-- akasha:task (\{.*?\}) -->", re.S)
 PREVIEW, PLAN, RESEARCH, SUMMARY = "preview.html", "plan.md", "research.md", "summary.md"
 
@@ -37,6 +37,7 @@ class Task:
     preview_sha: str = ""           # the preview as `akasha preview` showed it
     shown_at: float = 0.0
     shown_in: str = ""              # the session of the agent engine that showed it: only that session approves
+    heard: dict = field(default_factory=dict)               # the last message of the person after it: words, at
     approval: dict = field(default_factory=dict)            # by, at, preview_sha, words, source
     review: dict = field(default_factory=dict)              # verdict, plan_sha, at, source, rounds
     checks: dict = field(default_factory=dict)              # status, tree, at

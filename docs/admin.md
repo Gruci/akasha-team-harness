@@ -1,7 +1,7 @@
 # Set up a team
 
-The administrator sets up a repository once. The AI does each step with the akasha-setup skill: say "Set up Akasha" or
-"Akasha 설정해줘". This page tells what happens, for the person who must understand it.
+The administrator sets up a repository once. The AI does each step with the akasha-setup skill: say "Set up Akasha", in
+any language. This page tells what happens, for the person who must understand it.
 
 ## What the administrator decides
 
@@ -44,21 +44,28 @@ a long list of rules on the first day stops each task.
 5. Commit the files on a branch, open a pull request, wait for the required checks of the team, and merge it. Before
    this merge, the main checkout is free to change. After it, each change is a task.
 
-## A repository with its own agent rules
+## A repository with its own harness
 
-A repository that an AI already works in often has its own procedure in `CLAUDE.md`, `AGENTS.md`, skills, and hooks:
-a scope interview, a plan that a person approves, plan files in a folder, worktrees in a folder, a task board, a merge
-by the AI. Akasha writes a block into `CLAUDE.md` and `AGENTS.md` that says its procedure comes first, but two
-procedures in one file confuse the AI. In the setup pull request, the AI and the administrator replace each such rule
-with a pointer to Akasha, and move the design and architecture documents into `[guides]`.
+A repository that an AI already works in often has its own procedure in `CLAUDE.md`, `AGENTS.md`, skills, hooks, and
+gates: a scope interview, a plan that a person approves, plan files in a folder, worktrees in a folder, a task board, a
+merge by the AI. Akasha works next to it; the hooks and gates of the repository stay.
 
-Three more things to look at:
+| Decision | Where |
+|:--|:--|
+| Who keeps the own procedure (often the administrator who built it). Akasha does not stop their work outside its tasks, and the watch accepts their pull requests when the checks passed | `[team] own_procedure` |
+| Everyone else follows Akasha. Its block in `CLAUDE.md` and `AGENTS.md` says that its procedure comes first, and keeps the records where Akasha puts them | written by `akasha setup` |
+| A checker that allows only listed files at the top | put the rules at `.github/akasha.toml` |
+| A checker that examines files by their folder, for example Markdown files: the records of each task go into git | `[work] records`: a folder that the checker skips |
+| A folder that the repository already ignores for work copies, and that its gates know | `[work] folder`, for example `worktrees` |
+| Files that the hooks or tools of the repository write in each work copy, for example caches | `.gitignore` lines with `**/` in front |
+| A personal settings file in git, for example `.claude/settings.local.json` with wide permissions | remove it from git |
+| Hooks that start each session with maintenance or audits | do what is due before teammates join; Akasha tells the sessions of teammates to skip them |
+| Shared files that many features change (routes, menus, generated indexes) | a short document in `[guides] build` that tells how to merge each |
+| The programs that the hooks of the repository run, for example `python` | `ready` of the checks with the same name; `akasha doctor` also runs them |
 
-- A checker of the repository that examines files by their folder, for example Markdown files: the records of each
-  task go into git. Put them where the checker does not look (`[work] records`), or make the checker skip them.
-- A hook of the repository that blocks edits in the main checkout: do the setup in a git worktree on a new branch.
-- The own save-time hooks of the repository see the work copy of a task when the session moves into it (Claude Code:
-  `EnterWorktree` with its path). The akasha-build skill does it.
+The own save-time hooks of the repository see the work copy of a task when the session moves into it (Claude Code:
+`EnterWorktree` with its path). The akasha-build skill does it when the build starts. Exact Akasha commands run without
+a permission prompt: the hook of Akasha allows them, so a teammate does not need wide permissions.
 
 ## Server rules
 
@@ -96,7 +103,8 @@ Each teammate installs the plugin once (`/plugin marketplace add Gruci/akasha-te
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"`, elsewhere `python3 -m pip install …`.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.1"`, elsewhere `python3 -m pip install …`.
+Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
 
 ## The retro: grow the rules from the problems
 

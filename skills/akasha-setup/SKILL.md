@@ -1,6 +1,6 @@
 ---
 name: akasha-setup
-description: Set up Akasha in a repository as its administrator: the team rules, the GitHub settings, and the files that bring Akasha to each teammate. Use when the person says "Set up Akasha" or "Akasha 설정해줘", or when the session start notice says that the repository does not use Akasha yet or that the server rules are off.
+description: Set up Akasha in a repository as its administrator: the team rules, the GitHub settings, and the files that bring Akasha to each teammate. Use when the person asks to set up Akasha, in any language, or when the session start notice says that the repository does not use Akasha yet or that the server rules are off.
 ---
 
 # Set up Akasha (administrator)
@@ -17,35 +17,54 @@ their language and in simple words.
    branch first, and do steps 3 to 9 there.
 3. Run `akasha setup`. It writes `akasha.toml` with the usual commands of the main language, and the other files.
    Where GitHub does not protect the default branch now, it records `[server] rules = "akasha"` and adds the watch.
+   If a checker of the repository allows only listed files at the top, move `akasha.toml` to `.github/akasha.toml`
+   and run `akasha setup` again: Akasha reads it there too.
 4. Read the own agent rules of the repository: `CLAUDE.md`, `AGENTS.md`, `.claude/skills/*/SKILL.md`, the hooks in
-   `.claude/settings.json`, and the documents they point to. List each rule about scope interviews, a plan approval by
-   a person, where plans, research, and mockups go, worktrees, task boards, and pushes, pull requests, and merges.
-   With the person, replace each one in this change with a pointer to Akasha. Akasha already wrote its own block into
-   `CLAUDE.md` and `AGENTS.md`, with a sentence that its procedure comes first; the old rules must not say otherwise.
-   Keep the design and architecture documents: they go into `[guides]` in step 5.
+   `.claude/settings.json`, the gates or scripts that they run, and the documents they point to. Decide with the
+   person who keeps that own procedure (often the administrator who built it) → `[team] own_procedure`: Akasha does
+   not stop their work outside its tasks, and the watch accepts their pull requests when the checks passed. For each
+   other teammate, list each rule about scope interviews, a plan approval by a person, where plans, research, and
+   mockups go, worktrees, task boards, and pushes, pull requests, and merges, and tell the person that Akasha's
+   procedure comes first for teammates: Akasha wrote its block into `CLAUDE.md` and `AGENTS.md` with that sentence.
+   Keep the design and architecture documents: they go into `[guides]` in step 5. Look also for these:
+   - the hooks of the repository that start a session with maintenance or audits: Akasha tells the sessions of
+     teammates to skip them, but the administrator does what is due before teammates join;
+   - files that tools write in each work copy, for example caches of hooks: add them to `.gitignore` (with `**/` in
+     front, so that they match in each folder), else each task commits them and tasks conflict on them;
+   - a personal settings file in git, for example `.claude/settings.local.json`: remove it from git
+     (`git rm --cached`), else each teammate gets the permissions of one person;
+   - a folder that the repository already ignores for work copies, for example `worktrees`: `akasha setup` proposes it
+     as `[work] folder`.
 5. Ask the person these questions, one at a time, and write each answer into `akasha.toml`:
    - Who are the administrators? (GitHub names) → `[team] admins`. They review each change of `akasha.toml` and
      `.github/`.
-   - Which folders are risky, for example the database, the data writes, the deployment? Who must review a change
-     there? → `[risk] paths` and `[team] reviewers`. A change of these paths waits for a reviewer before the merge.
-     Keep the list short: each risky path makes a person wait. Name two or more reviewers, so that a reviewer who
-     makes a change can get a review from another one.
+   - Which folders are risky, for example the database, the data writes, the deployment, the own gates and rules of
+     the repository? Who must review a change there? → `[risk] paths` and `[team] reviewers` (without reviewers, the
+     administrators review). A change of these paths waits for a reviewer before the merge, and Akasha asks the
+     reviewer at the first check that touches them. Keep screens and small features out of the list, so that most
+     tasks wait for nobody. Name two or more reviewers, so that a reviewer who makes a change can get a review from
+     another one.
    - Does the repository have its own CI on GitHub? What are the names of its required checks, as GitHub shows the
      jobs (for example `checks`, not the name of the workflow)? → `[ci] required`. Without a CI, Akasha adds its own
      check, which runs `[checks]` on GitHub.
    - Which commands check a change? → `[checks]`: one table `[checks.<name>]` for each command, with `cwd` and
      `only_when` for a part in its own folder, and the name in `required`.
    - What must each computer install to run these checks (packages, versions, settings of the network, local files
-     such as `.env`)? → `[checks] setup` for the commands, `ready` in each check for a quick test that the computer can
-     run it, and a short document for `[guides] join`.
+     such as `.env`)? → `ready` in each check for a quick test that the computer can run it (with the same program
+     names as the hooks of the repository, for example `python`), and a short document for `[guides] join`. Keep
+     `[checks] setup` empty when it installs much: put that into the join document instead. Leave a check that a
+     teammate's computer cannot run to the CI (`[ci] required`).
    - Which team documents must the AI read before the preview (design, words on the screen), before the plan
      (architecture, rules), and for the review? → `[guides] preview`, `plan`, and `review`.
+   - Which files do many new features change, for example the list of routes, the menu, or a generated index? →
+     a short document for `[guides] build` that names them and tells how to merge each one when two tasks change it.
    - Does a checker of the repository examine Markdown or other files that it finds by their folder? The records of
      each task (preview, research, plan, summary) go into git. → `[work] records`: a folder that those checkers skip,
      for example `docs/tasks/akasha`.
-   - Does a workflow deploy each merge to the default branch? → `[deploy] workflow`: its name, as GitHub shows it.
+   - Does a workflow deploy each merge to the default branch? → `[deploy] workflow`: its name or its file name.
      Then Akasha tells the person when the change is live, not only merged.
-   - Does the repository already use the folder `.akasha/work` or branches that start with `akasha/`? → `[work]`.
+   - Does the repository already use the folder of `[work] folder` or branches that start with `akasha/`? →
+     `[work]`.
 6. Run `akasha setup` again. It writes CODEOWNERS and the workflow files from the answers.
 7. If the person administers the repository on GitHub, ask them to approve the GitHub changes, then run
    `akasha setup --apply`. It turns on the branch protection, or records that GitHub cannot protect the branch on

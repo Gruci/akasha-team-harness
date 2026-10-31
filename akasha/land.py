@@ -59,7 +59,10 @@ def land(root: Path, task_id: str, wait: float = 0) -> tuple[str, list[str]]:
     deadline = time.monotonic() + max(wait, 0)
     if task.status == "merged" and task.checks.get("merge"):
         return _deploy(root, team, task, deadline)
-    if not board.available(root) or not task.number:
+    if not board.available(root):
+        return BLOCKED, ["origin of this repository is not on GitHub, so Akasha cannot land the task. The work stays "
+                         f"in {task.workcopy} on the branch {task.branch}: tell an administrator"]
+    if not task.number:
         return BLOCKED, ["Akasha lands a task through its pull request on GitHub, and this task has none. Run "
                          f"`akasha cancel {task.id}`, then start the task again"]
     holder = taken(root, task)
@@ -90,9 +93,11 @@ def _hand_over(root: Path, team: Team, task: Task, akasha_merges: bool) -> tuple
     work.pull(tree, task.branch)
     merged = repo.git(tree, "merge", "-q", "--no-edit", f"origin/{branch}")
     if merged.returncode:
+        files = repo.git(tree, "diff", "--name-only", "--diff-filter=U").stdout.split()
         repo.git(tree, "merge", "--abort")
-        return CONFLICT, [f"the task conflicts with the latest {branch}. In {tree}, run `git merge origin/{branch}`, "
-                          f"repair the conflicts, run `akasha check {task.id}`, then land again"]
+        return CONFLICT, [f"the task conflicts with the latest {branch} in {', '.join(files[:8]) or 'some files'}. "
+                          f"In {tree}, run `git merge origin/{branch}`, repair the conflicts (keep the changes of both "
+                          f"sides when they add different things), run `akasha check {task.id}`, then land again"]
     repo.gh(root, "pr", "ready", str(task.number))        # first, so that the run of the push is a real run
     work.push(tree, task.branch)
     task.status = "landing"
@@ -102,7 +107,7 @@ def _hand_over(root: Path, team: Team, task: Task, akasha_merges: bool) -> tuple
     lines = []
     files = repo.names(tree, "diff", "--name-only", "--no-renames", f"origin/{branch}...HEAD")
     authors = {repo.me(root), str(task.owner), str((view.get("author") or {}).get("login") or "").lower()}
-    for path, people in github.reviews_needed(team, files, authors):
+    for path, people, _patterns in github.reviews_needed(team, files, authors):
         repo.gh(root, "pr", "edit", str(task.number), "--add-reviewer", ",".join(sorted(people)))
         lines.append(f"the task changes {path}: it waits for the review of {_names(people)}")
     if not akasha_merges:
@@ -216,10 +221,11 @@ def _waiting_review(root: Path, team: Team, task: Task, view: dict) -> tuple[str
         return "", set()
     states = github.review_states(repo.gh_json(root, "api", f"repos/{repo.origin(root)}/pulls/{task.number}/"
                                                "reviews?per_page=100"))
-    for _path, people in needs:
-        if any(states.get(name) == "CHANGES_REQUESTED" for name in people):
+    head = str(view.get("headRefOid") or "")
+    for _path, people, patterns in needs:
+        if any(states.get(name, ("", ""))[0] == "CHANGES_REQUESTED" for name in people):
             return "CHANGES", people
-        if not any(states.get(name) == "APPROVED" for name in people):
+        if not github.approved(root, states, people, patterns, head, files):
             return "WAIT", people
     return "", set()
 
@@ -276,6 +282,8 @@ def follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: b
             if behind > 0:
                 repo.gh(root, "pr", "update-branch", str(task.number))
                 trace.note(root, "brought_up_to_date", task=task.id)
+                task.checks["updates"] = int(task.checks.get("updates") or 0) + 1
+                save(root, task)
             elif behind == 0 and all(value == "PASS" for value in states.values()):
                 review, waiting_for = _waiting_review(root, team, task, view)
                 if review == "CHANGES" or view.get("reviewDecision") == "CHANGES_REQUESTED":
@@ -316,6 +324,10 @@ def _late(task: Task, view: dict, states: dict[str, str], waiting_for: set[str])
     if queued:
         return WAITING, [f"{', '.join(queued)} waits for a runner of GitHub. If it waits long, ask an administrator: "
                          f"`akasha help {task.id} \"<the check waits for a runner>\"`. " + again]
+    updates = int(task.checks.get("updates") or 0)
+    if updates:
+        return WAITING, [f"other tasks merged first, so Akasha brought this one up to date {updates} time(s), and its "
+                         "checks run again. This is normal and needs no help. " + again]
     return WAITING, ["the checks of GitHub still run. " + again]
 
 
@@ -337,17 +349,30 @@ def _finish(root: Path, team: Team, task: Task, state: str, view: dict, deadline
     return deployed, lines + more
 
 
+def _runs(root: Path, team: Team, *where: str) -> tuple[list | None, str]:
+    """The runs of the deployment workflow, the newest first, or None and the error of gh."""
+    done = repo.gh(root, "run", "list", "--workflow", team.deploy_workflow, *where, "--json",
+                   "status,conclusion,url,createdAt", "--limit", "10")
+    try:
+        runs = json.loads(done.stdout or "null") if done.returncode == 0 else None
+    except ValueError:
+        runs = None
+    return (runs if isinstance(runs, list) else None), done.stderr.strip()
+
+
 def _deploy(root: Path, team: Team, task: Task, deadline: float) -> tuple[str, list[str]]:
-    """Wait for the run of the deployment workflow on the merge commit."""
+    """Wait for the run of the deployment workflow on the merge commit. When a newer merge took the place of that run
+    (a workflow with a concurrency group cancels a waiting run), the newer run on the default branch deploys this
+    change too: the default branch only grows, so a later commit holds the merge."""
     while True:
-        done = repo.gh(root, "run", "list", "--workflow", team.deploy_workflow, "--commit",
-                       str(task.checks.get("merge")), "--json", "status,conclusion,url", "--limit", "5")
-        try:
-            runs = json.loads(done.stdout or "null") if done.returncode == 0 else None
-        except ValueError:
-            runs = None
-        latest = runs[0] if isinstance(runs, list) and runs else None
+        runs, error = _runs(root, team, "--commit", str(task.checks.get("merge")))
+        latest = runs[0] if runs else None
         late = time.time() - float(task.checks.get("merged_at") or 0) > DEPLOY_GRACE
+        if latest and str(latest.get("conclusion") or "").lower() == "cancelled":
+            newer, _error = _runs(root, team, "--branch", repo.default_branch(root))
+            later = [run for run in newer or [] if str(run.get("createdAt")) > str(latest.get("createdAt"))]
+            # A newer run comes soon after a cancel by a newer merge; a run that a person cancelled stays the end
+            latest = later[0] if later else latest if late else {"status": "waiting"}
         done_now = bool(latest) and str(latest.get("status") or "").lower() == "completed"
         if done_now or (late and not latest):
             task.checks.pop("merge", None)            # the task is an ended merged task again
@@ -361,7 +386,7 @@ def _deploy(root: Path, team: Team, task: Task, deadline: float) -> tuple[str, l
         if late and not latest:
             if runs is None:
                 return MERGED, [f"Akasha cannot read the runs of the workflow {team.deploy_workflow}: "
-                                f"{done.stderr.strip()[:200]}. Tell an administrator to correct [deploy] workflow"]
+                                f"{error[:200]}. Tell an administrator to correct [deploy] workflow"]
             return MERGED, ["no deployment started for this change (the deployment workflow skipped it): it needs "
                             "none"]
         if time.monotonic() >= deadline:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -25,10 +27,12 @@ def first_config(root: Path) -> str:
     packs = langs.detect(root)
     pack = packs[0] if packs else None
     admins = f'"{me}"' if me else ""
+    folder = "worktrees" if _ignored(root, "worktrees/x") else config.WORK_DIR     # a worktree folder of the team
     lines = ["# The team rules of Akasha. An administrator changes them with a pull request.", "",
              "[team]", f"admins = [{admins}]          # GitHub names: they set up GitHub and help when the AI is "
              "stuck",
-             "reviewers = []          # GitHub names that review a change of a risky path", "",
+             "reviewers = []          # GitHub names that review a change of a risky path",
+             "own_procedure = []      # GitHub names that keep the own procedure of the repository outside Akasha", "",
              "[risk]", 'paths = []              # for example ["db/**", "**/migrations/**"]: a change waits for a '
              "reviewer", "",
              "[checks]"]
@@ -41,8 +45,17 @@ def first_config(root: Path) -> str:
     lines += ["", "[ci]", '# required = ["build"]   # the checks of your own CI that GitHub must see pass. Without it, '
               "Akasha adds its own check", "", "[guides]",
               '# preview = ["docs/design.md"]       # team files that the AI reads before the preview',
-              '# plan = ["docs/architecture.md"]    # ... before the plan, and the reviewer reads them too', ""]
+              '# plan = ["docs/architecture.md"]    # ... before the plan, and the reviewer reads them too', "",
+              "[work]", f'folder = "{folder}"' + " " * max(1, 22 - len(folder)) + "# the work copies of the tasks: a "
+              "folder that git ignores",
+              f'branch_prefix = "{config.BRANCH_PREFIX}"',
+              f'records = "{config.RECORDS_DIR}"     # the preview, the plan, and the summary of each task go into git '
+              "here: choose a folder that the own checkers of the team skip", ""]
     return "\n".join(lines)
+
+
+def _ignored(root: Path, path: str) -> bool:
+    return repo.git(root, "check-ignore", "-q", path).returncode == 0
 
 
 def _ignore(root: Path, team: config.Team) -> bool:
@@ -50,7 +63,8 @@ def _ignore(root: Path, team: config.Team) -> bool:
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     made = [line for pack in langs.detect(root) for line in pack.ignore]     # the files that tests and builds make
     wanted = list(dict.fromkeys([f"{STATE_DIR.as_posix()}/", f"{team.work_dir}/", *made]))
-    missing = [line for line in wanted if line not in text.splitlines()]
+    missing = [line for line in wanted if line not in text.splitlines()
+               and not (line.endswith("/") and _ignored(root, f"{line}x"))]      # the team ignores it already
     if missing:
         path.write_text(text.rstrip("\n") + ("\n" if text.strip() else "") + "\n".join(missing) + "\n",
                         encoding="utf-8")
@@ -74,10 +88,10 @@ def _codeowners(root: Path, team: config.Team) -> str:
 def write_files(root: Path) -> list[str]:
     """Write the files of Akasha into the checkout. Return the files that changed, and the problems."""
     changed = []
-    path = root / CONFIG_FILE
+    path = config.place(root)
     if not path.is_file():
         path.write_text(first_config(root), encoding="utf-8")
-        changed.append(CONFIG_FILE)
+        changed.append(path.relative_to(root).as_posix())
     team = config.load(root)
     if _ignore(root, team):
         changed.append(".gitignore")
@@ -99,7 +113,7 @@ def write_files(root: Path) -> list[str]:
 
 def run(root: Path, apply: bool = False) -> list[str]:
     branch = repo.default_branch(root)
-    if repo.origin(root) and not (root / CONFIG_FILE).is_file():
+    if repo.origin(root) and not config.place(root).is_file():
         repo.fetch(root, branch)
         if config.on_server(root, branch):
             return [f"{branch} on the server already uses Akasha. Do not set it up again: pull it, git pull origin "
@@ -118,7 +132,7 @@ def run(root: Path, apply: bool = False) -> list[str]:
             github.protected(root, config.load(root)) is False:
         # Until an administrator turns the protection on, nothing on GitHub stops a merge: Akasha and the watch do
         config.set_server_rules(root, "akasha")
-        changed = list(dict.fromkeys(changed + [CONFIG_FILE] + write_files(root)))
+        changed = list(dict.fromkeys(changed + [config.place(root).relative_to(root).as_posix()] + write_files(root)))
         report.append(f"GitHub does not protect {branch} now, so Akasha merges after its own examination, and the "
                       "watch reports a change that went around it. `akasha setup --apply` turns the protection on "
                       "where the plan of GitHub allows it.")
@@ -166,8 +180,36 @@ def _check_ready(root: Path, name: str, check: config.Check | None, guide: bool)
         return status == "PASS", f"the check {name} can run here{where}" + (f": {last}" if last else "")
     program = _tool(checks.command(check)) if check else ""
     if program and program not in (".", "./") and not program.startswith(("./", ".\\")):
-        return bool(shutil.which(program)), f"the program {program} of the check {name}{where}"
+        return _runs(program), f"the program {program} of the check {name}{where}"
     return None
+
+
+def _runs(program: str) -> bool:
+    """True when the program is on PATH, and a Python also answers `--version`: the shortcut of the Microsoft Store
+    named python is on PATH, but does not run. (`npm` is npm.cmd on Windows, and `go` has no `--version`.)"""
+    found = shutil.which(program)
+    if not found or Path(program).stem.lower() not in ("python", "python3", "py"):
+        return bool(found)
+    try:
+        return subprocess.run([found, "--version"], capture_output=True, timeout=30).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _hook_programs(root: Path) -> list[str]:
+    """The programs that the own hooks of the repository run first, for example python or node."""
+    try:
+        data = json.loads((root / claude.SETTINGS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    found = []
+    for groups in (data.get("hooks") or {}).values() if isinstance(data, dict) else []:
+        for group in groups if isinstance(groups, list) else []:
+            for hook in (group.get("hooks") or []) if isinstance(group, dict) else []:
+                program = _tool(str(hook.get("command") or "")) if isinstance(hook, dict) else ""
+                if re.fullmatch(r"[A-Za-z][\w.-]*", program) and program not in ("sh", "bash", "echo", "cd"):
+                    found.append(program)
+    return list(dict.fromkeys(found))
 
 
 def doctor(root: Path) -> list[tuple[bool, str]]:
@@ -187,15 +229,26 @@ def doctor(root: Path) -> list[tuple[bool, str]]:
         found.append((push, "write access to the repository (else an administrator adds you as a collaborator)"))
     branch = repo.default_branch(root)
     if slug:
-        fetched = repo.fetch(root, branch).returncode == 0
-        found.append((fetched, f"git can read {branch} from origin (else run: gh auth setup-git, then doctor again)"))
-    if not config.on_server(root, branch) and not (root / CONFIG_FILE).is_file():
+        fetched = repo.fetch(root, branch)
+        error = fetched.stderr.strip().splitlines()[-1][:160] if fetched.returncode and fetched.stderr.strip() else ""
+        found.append((fetched.returncode == 0, f"git can read {branch} from origin" + (
+            f" ({error}; a login problem: gh auth setup-git; a certificate problem: see [guides] join)" if error
+            else "")))
+    found += [(_runs(program), f"the program {program} that the own hooks of the repository run (install it, and put "
+               "it first on PATH)") for program in _hook_programs(root)]
+    if repo.git(root, "ls-files", "--error-unmatch", ".claude/settings.local.json").returncode == 0:
+        found.append((False, "the personal settings .claude/settings.local.json are in git, so each teammate gets "
+                             "them (an administrator removes them from git: git rm --cached)"))
+    if not config.on_server(root, branch) and not config.place(root).is_file():
         found.append((False, f"{CONFIG_FILE} (an administrator sets up Akasha first: `akasha setup` writes it)"))
         return found
     try:
         team = config.shared(root, branch)
     except config.ConfigError as error:
         return found + [(False, f"{CONFIG_FILE}: {error}")]
+    if team.unknown:
+        found.append((False, f"Akasha is older than {CONFIG_FILE}, which has {', '.join(team.unknown[:3])} (update "
+                             "the plugin: /plugin marketplace update akasha, then /plugin update akasha@akasha)"))
     for name in team.required_checks:
         ready = _check_ready(root, name, team.checks.get(name), "join" in team.guides)
         found += [ready] if ready else []

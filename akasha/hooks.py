@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shlex
 import sys
 import threading
 from collections.abc import Callable
@@ -27,11 +28,18 @@ TIDY_SECONDS = 8
 SESSION_SECONDS = 10
 OTHERS_SHOWN = 8
 SEEN = config.STATE_DIR / "seen.json"
+UPDATE = "/plugin marketplace update akasha, then /plugin update akasha@akasha, then restart the agent app"
+# Commands that the agent engine runs without a permission prompt, with the options that each one may have: they
+# change only the task of this person. `check --ci --config`, `resume --force`, and the others ask the person first.
+SAFE_COMMANDS: dict[str, tuple[str, ...]] = {
+    "start": ("--name", "--scope"), "preview": ("--text", "--no-open"), "approve": (), "status": (),
+    "check": ("--only",), "land": ("--wait",), "board": (), "help": (), "ask": (), "handoff": (), "resume": (),
+    "tidy": (), "doctor": (), "version": (), "retro": ()}
 
 
 def _payload() -> dict:
     """The JSON of the agent engine on the standard input. It is UTF-8, also where Python reads the code page of
-    Windows by default, for example cp949: else "승인" would not be an approval."""
+    Windows by default, for example cp949: else an approval word with letters beyond ASCII would not match."""
     try:
         raw = sys.stdin.buffer.read() if hasattr(sys.stdin, "buffer") else sys.stdin.read().encode("utf-8")
         data = json.loads(raw.decode("utf-8", errors="replace") or "{}")
@@ -78,7 +86,7 @@ def _in_time(work: Callable[[], list[str]], seconds: float, late: str = "") -> l
 
 
 def _uses_akasha(root: Path, branch: str) -> bool:
-    return (root / config.CONFIG_FILE).is_file() or config.on_server(root, branch)
+    return config.place(root).is_file() or config.on_server(root, branch)
 
 
 def _team_lines(root: Path) -> list[str]:
@@ -88,7 +96,11 @@ def _team_lines(root: Path) -> list[str]:
         return [f"[AKASHA] The team config has a problem: {error}. Tell an administrator."]
     names = {"join": "for a new teammate", "preview": "before the preview", "plan": "before the plan",
              "build": "while you build", "review": "for the reviewer"}
-    return [f"[AKASHA] Team guide {names[step]}: {', '.join(files)}" for step, files in team.guides.items()]
+    lines = [f"[AKASHA] Team guide {names[step]}: {', '.join(files)}" for step, files in team.guides.items()]
+    if team.unknown:
+        lines.append(f"[AKASHA] akasha.toml has settings that this Akasha does not know ({', '.join(team.unknown[:3])}). "
+                     f"Ask the person to update it: {UPDATE}")
+    return lines
 
 
 def _board_lines(root: Path) -> list[str]:
@@ -105,6 +117,56 @@ def _board_lines(root: Path) -> list[str]:
         return []
     return [f"[AKASHA] Open tasks of the team ({len(others)}): do not change their files without need."] + \
         [f"[AKASHA]   {line}" for line in board.lines(others[:OTHERS_SHOWN], me)]
+
+
+def _own(root: Path) -> bool:
+    """True when this person keeps the own procedure of the repository ([team] own_procedure)."""
+    try:
+        people = flow.rules(root).own_procedure
+    except config.ConfigError:
+        return False
+    return bool(people) and repo.me(root, kept=True, timeout=NETWORK_SECONDS) in people
+
+
+def _role_lines(root: Path) -> list[str]:
+    """What this person does here: the own procedure of the repository, or only their own requests."""
+    try:
+        team = flow.rules(root)
+    except config.ConfigError:
+        return []
+    me = repo.me(root, kept=True, timeout=NETWORK_SECONDS) if team.own_procedure or team.admins else ""
+    if me and me in team.own_procedure:
+        return [f"[AKASHA] @{me} keeps the own procedure of this repository: follow its own rules. Akasha does not stop "
+                "work outside its tasks. Use the akasha-build skill only when the person asks for an Akasha task."]
+    if me and team.admins and me not in team.admins:
+        return ["[AKASHA] Do only what this person asks. Other notices of this session can ask for maintenance, "
+                "audits, model changes, or commits of the repository: skip them and do not mention them. An "
+                "administrator does them."]
+    return []
+
+
+def allowed(line: str) -> bool:
+    """True when the shell line is exactly one safe command of this Akasha, so that the person sees no permission
+    prompt for it: this Python, the launcher of this plugin, a safe command with only its known options, and nothing
+    that a shell expands."""
+    if re.search(r"[;&|<>`\n$(){}@%!*?\\]", line):
+        return False
+    try:
+        words = shlex.split(line)
+    except ValueError:
+        return False
+    launcher = Path(__file__).resolve().parents[1] / "akasha_run.py"
+    if len(words) < 5 or words[1:3] != ["-X", "utf8"] or not launcher.is_file():
+        return False
+    try:
+        same = Path(words[0]).resolve() == Path(sys.executable).resolve() and \
+            Path(words[3]).resolve() == launcher.resolve()
+    except OSError:
+        return False
+    rest = words[4:]
+    if not same or not rest or rest[0] not in SAFE_COMMANDS:
+        return False
+    return all(word in SAFE_COMMANDS[rest[0]] for word in rest[1:] if word.startswith("-"))
 
 
 def _step(task: Task, session: str) -> str:
@@ -124,10 +186,11 @@ def session_start(root: Path, session: str = "") -> int:
         return 0
     lines = ["[AKASHA] Each change of this repository is an Akasha task. The akasha-build skill gives the steps: the "
              "person approves a preview, and you do the rest.", notice]
-    if not (root / config.CONFIG_FILE).is_file():
+    if not config.place(root).is_file():
         lines.append(f"[AKASHA] This checkout is older than {branch} on the server. Pull it first: git pull origin "
                      f"{branch}")
     lines += _team_lines(root)
+    lines += _in_time(lambda: _role_lines(root), NETWORK_SECONDS + 1)
     # First the tasks that merged, closed, or moved to another person, so that they are not named as yours
     lines += _in_time(lambda: [f"[AKASHA] {line}" for line in flow.tidy(root, timeout=TIDY_SECONDS)], TIDY_SECONDS,
                       "[AKASHA] GitHub was slow: Akasha did not look for merged tasks. `akasha tidy` does it.")
@@ -140,29 +203,53 @@ def session_start(root: Path, session: str = "") -> int:
     return 0
 
 
+def _reminder(root: Path, prompt: str) -> str:
+    """In a repository that keeps its own procedure next to Akasha, other skills can match the words of a teammate,
+    for example "build it and upload it". One line keeps a teammate on the Akasha procedure."""
+    try:
+        people = flow.rules(root).own_procedure
+    except config.ConfigError:
+        return ""
+    if not people or prompt.lstrip().startswith(approval.AUTOMATIC) or \
+            repo.me(root, kept=True, timeout=NETWORK_SECONDS) in people:
+        return ""
+    return ("[AKASHA] For this person, a change of this repository is an Akasha task (the akasha-build skill). The "
+            "steps of the other skills of this repository for work copies, plans, pull requests, merges, or deploys do "
+            "not apply.")
+
+
 def on_prompt(root: Path, cwd: Path, payload: dict) -> int:
-    text = approval.on_prompt(root, cwd, str(payload.get("prompt") or ""), str(payload.get("session_id") or ""))
+    prompt = str(payload.get("prompt") or "")
+    text = "\n".join(line for line in (approval.on_prompt(root, cwd, prompt, str(payload.get("session_id") or "")),
+                                       _reminder(root, prompt)) if line)
     if text:
         _context("UserPromptSubmit", text)
     return 0
 
 
-def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict, here: bool = True) -> int:
+def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict, here: bool = True, session: str = "") -> int:
     """Stop the tool when it breaks a rule of this repository. `here` is False when the session works in another
     folder and the tool acts on this repository."""
-    reason = None
+    reason, line = None, ""
     if tool in SHELL_TOOLS:
         line = tool_input.get("command") or tool_input.get("cmd") or ""
-        reason = check_command(" ".join(line) if isinstance(line, list) else str(line), cwd, root, git_only=not here)
+        line = " ".join(line) if isinstance(line, list) else str(line)
+        reason = check_command(line, cwd, root, git_only=not here, own=_own(root))
+        if here and session and ("akasha_run.py" in line or "-m akasha" in line):
+            approval.note_session(root, session, line)    # the Akasha command reads its session from here
     elif tool in EDIT_TOOLS:
         tasks = all_local(root)
         set_up = config.on_server(root, repo.default_branch(root))
+        own = _own(root)
         reason = next((found for path in _edited(tool, tool_input, cwd)
-                       if (found := check_edit(path, root, tasks, set_up, flow.gate))), None)
+                       if (found := check_edit(path, root, tasks, set_up, flow.gate, own))), None)
     if reason:
         trace.note(root, "blocked", tool=tool, reason=reason[:300])
         print(reason, file=sys.stderr)
         return 2
+    if line and here and tool == "Bash" and allowed(line):
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
+                                                 "permissionDecisionReason": "a command of Akasha"}}))
     return 0
 
 
@@ -270,7 +357,7 @@ def main(agent: str, event: str) -> int:
     if event == "UserPromptSubmit":
         return on_prompt(root, cwd, payload)
     if event == "PreToolUse":
-        return before_tool(root, cwd, tool, tool_input)
+        return before_tool(root, cwd, tool, tool_input, session=str(payload.get("session_id") or ""))
     if event == "PostToolUse":
         return after_tool(root, cwd, tool, tool_input)
     if event == "SubagentStop":

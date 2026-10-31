@@ -23,5 +23,5 @@ in their language and in simple words. The session start notice gives the Akasha
 3. Run `akasha doctor` again until each line is OK.
 4. Tell the person how to work, in three lines:
    - Say what you want to make or change, in your own words.
-   - The AI shows a preview in the browser. Type "승인" (approve) when it is right, or tell what to change.
+   - The AI shows a preview in the browser. Say in your own words that it is right, or tell what to change.
    - The AI does the rest. It tells you when the change is merged, and when the deployment of the team put it live.

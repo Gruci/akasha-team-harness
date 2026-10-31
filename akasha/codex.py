@@ -17,34 +17,38 @@ EVENTS = (("SessionStart", None), ("UserPromptSubmit", None), ("PreToolUse", "Ba
 PRECEDENCE = ("In this repository this procedure replaces every other procedure for a change, in this file, in the "
               "skills, and in other documents: scope interviews, a plan approval by a person, research and plan files "
               "outside the records folder of the task, making worktrees, task board files, pushes, pull requests, and "
-              "merges. The person approves only the preview, another AI reviews the plan, and `akasha land` merges.")
+              "merges. The person approves only the preview, another AI reviews the plan, and `akasha land` merges. "
+              "Keep the records of a task where Akasha puts them: never move, rename, or archive them. Only the "
+              "people of [team] own_procedure in akasha.toml keep the own procedure of the repository.")
 RULES = f"""{START}
 ## Akasha
 
-This repository uses Akasha. Each change is an Akasha task. The command is `python -m akasha` (install it with
-`pip install "{SOURCE}"`). The session start notice tells the tasks of this person and the open tasks of the team.
+This repository uses Akasha. Each change is an Akasha task. The command is `py -3 -X utf8 -m akasha` on Windows and
+`python3 -m akasha` elsewhere; this text writes it as `akasha`. Install it into that Python with
+`pip install "{SOURCE}"`. The session start notice tells the tasks of this person and the open tasks of the team.
 {PRECEDENCE}
 
-1. Ask the person what they want until it is clear. Run `python -m akasha start "<title>" --scope <file patterns>`.
-2. Write the preview in the records folder of the task (`python -m akasha status <task>` and the start tell where):
-   an HTML mockup of the screen, or a diagram of the flow and the data for a change without a screen. Read the files of
-   [guides] preview in akasha.toml first. Run `python -m akasha preview <task>` and ask the person to answer '승인' or
-   to tell what to change. Only the message of the person approves it: the hook records it. Never write that the
-   person approved.
+1. Ask the person what they want until it is clear. Run `akasha start "<title>" --scope <file patterns>`.
+2. Write the preview in the records folder of the task (`akasha status <task>` and the start tell where): an HTML
+   mockup of the screen, or a diagram of the flow and the data for a change without a screen. Read the files of
+   [guides] preview in akasha.toml first. Run `akasha preview <task>` and ask the person whether to build it like
+   this, or what to change. When their own message approves it, in any language and without asking for a change, run
+   `akasha approve <task>`: it records the words of the person that the hook kept. Never approve for the person.
 3. After the approval, do the rest without asking: write research.md and plan.md in the records folder. Ask a
    separate reviewer to review the plan against the preview and the code, and repair the plan until it passes. The
-   reviewer ends with `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES` (`python -m akasha status <task>` shows
-   the digest). Without a reviewer agent, review the plan yourself and run
-   `python -m akasha review <task> --verdict pass`: the pull request tells that it was a self-review.
+   reviewer ends with `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES` (`akasha status <task>` shows the
+   digest). Without a reviewer agent, review the plan yourself and run `akasha review <task> --verdict pass`: the
+   pull request tells that it was a self-review.
 4. Build in the work copy of the task. Write a test for each behavior that the preview shows. Run
-   `python -m akasha check <task>` and repair each failure.
-5. Write summary.md (why, what changed, how to undo it), run the check again, then
-   `python -m akasha land <task> --wait 540` with a shell timeout of 10 minutes. Run it again while it says WAITING or
-   DEPLOYING. Repair a FAILED or a CONFLICT, and do what a BLOCKED or a REVIEW says.
+   `akasha check <task>` and repair each failure.
+5. Write summary.md (why, what changed, how to undo it), run the check again, then `akasha land <task> --wait 540`
+   with a shell timeout of 10 minutes. Run it again while it says WAITING or DEPLOYING. Repair a FAILED or a CONFLICT,
+   and do what a BLOCKED or a REVIEW says.
 6. Tell the person the result in simple words: MERGED, or DEPLOYED when the team deploys each merge.
 
 Never merge a pull request yourself, never force a push, and never change .akasha/state. If you cannot repair a
-problem after three tries, run `python -m akasha help <task> "<what blocks you>"` and tell the person.
+problem after three tries, run `akasha help <task> "<what blocks you>"` and tell the person. A question that is not a
+change (for example about data or the server) goes to `akasha ask "<question>"`.
 {END}
 """
 
@@ -87,7 +91,9 @@ def hooks_text(text: str | None) -> str | None:
 
 
 def with_block(text: str | None, rules: str) -> str:
-    """The text of an instruction file with the Akasha block `rules` in place of the old one, or at its end."""
+    """The text of an instruction file with the Akasha block `rules` in place of the old one, or at its end. Not at its
+    top: a repository can require that each document opens with its own heading or summary. The session start and the
+    prompt hook tell the precedence again."""
     text = text or ""
     if START in text and END in text:
         text = text[:text.index(START)] + rules.strip() + text[text.index(END) + len(END):]

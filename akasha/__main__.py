@@ -33,6 +33,8 @@ def _parser() -> argparse.ArgumentParser:
     preview.add_argument("task")
     preview.add_argument("--text", default="", help="make a plain preview from this text when there is none")
     preview.add_argument("--no-open", action="store_true", help="do not open the browser")
+    approve = commands.add_parser("approve", help="record the approval from the last message of the person")
+    approve.add_argument("task")
     review = commands.add_parser("review", help="record a self-review where no reviewer agent exists (not in Claude "
                                                 "Code)")
     review.add_argument("task")
@@ -57,6 +59,8 @@ def _parser() -> argparse.ArgumentParser:
     cancel = commands.add_parser("cancel", help="stop a task for good")
     cancel.add_argument("task")
     cancel.add_argument("--force", action="store_true", help="drop the changes that are not saved")
+    asking = commands.add_parser("ask", help="ask the administrators a question that is not a change, in an issue")
+    asking.add_argument("text")
     helping = commands.add_parser("help", help="ask the administrators on the pull request of the task")
     helping.add_argument("task")
     helping.add_argument("text")
@@ -72,6 +76,8 @@ def _parser() -> argparse.ArgumentParser:
     watch.add_argument("--repository", required=True)
     for name in ("branch", "before", "after", "forced", "pusher"):
         watch.add_argument(f"--{name}", default="")
+    for each in (parser, *commands.choices.values()):
+        each.allow_abbrev = False          # `--forc` must not mean `--force`: only a whole option counts
     return parser
 
 
@@ -136,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
         _task, message = flow.preview(root, args.task, args.text, not args.no_open)
         print(message)
         return 0
+    if args.command == "approve":
+        _task, message = flow.approve(root, args.task)
+        print(message)
+        return 0
     if args.command == "review":
         task = flow.self_review(root, args.task, args.verdict)
         print(f"Recorded a self-review: {task.review['verdict']}. next: {flow.next_step(task)}")
@@ -155,6 +165,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         return _status(root, args.task)
     if args.command == "board":
+        if not board.available(root):
+            print("origin of this repository is not on GitHub, so there is no board of the team")
+            return 0
         entries = board.read(root)
         if entries is None:
             raise RuntimeError("gh cannot read the board. Log in to GitHub: gh auth login")
@@ -170,6 +183,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "cancel":
         print(flow.cancel(root, args.task, args.force))
+        return 0
+    if args.command == "ask":
+        print(flow.ask(root, args.text))
         return 0
     if args.command == "help":
         print(flow.ask_help(root, args.task, args.text))

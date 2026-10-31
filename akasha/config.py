@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 
 CONFIG_FILE = "akasha.toml"
+PLACES = (CONFIG_FILE, f".github/{CONFIG_FILE}")    # where the team config can be, in this order
 STATE_DIR = Path(".akasha") / "state"        # the state of this computer. Git ignores it
 RECORDS_DIR = ".akasha/tasks"                # the preview, the plan, and the summary of each task. They go into git
 WORK_DIR = ".akasha/work"                    # a git worktree for each task: <folder>/<task>
@@ -33,7 +34,7 @@ WINDOWS_NAMES = "(?:con|prn|aux|nul|com[0-9]|lpt[0-9])"
 RUN_ALL_WHEN = ("**/requirements*.txt", "**/pyproject.toml", "**/setup.cfg", "**/setup.py", "**/Pipfile",
                 "**/Pipfile.lock", "**/poetry.lock", "**/uv.lock", "**/package.json", "**/package-lock.json",
                 "**/npm-shrinkwrap.json", "**/yarn.lock", "**/pnpm-lock.yaml", "**/go.mod", "**/go.sum",
-                "**/build.gradle", "**/build.gradle.kts", "**/pom.xml", CONFIG_FILE, ".github/workflows/**")
+                "**/build.gradle", "**/build.gradle.kts", "**/pom.xml", *PLACES, ".github/workflows/**")
 RUNS_ON = ("ubuntu-latest",)
 PYTHON = "3.12"
 LOWEST_PYTHON = (3, 11)
@@ -41,7 +42,7 @@ PYTHON_VERSION = re.compile(r"(\d+)\.(\d+)(?:\.\d+)?")
 AKASHA_CHECK = "akasha"                      # the name of the check of .github/workflows/akasha.yml
 
 _KEYS: dict[str, set[str] | None] = {
-    "team": {"admins", "reviewers"},
+    "team": {"admins", "reviewers", "own_procedure"},
     "risk": {"paths"},
     "checks": None,                          # the team names its checks
     "ci": {"required", "runs-on", "python"},
@@ -70,6 +71,7 @@ class Check:
 class Team:
     admins: tuple[str, ...] = ()             # GitHub names, in lower case, without @
     reviewers: tuple[str, ...] = ()          # GitHub names that review a change of a risky path
+    own_procedure: tuple[str, ...] = ()      # GitHub names that keep the own procedure of the repository
     risk_paths: tuple[str, ...] = ()         # a change of these files waits for the review of a reviewer
     required_checks: tuple[str, ...] = ("secrets",)
     checks: dict[str, Check] = field(default_factory=dict)
@@ -84,6 +86,7 @@ class Team:
     guides: dict[str, tuple[str, ...]] = field(default_factory=dict)    # step -> team files to read in that step
     server_rules: str = "github"
     deploy_workflow: str = ""                # the workflow that puts a merged change live, for example "Deploy"
+    unknown: tuple[str, ...] = ()            # settings of a newer Akasha that this one does not know
 
     @property
     def status_checks(self) -> tuple[str, ...]:
@@ -150,7 +153,7 @@ def _prefix(value: object) -> str:
     return prefix
 
 
-def _check(name: str, value: object) -> Check:
+def _check(name: str, value: object, unknown: list[str]) -> Check:
     where = f"[checks.{name}]"
     if name in RESERVED_CHECKS:
         raise ConfigError(f"{CONFIG_FILE}: {name} cannot be the name of a check")
@@ -160,9 +163,7 @@ def _check(name: str, value: object) -> Check:
         raise ConfigError(f'{CONFIG_FILE}: write the check {name} as a table {where} with command = "<command>"')
     if not CHECK_NAME.fullmatch(name):
         raise ConfigError(f"{CONFIG_FILE}: the check name {name} can have only letters, digits, - and _")
-    unknown = sorted(set(value) - set(CHECK_KEYS))
-    if unknown:
-        raise ConfigError(f"{CONFIG_FILE}: unknown key {unknown[0]} in {where}. Use {', '.join(CHECK_KEYS)}")
+    unknown += [f"{where} {key}" for key in sorted(set(value) - set(CHECK_KEYS))]
     only_when = _patterns(value.get("only_when", []), f"{where} only_when")
     if "only_when" in value and not only_when:
         raise ConfigError(f"{CONFIG_FILE}: {where} only_when needs one or more file patterns")
@@ -197,33 +198,44 @@ def _guides(section: dict) -> dict[str, tuple[str, ...]]:
             for step, files in section.items()}
 
 
-def _examine_keys(data: dict) -> None:
+def _known(data: dict) -> tuple[dict, list[str]]:
+    """The data without the sections and keys that this Akasha does not know, and their names. A newer Akasha can
+    write them into akasha.toml: an older one tells the person to update it, and does not stop the work."""
+    known, unknown = {}, []
     for section, value in data.items():
         if section not in _KEYS:
-            raise ConfigError(f"{CONFIG_FILE}: unknown section [{section}]. Use {', '.join(_KEYS)}")
+            unknown.append(f"[{section}]")
+            continue
         if not isinstance(value, dict):
             raise ConfigError(f"{CONFIG_FILE}: [{section}] must be a table")
         allowed = _KEYS[section]
-        unknown = sorted(set(value) - allowed) if allowed is not None else []
-        if unknown:
-            raise ConfigError(f"{CONFIG_FILE}: unknown key {unknown[0]} in [{section}]")
+        known[section] = value if allowed is None else {key: item for key, item in value.items() if key in allowed}
+        unknown += [f"[{section}] {key}" for key in sorted(set(value) - (allowed or set(value)))]
+    return known, unknown
 
 
 def team_from(data: dict) -> Team:
     """Examine the data of akasha.toml and make the team rules."""
-    _examine_keys(data)
+    data, unknown = _known(data)
     team, risk, checks = data.get("team", {}), data.get("risk", {}), data.get("checks", {})
     ci, work, server = data.get("ci", {}), data.get("work", {}), data.get("server", {})
     rules = server.get("rules", "github")
     if rules not in SERVER_RULES:
         raise ConfigError(f"{CONFIG_FILE}: [server] rules must be {' or '.join(SERVER_RULES)}")
-    named = {name: _check(name, value) for name, value in checks.items()
-             if name not in CHECK_SETTINGS or isinstance(value, dict)}
+    named = {}
+    for name, value in checks.items():
+        if name in CHECK_SETTINGS and not isinstance(value, dict):
+            continue
+        if not isinstance(value, dict) and name not in ONE_LINE_CHECKS:
+            unknown.append(f"[checks] {name}")            # a setting of a newer Akasha, or a check without a table
+            continue
+        named[name] = _check(name, value, unknown)
     work_dir = _folder(work.get("folder", WORK_DIR), "folder", WORK_DIR, ())
     deploy = data.get("deploy", {})
     return Team(
         admins=_names(team.get("admins", []), "[team] admins"),
         reviewers=_names(team.get("reviewers", []), "[team] reviewers"),
+        own_procedure=_names(team.get("own_procedure", []), "[team] own_procedure"),
         risk_paths=_patterns(risk.get("paths", []), "[risk] paths"),
         required_checks=_strings(checks.get("required", ["secrets"]), "[checks] required") or ("secrets",),
         checks=named,
@@ -239,6 +251,7 @@ def team_from(data: dict) -> Team:
         guides=_guides(data.get("guides", {})),
         server_rules=rules,
         deploy_workflow=_text(deploy["workflow"], "[deploy] workflow") if "workflow" in deploy else "",
+        unknown=tuple(unknown),
     )
 
 
@@ -253,32 +266,42 @@ def parse(text: str, where: str = CONFIG_FILE) -> Team:
         raise ConfigError(f"{error} ({where})" if where != CONFIG_FILE else str(error)) from None
 
 
+def place(root: Path) -> Path:
+    """The team config in this checkout: at the top, or in .github/ for a repository that allows only listed files at
+    the top. A new one goes to the top."""
+    return next((root / name for name in PLACES if (root / name).is_file()), root / CONFIG_FILE)
+
+
 def load(root: Path, path: Path | None = None) -> Team:
     """The team config in this checkout, or in `path`. Without the file, the default rules."""
-    path = path or root / CONFIG_FILE
+    path = path or place(root)
     return parse(path.read_text(encoding="utf-8")) if path.is_file() else Team()
 
 
-def _shown(root: Path, ref: str) -> str | None:
-    shown = subprocess.run(["git", "show", f"{ref}:{CONFIG_FILE}"], cwd=root, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace")
-    return shown.stdout if shown.returncode == 0 else None
+def shown(root: Path, ref: str) -> str | None:
+    """The text of the team config in the commit `ref`, or None when the commit has none."""
+    for name in PLACES:
+        shown = subprocess.run(["git", "show", f"{ref}:{name}"], cwd=root, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
+        if shown.returncode == 0:
+            return shown.stdout
+    return None
 
 
 def shared(root: Path, branch: str) -> Team:
     """The team config on the default branch as git fetched it last, else the one in this checkout."""
-    text = _shown(root, f"origin/{branch}") if branch else None
+    text = shown(root, f"origin/{branch}") if branch else None
     return parse(text, f"origin/{branch}") if text is not None else load(root)
 
 
 def on_server(root: Path, branch: str) -> bool:
     """True when the default branch, as git fetched it last, has akasha.toml. It uses no network."""
-    return bool(branch) and _shown(root, f"origin/{branch}") is not None
+    return bool(branch) and shown(root, f"origin/{branch}") is not None
 
 
 def set_server_rules(root: Path, rules: str) -> None:
     """Write [server] rules into akasha.toml and keep each other line."""
-    path = root / CONFIG_FILE
+    path = place(root)
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     line = f'rules = "{rules}"'
     if re.search(r"(?m)^\[server\]\s*$", text):

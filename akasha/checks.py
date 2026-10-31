@@ -58,7 +58,12 @@ def shell(command: str, folder: Path) -> tuple[str, str]:
         stop(process)
         process.communicate()
         return "FAIL", f"the command did not stop in {TIMEOUT_SECONDS} seconds: {command}"
-    return ("PASS" if process.returncode == 0 else "FAIL"), _decode(output).strip()[-3000:]
+    return ("PASS" if process.returncode == 0 else "FAIL"), _short(_decode(output).strip())
+
+
+def _short(text: str, size: int = 3000) -> str:
+    """The start and the end of a long output: a check can name its failure early and sum up at the end."""
+    return text if len(text) <= size else f"{text[:size // 3]}\n…\n{text[-(size * 2 // 3):]}"
 
 
 def secrets_status(tree: Path, changed: list[str]) -> tuple[str, str]:

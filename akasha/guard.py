@@ -93,14 +93,14 @@ def _push_reason(rest: list[str], folder: Path | None, root: Path) -> str | None
     return None
 
 
-def _git_reason(args: list[str], cwd: Path, root: Path, moved: bool) -> str | None:
+def _git_reason(args: list[str], cwd: Path, root: Path, moved: bool, own: bool) -> str | None:
     number = 0
     while number < len(args) and args[number].startswith("-"):
         number += 2 if args[number] in _GIT_VALUES else 1
     command, rest = (args[number].lower(), args[number + 1:]) if number < len(args) else ("", [])
     if command == "push":
         return _push_reason(rest, _git_folder(args, cwd) or (None if moved else cwd), root)
-    if command == "worktree" and rest[:1] == ["add"]:
+    if command == "worktree" and rest[:1] == ["add"] and not own:
         return "it makes a work copy outside Akasha. Run `akasha start \"<title>\"`: it makes the work copy of a task"
     if command == "branch" and any(flag in rest for flag in ("-D", "-d", "--delete")) \
             and any(branch in rest for branch in DEFAULT_BRANCHES):
@@ -108,9 +108,9 @@ def _git_reason(args: list[str], cwd: Path, root: Path, moved: bool) -> str | No
     return None
 
 
-def _gh_reason(args: list[str], line: str) -> str | None:
+def _gh_reason(args: list[str], line: str, own: bool) -> str | None:
     words = [arg.lower() for arg in args[1:] if not arg.startswith("-")][:2]
-    if words == ["pr", "merge"] or (words[:1] == ["api"] and _MERGE_API.search(line)):
+    if (words == ["pr", "merge"] or (words[:1] == ["api"] and _MERGE_API.search(line))) and not own:
         return f"it merges a pull request by hand. {LAND}"
     if words == ["pr", "review"] and any(arg == "--approve" or _short_flag(arg, "a") for arg in args):
         return "it approves a pull request. A reviewer approves on GitHub, in person"
@@ -151,9 +151,10 @@ def folders(line: str, cwd: Path) -> list[Path]:
     return found
 
 
-def check_command(line: str, cwd: Path, root: Path, git_only: bool = False) -> str | None:
+def check_command(line: str, cwd: Path, root: Path, git_only: bool = False, own: bool = False) -> str | None:
     """The reason to stop the shell command, or None. `git_only` examines only git and gh: the session works in
-    another folder, and its deletes are not in this repository."""
+    another folder, and its deletes are not in this repository. `own`: the person keeps the own procedure of the
+    repository ([team] own_procedure), with its own work copies and merges."""
     commands = _commands(line)
     if _STATE.search(line) and any(args[0].lower() not in _READERS for args in commands):
         return "Akasha stopped this command because it can change the state of Akasha in .akasha/state."
@@ -164,9 +165,9 @@ def check_command(line: str, cwd: Path, root: Path, git_only: bool = False) -> s
             moved = True
             continue
         if program in ("git", "git.exe"):
-            reason = _git_reason(args[1:], cwd, root, moved)
+            reason = _git_reason(args[1:], cwd, root, moved, own)
         elif program in ("gh", "gh.exe"):
-            reason = _gh_reason(args, line)
+            reason = _gh_reason(args, line, own)
         else:
             reason = None if git_only else _delete_reason(args, cwd, root, moved)
         if reason:
@@ -198,11 +199,13 @@ def _other_worktree(path: Path, root: Path, tasks: list[Task]) -> Path | None:
     return None if any(task.workcopy and Path(task.workcopy).resolve() == top.resolve() for task in tasks) else top
 
 
-def check_edit(path: Path, root: Path, tasks: list[Task], set_up: bool, gate: Callable[[Task], str]) -> str | None:
+def check_edit(path: Path, root: Path, tasks: list[Task], set_up: bool, gate: Callable[[Task], str],
+               own: bool = False) -> str | None:
     """The reason to stop an edit of the file, or None.
 
     `gate(task)` tells what the task still needs before its code can change, or "" when it is ready. `set_up` is True
-    when the default branch has akasha.toml: before that, the administrator sets up Akasha in the main checkout."""
+    when the default branch has akasha.toml: before that, the administrator sets up Akasha in the main checkout. A
+    person who keeps the own procedure of the repository (`own`) edits outside the work copies of tasks freely."""
     if _ENV_FILE.match(path.name):
         return (f"Akasha stopped this edit: {path.name} holds secret values. Ask a person to change it, and read the "
                 "values from the environment in the code.")
@@ -215,6 +218,8 @@ def check_edit(path: Path, root: Path, tasks: list[Task], set_up: bool, gate: Ca
             return None                                       # the preview, the research, the plan, the summary
         missing = gate(task)
         return (f"Akasha stopped this edit: task {task.id} is not ready to build. {missing}") if missing else None
+    if own:
+        return None
     if set_up and (other := _other_worktree(path, root, tasks)) is not None:
         return (f"Akasha stopped this edit: {other} is a git worktree that is not an Akasha task. Run `akasha start "
                 "\"<title>\"` and change the files in the work copy of the task.")

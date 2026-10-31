@@ -35,10 +35,16 @@ jobs:
         run: echo "BASE=${BASE_REF#refs/heads/}" >> "$GITHUB_ENV"
       - name: Take the team config from the base branch
         run: |
-          if git cat-file -e "origin/$BASE:akasha.toml" 2>/dev/null; then
-            git show "origin/$BASE:akasha.toml" > "$RUNNER_TEMP/akasha.toml"
-          else
-            cp akasha.toml "$RUNNER_TEMP/akasha.toml"
+          for place in akasha.toml .github/akasha.toml; do
+            if git cat-file -e "origin/$BASE:$place" 2>/dev/null; then
+              git show "origin/$BASE:$place" > "$RUNNER_TEMP/akasha.toml"
+              break
+            fi
+          done
+          if [ ! -f "$RUNNER_TEMP/akasha.toml" ]; then
+            for place in akasha.toml .github/akasha.toml; do
+              if [ -f "$place" ]; then cp "$place" "$RUNNER_TEMP/akasha.toml"; break; fi
+            done
           fi
       - name: Required checks
         run: python -X utf8 -m akasha check --ci --config "$RUNNER_TEMP/akasha.toml" --base "origin/$BASE"
