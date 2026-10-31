@@ -130,5 +130,35 @@ class FlowTests(unittest.TestCase):
         self.assertFalse(Path(task.workcopy).exists())
 
 
+class CheckArtifactTests(unittest.TestCase):
+    """A real run: the __pycache__ of the tests went into the commits of two tasks, and the second task conflicted
+    with the first on files that nobody wrote (2026-10-31)."""
+
+    TEAM = ('[checks]\nrequired = ["tests"]\n[checks.tests]\ncommand = "python -c \\"import pathlib; '
+            "pathlib.Path('cache').mkdir(exist_ok=True); pathlib.Path('cache/x.bin').write_text('1')\\\"\"\n")
+
+    def setUp(self):
+        self.repo = Repository(self.TEAM)
+        self.root = self.repo.root
+        patcher = patch("webbrowser.open")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        self.repo.close()
+
+    def test_files_that_a_check_makes_stay_out_of_the_commit(self):
+        task, _notes = flow.start(self.root, "Artifacts", name="artifacts")
+        tree = Path(task.workcopy)
+        (tree / "app.py").write_text("print('x')\n", encoding="utf-8")
+        result, notes = flow.check(self.root, task.id)
+        self.assertEqual(result.status, {"tests": "PASS"})
+        self.assertIn("cache/x.bin", notes[0])
+        committed = run(tree, "git", "show", "--name-only", "--format=", "HEAD")
+        self.assertIn("app.py", committed)
+        self.assertNotIn("cache/x.bin", committed)
+        self.assertEqual(run(tree, "git", "status", "--porcelain").strip(), "")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -35,7 +35,13 @@ class Entry:
 
     @property
     def holder(self) -> str:
-        return (self.assignees or [self.author])[0]
+        """The person who holds the task: the assignee. "" when the task is free after a handoff."""
+        return self.assignees[0] if self.assignees else ""
+
+    @property
+    def person(self) -> str:
+        """The person to name in a notice: the holder, else the author."""
+        return self.holder or self.author
 
 
 def available(root: Path) -> bool:
@@ -116,7 +122,7 @@ def overlaps(task: Task, changed: list[str], entries: list[Entry]) -> list[str]:
         hits = touches(task.scope, other.scope)
         hits += [path for path in changed if path in entry.files or any(matches(path, item) for item in other.scope)]
         if hits:
-            lines.append(f"#{entry.number} {other.title} (@{entry.holder}): {', '.join(dict.fromkeys(hits))[:300]}")
+            lines.append(f"#{entry.number} {other.title} (@{entry.person}): {', '.join(dict.fromkeys(hits))[:300]}")
     return lines
 
 
@@ -125,7 +131,7 @@ def lines(entries: list[Entry], me: str) -> list[str]:
     found = []
     for entry in sorted(entries, key=lambda item: item.number):
         step = "draft" if entry.draft else "landing"
-        mine = " (you)" if entry.holder == me else ""
+        who = f"@{entry.holder}" + (" (you)" if entry.holder == me else "") if entry.holder else "free"
         scope = f" — {', '.join(entry.task.scope[:4])}" if entry.task.scope else ""
-        found.append(f"#{entry.number} {entry.task.id}: {entry.task.title} · @{entry.holder}{mine} · {step}{scope}")
+        found.append(f"#{entry.number} {entry.task.id}: {entry.task.title} · {who} · {step}{scope}")
     return found

@@ -22,6 +22,25 @@ def view(checks: str = "SUCCESS", status: str = "COMPLETED", state: str = "OPEN"
                                    "conclusion": checks if status == "COMPLETED" else ""}]}
 
 
+class CheckStateTests(unittest.TestCase):
+    """A real run on GitHub: the run that the draft skipped stays on the head next to the real run (2026-10-31)."""
+
+    @staticmethod
+    def rollup(*runs):
+        return {"statusCheckRollup": [{"name": "akasha", "status": status, "conclusion": conclusion}
+                                      for status, conclusion in runs]}
+
+    def test_a_skipped_run_of_the_draft_is_not_a_pass(self):
+        cases = {(("COMPLETED", "SKIPPED"),): "WAIT",
+                 (("COMPLETED", "SKIPPED"), ("IN_PROGRESS", "")): "WAIT",
+                 (("COMPLETED", "SKIPPED"), ("COMPLETED", "SUCCESS")): "PASS",
+                 (("COMPLETED", "SUCCESS"), ("COMPLETED", "FAILURE")): "FAIL",
+                 (): "WAIT"}
+        for runs, expected in cases.items():
+            with self.subTest(runs=runs):
+                self.assertEqual(land._states(self.rollup(*runs), ("akasha",)), {"akasha": expected})
+
+
 class LandTests(unittest.TestCase):
     rules = "akasha"
 

@@ -20,7 +20,7 @@ from akasha.task import SUMMARY, Task, forget, load, record, records, save
 
 POLL_SECONDS = 15
 FAILED = {"FAILURE", "TIMED_OUT", "CANCELLED", "ERROR", "ACTION_REQUIRED", "STARTUP_FAILURE"}
-PASSED = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+PASSED = {"SUCCESS", "NEUTRAL"}
 # The results of a landing. MERGED and CLOSED end it. WAITING asks for one more `akasha land <task> --wait`.
 MERGED, CLOSED, WAITING, FAILED_CHECK, CONFLICT, REVIEW, BLOCKED = (
     "MERGED", "CLOSED", "WAITING", "FAILED", "CONFLICT", "REVIEW", "BLOCKED")
@@ -93,17 +93,32 @@ def _hand_over(root: Path, team: Team, task: Task) -> tuple[str, list[str]]:
     return "", lines
 
 
+def _result(item: dict) -> str:
+    """One run of a check: RAN (it passed), SKIPPED, FAIL, or WAIT."""
+    result = (item.get("conclusion") or item.get("state") or "").upper()
+    if (item.get("status") or "COMPLETED").upper() != "COMPLETED" or result in ("", "PENDING", "EXPECTED"):
+        return "WAIT"
+    if result == "SKIPPED":
+        return "SKIPPED"
+    return "RAN" if result in PASSED else "FAIL" if result in FAILED else "WAIT"
+
+
 def _states(view: dict, names: tuple[str, ...]) -> dict[str, str]:
-    """The state of each required check of the team on the head of the pull request: PASS, FAIL, or WAIT."""
-    found: dict[str, str] = {}
+    """The state of each required check of the team on the head of the pull request: PASS, FAIL, or WAIT.
+
+    One check can have several runs on the head: a run that a draft skipped, and the run after the pull request got
+    ready. A failure or a run that did not end decides first. A check passes only when one run really ran and passed:
+    a skipped run alone is the draft, and the real run has not started yet."""
+    runs: dict[str, set[str]] = {}
     for item in view.get("statusCheckRollup") or []:
         name = item.get("name") or item.get("context") or ""
-        if name not in names:
-            continue
-        result = (item.get("conclusion") or item.get("state") or "").upper()
-        done = (item.get("status") or "COMPLETED").upper() == "COMPLETED" and result not in ("", "PENDING", "EXPECTED")
-        found[name] = "WAIT" if not done else "PASS" if result in PASSED else "FAIL" if result in FAILED else "WAIT"
-    return {name: found.get(name, "WAIT") for name in names}
+        if name in names:
+            runs.setdefault(name, set()).add(_result(item))
+    states = {}
+    for name in names:
+        found = runs.get(name, set())
+        states[name] = "FAIL" if "FAIL" in found else "WAIT" if "WAIT" in found or "RAN" not in found else "PASS"
+    return states
 
 
 def _behind(root: Path, view: dict) -> int:

@@ -15,10 +15,9 @@ def exclude(root: Path, folder: str) -> None:
     that file. Else `git status` in the main checkout shows each work copy."""
     if git(root, "check-ignore", "-q", f"{folder}/x").returncode == 0:
         return
-    found = git(root, "rev-parse", "--git-path", "info/exclude").stdout.strip()
-    if not found:
+    path = _exclude_file(root)
+    if path is None:
         return
-    path = Path(found) if Path(found).is_absolute() else root / found
     line = "/" + re.sub(r"([*?\[])", r"\\\1", folder) + "/"
     known = path.read_text(encoding="utf-8") if path.is_file() else ""
     if line in known.splitlines():
@@ -26,6 +25,34 @@ def exclude(root: Path, folder: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as file:
         file.write(("\n" if known and not known.endswith("\n") else "") + line + "\n")
+
+
+def _exclude_file(root: Path) -> Path | None:
+    found = git(root, "rev-parse", "--git-path", "info/exclude").stdout.strip()
+    if not found:
+        return None
+    return Path(found) if Path(found).is_absolute() else root / found
+
+
+def exclude_files(root: Path, paths: list[str]) -> None:
+    """Make git ignore these files on this computer, in each work copy. The files that a check makes, for example
+    __pycache__, must not go into a commit."""
+    path = _exclude_file(root)
+    if path is None:
+        return
+    known = path.read_text(encoding="utf-8") if path.is_file() else ""
+    lines = ["/" + re.sub(r"([*?\[\]!#])", r"\\\1", item) for item in paths]
+    missing = [line for line in lines if line not in known.splitlines()]
+    if missing:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as file:
+            file.write(("\n" if known and not known.endswith("\n") else "") + "\n".join(missing) + "\n")
+
+
+def untracked(tree: Path) -> list[str]:
+    """The files in the work copy that git does not track and does not ignore."""
+    listed = git(tree, "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard", "-z")
+    return [name for name in listed.stdout.split("\0") if name]
 
 
 def create(root: Path, path: Path, branch: str, start: str, new: bool = True) -> str:

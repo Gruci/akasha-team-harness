@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "akasha-team-harness"
-version = "2.0.0"
+version = "1.0.0"
 description = "A light team harness for coding agents: a person approves a preview, and the AI plans, has the plan reviewed by another AI, builds, checks, and lands the change."
 readme = "README.md"
 requires-python = ">=3.11"

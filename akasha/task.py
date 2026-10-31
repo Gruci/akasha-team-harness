@@ -66,9 +66,11 @@ def record(task: Task, name: str) -> Path:
 
 
 def digest(path: Path) -> str:
-    """The first 12 characters of the SHA-256 of a file, or "" when the file is not there."""
+    """The first 12 characters of the SHA-256 of a file, or "" when the file is not there. The line ends do not
+    count: git can check out the same file with CRLF on one computer and LF on another (core.autocrlf), and an
+    approval on one computer must stay valid on the next."""
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+        return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]
     except OSError:
         return ""
 

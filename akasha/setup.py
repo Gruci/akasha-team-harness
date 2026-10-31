@@ -44,7 +44,8 @@ def first_config(root: Path) -> str:
 def _ignore(root: Path, team: config.Team) -> bool:
     path = root / ".gitignore"
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    wanted = [f"{STATE_DIR.as_posix()}/", f"{team.work_dir}/"]
+    made = [line for pack in langs.detect(root) for line in pack.ignore]     # the files that tests and builds make
+    wanted = list(dict.fromkeys([f"{STATE_DIR.as_posix()}/", f"{team.work_dir}/", *made]))
     missing = [line for line in wanted if line not in text.splitlines()]
     if missing:
         path.write_text(text.rstrip("\n") + ("\n" if text.strip() else "") + "\n".join(missing) + "\n",

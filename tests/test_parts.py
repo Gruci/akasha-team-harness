@@ -35,6 +35,20 @@ class TaskBlockTests(unittest.TestCase):
                          ("end --> of comment", ["x/**"], {"by": "me"}, ""))
 
 
+class DigestTests(unittest.TestCase):
+    """A real run: the preview had CRLF on one computer and LF on the next (core.autocrlf), and the approval did not
+    match after a handoff (2026-10-31)."""
+
+    def test_the_line_ends_do_not_change_the_digest(self):
+        from akasha.task import digest
+        with tempfile.TemporaryDirectory() as folder:
+            one, two = Path(folder) / "a.html", Path(folder) / "b.html"
+            one.write_bytes(bytes([60, 112, 62, 13, 10]) * 2)        # <p> with CRLF
+            two.write_bytes(bytes([60, 112, 62, 10]) * 2)            # <p> with LF
+            self.assertEqual(digest(one), digest(two))
+            self.assertEqual(digest(Path(folder) / "missing"), "")
+
+
 class BoardTests(unittest.TestCase):
     items = [{"number": 3, "title": "Tax", "url": "u3", "headRefName": "akasha/tax", "isDraft": True,
               "author": {"login": "Kim"}, "assignees": [], "files": [{"path": "billing/tax.py"}],
@@ -45,10 +59,10 @@ class BoardTests(unittest.TestCase):
     def test_reads_the_open_pull_requests(self):
         entries = board._entries(self.items)
         self.assertEqual([entry.task.id for entry in entries], ["tax", "akasha/mine"])
-        self.assertEqual(entries[0].holder, "kim")
+        self.assertEqual((entries[0].holder, entries[0].person), ("", "kim"))
         lines = board.lines(entries, "me")
         self.assertIn("(you)", lines[1])
-        self.assertIn("draft", lines[0])
+        self.assertIn("free · draft", lines[0])
 
     def test_overlaps_by_plan_and_by_changed_files(self):
         entries = board._entries(self.items)

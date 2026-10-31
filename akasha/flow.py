@@ -148,8 +148,14 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
     """Run the checks of the team in the work copy. When each check passes, save the work as a commit and push it."""
     team, task = rules(root), load(root, task_id)
     tree = Path(task.workcopy)
+    before = set(work.untracked(tree))
     result = checks.run(team, tree, checks.changed_files(tree, task.base), only)
     notes = []
+    made = sorted(set(work.untracked(tree)) - before)
+    if made:                                          # for example __pycache__ of the tests: never into a commit
+        work.exclude_files(root, made)
+        notes.append(f"note — the checks made files that git does not ignore: {', '.join(made[:5])}. Akasha keeps "
+                     "them out of the commits on this computer. Add their pattern to .gitignore in this task")
     failed = [name for name, status in result.status.items() if status == "FAIL"]
     if failed:
         task.failures += 1

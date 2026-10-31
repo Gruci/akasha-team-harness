@@ -10,8 +10,9 @@ builds exactly that, correctly, before any code changes. You change no file.
 
 ## Steps
 
-1. Run `python -m akasha status <task>` in the repository (or the Akasha command of the session start notice). It
-   shows the work copy and the plan digest.
+1. The request gives the task, its work copy, the plan digest, and the Akasha command. If one is missing, run the
+   Akasha command with `status <task>` (or `python -m akasha status <task>`): it shows the work copy and the plan
+   digest.
 2. In the work copy, read `.akasha/tasks/<task>/preview.html` (what the person approved), `research.md`, and `plan.md`.
 3. Read the files that `[guides] plan` and `[guides] review` of `akasha.toml` name. They are the rules of the team.
 4. Read the code that the plan names. Make sure that each file, function, table, and caller that the plan names is
@@ -31,5 +32,5 @@ AKASHA-REVIEW: <task> <plan digest> PASS
 ```
 
 Write `CHANGES` in place of `PASS` when one problem must change the plan before the build. A small note that does
-not change the build is not a reason for CHANGES. Use the plan digest that `akasha status` shows: a mark for another
-version of the plan does not count.
+not change the build is not a reason for CHANGES. Use the plan digest of the request or of `akasha status`: a mark for
+another version of the plan does not count.

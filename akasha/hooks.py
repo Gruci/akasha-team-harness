@@ -95,7 +95,7 @@ def _network_lines(root: Path) -> list[str]:
     if not me:
         return lines + ["[AKASHA] GitHub does not know this person. Ask the person to log in: gh auth login"]
     entries = board.cached(root, timeout=NETWORK_SECONDS) or []
-    others = [entry for entry in entries if entry.holder != me]
+    others = [entry for entry in entries if entry.person != me]
     if others:
         lines.append(f"[AKASHA] Open tasks of the team ({len(others)}): do not change their files without need.")
         lines += [f"[AKASHA]   {line}" for line in board.lines(others[:OTHERS_SHOWN], me)]
@@ -178,7 +178,7 @@ def _overlaps(root: Path, paths: list[Path]) -> list[str]:
                 continue
             seen[mark] = relative
             notices.append(f"[AKASHA] {relative} of task {task.id} is also in task #{entry.number} "
-                           f"({entry.task.title}, @{entry.holder}). Change only what your task needs in it. The task "
+                           f"({entry.task.title}, @{entry.person}). Change only what your task needs in it. The task "
                            "that lands later takes the earlier change; a conflict stops its landing with the files.")
     if notices:
         (root / SEEN).parent.mkdir(parents=True, exist_ok=True)
