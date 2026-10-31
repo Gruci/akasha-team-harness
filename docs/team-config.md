@@ -42,6 +42,9 @@ enabled = ["feature", "fix", "small"]
 runs-on = "ubuntu-latest"
 python = "3.12"
 
+[context]
+map = ".akasha/context/map"
+
 [work]
 folder = ".akasha/work"
 branch_prefix = "akasha/"

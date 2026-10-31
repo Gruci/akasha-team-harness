@@ -42,7 +42,7 @@ flowchart LR
 7. The validators run the required checks. A check with `only_when` runs only when the change touches its files. When each check passes or is not needed, Akasha saves the work and pushes the task branch.
 8. The requester examines the result in a preview and accepts it, with GitHub also in a decision comment.
 9. The agent engine updates the map file of the feature and writes the briefing.
-10. Akasha opens the pull request and turns on auto-merge. GitHub merges it as one squash commit when the server check passes.
+10. Akasha opens the pull request, and turns on auto-merge where GitHub merges. GitHub merges it as one squash commit when the server check passes and the code owners of its files approved. Where the GitHub plan has no auto-merge, the merge helper of Akasha merges it.
 
 ## Where Akasha keeps its data
 
@@ -90,9 +90,9 @@ The agent engine runs these commands. People do not have to remember them. The s
 | `preview` | Reserves the preview port of the task on this computer, runs the seed command of `[preview]` in the work copy, and shows the filled preview values. The agent engine runs it before it starts the preview for the inspection |
 | `accept` | Records the inspection of the requester, of one condition by its text or number, or of all conditions. With GitHub, the same rule as `approve` |
 | `brief` | Examines and records the briefing |
-| `handover` | Merges the task branch on the server and the latest default branch, checks the change again, opens the pull request with the label `akasha-merge`, and turns on auto-merge. It also shows the news |
+| `handover` | Merges the task branch on the server and the latest default branch, checks the change again, opens the pull request with the label `akasha-merge`, and turns on auto-merge where GitHub merges. It also shows the news |
 | `resume` | Opens a stopped task again after a developer examined it. With GitHub, the same rule as `approve` |
-| `cancel` | Stops a task for good. With GitHub, the same rule as `approve`, and the holder also closes the pull request |
+| `cancel` | Stops a task for good. With GitHub, the same rule as `approve`. It also closes the open pull request of the task, also when another person holds the task |
 | `handoff` | Saves the work so far on the server and frees the task, so that another person can take it over. Run it in the main checkout |
 | `takeover` | Holds a task that another person handed off, and makes its work copy on this computer |
 | `board` | Shows the tasks of all requesters, with the holder and the feature key of each task |
@@ -103,7 +103,8 @@ The agent engine runs these commands. People do not have to remember them. The s
 ## Requirements
 
 - Python 3.11 or later, and git.
-- The GitHub command line `gh`, logged in with an account that can write to the repository.
+- The GitHub command line `gh`, logged in with the GitHub account of the person on the computer. To hold a task, the account must be able to write to the repository.
+- A GitHub account for each requester, that can write comments in the repository. In a private repository, the account needs access to the repository.
 - The git remote `origin` is the team repository on GitHub, not a fork. Akasha gives `gh` the repository of `origin`, so that the branches, the issues, and the pull requests go to the same repository.
 
 > **NOTE:** Without GitHub, the shared task board holds only the tasks on one computer, and the handover cannot open a pull request. When `origin` is on GitHub and `gh` cannot read or write the board, the commands stop.

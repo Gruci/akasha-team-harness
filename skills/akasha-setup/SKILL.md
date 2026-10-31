@@ -26,6 +26,10 @@ Akasha examines the repository first. Do only the part that the repository needs
    - Which command installs the dependencies of the project in a new copy?
    - Which command runs the tests?
 4. Write each answer into `akasha.toml`. For a person gate, write the names in `[roles] developers` and remove the `#` in `[approval]`. Write the preview commands in `[preview]`: `command`, `seed`, and `cleanup`. Use `{port}` for the port of the preview and `{task}` in the name of the database, for example `app_{task}`, so that each task gets its own port and database. The seed command must give the same result when it runs again. The cleanup command must not fail when the database is not there.
+   - If parts of the project are in their own folders with their own commands, for example a frontend, write one check for each part: a table `[checks.<name>]` with `command`, `cwd`, and `only_when`, and its name in `required`. `only_when` is relative to the top of the repository, for example `frontend/**`.
+   - If the repository already has branches that start with `akasha/` or `akasha-wip/`, or a folder `.akasha/work`, write other values in `[work]`.
+   - If the user wants the server check on a runner of the team or with another Python, write them in `[ci]`.
+   - [Team config](../../docs/team-config.md) tells each key.
 5. Read the last lines of the output of `akasha setup`:
    - If the owner must change the plan or make the repository public, tell the user. The server rules cannot go on before that.
    - If the user is not an administrator, tell the user to ask an administrator. The work can start now. The handover waits for the server rules.

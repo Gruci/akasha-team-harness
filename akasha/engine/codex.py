@@ -45,8 +45,9 @@ Ask people only what to make, how it looks, and how they use it. Make the techni
 6. Make the change only in the work copy of the task. Write an automated test for each completion condition.
    If Akasha tells you after an edit that a file is also in the scope of another task, continue the work. Change only
    what the task needs in that file, and name the other task in the impact analysis (`--tasks`).
-7. Run `python -m akasha check <task>`. Repair each failure. If Akasha says that it could not update the task branch
-   on the server, tell the user.
+7. Run `python -m akasha check <task>`. Repair each failure. NOT_NEEDED is a pass: the change touches no file of the
+   check. SKIP is not a pass: tell the user that akasha.toml needs the command of the check. If Akasha says that it
+   could not update the task branch on the server, tell the user.
 8. Run `python -m akasha preview <task>`. It reserves the port of the task and prepares its preview database. Start
    the preview with the preview command that it shows, in the work copy, and show the result to the requester.
    The requester writes `/accept <number> r<N>` or `/reject <number> r<N> <reason>` on the issue. If the requester
@@ -74,9 +75,15 @@ Without GitHub, add `--by <name>` to approve, resume, and cancel.
 If the requester withdraws the request, the requester writes `/cancel <reason>`. If the requester is the GitHub
 account of this computer, run `python -m akasha cancel <task> --reason "<reason>"`.
 After three failed repairs, Akasha stops the task. Stop the work and tell a developer. The developer writes `/resume`.
+If the developer is the GitHub account of this computer and tells you to continue, run
+`python -m akasha resume <task>`.
 With GitHub, one person on one computer holds each task. If Akasha says that another person holds it, do not change it.
 To let another person continue a task, run `python -m akasha handoff <task>` in the main checkout.
 To continue a task that another person handed off, run `python -m akasha takeover <task>`.
+If Akasha says that it cannot read the shared task board or your GitHub name, ask the user to log in with
+`gh auth login`. Do not record the task again.
+If Akasha says that a server file is different from the file that the Akasha on this computer makes, tell the user
+to install Akasha again with pip.
 Do not use a command that you cannot undo, for example a force push.
 {END}
 """
