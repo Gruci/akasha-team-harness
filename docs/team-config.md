@@ -142,7 +142,7 @@ Akasha runs each command in the shell of the operating system: `cmd.exe` on Wind
 
 The patterns of `only_when` and `run_all_when` use the pattern rules of `[risk]`. Akasha reads `\` as `/` and removes a leading `./`. A pattern that ends with `/`, for example `frontend/`, matches each file in that folder. A folder name alone, for example `frontend`, matches only a file with that name: write `frontend/**`. A pattern that matches no changed file makes the check NOT_NEEDED, and NOT_NEEDED is a pass. Thus make sure that each pattern is relative to the top of the repository, not to `cwd`. The default `run_all_when` closes a gap: a pull request that changes only a dependency file, for example `requirements.txt`, can break each check, but it matches no `only_when` of the code.
 
-> **CAUTION:** An Akasha plugin that is not updated refuses `[checks.<name>]` and `run_all_when`. Make sure that each person updated the Akasha plugin before you add them.
+> **CAUTION:** An Akasha that is not updated refuses `[checks.<name>]` and `run_all_when`. Make sure that each person [updated Akasha](infrastructure.md#update-akasha) before you add them.
 
 ## `[preview]`
 
@@ -165,7 +165,7 @@ seed = "npm run db:seed -- app_{task}"
 cleanup = "npm run db:drop -- app_{task}"
 ```
 
-> **CAUTION:** An Akasha plugin that is not updated refuses `seed` and `cleanup`. Make sure that each person updated the Akasha plugin before you add them.
+> **CAUTION:** An Akasha that is not updated refuses `seed` and `cleanup`. Make sure that each person [updated Akasha](infrastructure.md#update-akasha) before you add them.
 
 ## `[contracts]`
 
@@ -204,7 +204,7 @@ The merge and watch helpers always run on `ubuntu-latest`. They can write to the
 
 > **CAUTION:** In a public repository, a pull request from a fork runs its code in the server check. On a runner of the team, that code runs on a machine of the team. When `runs-on` is not a standard machine of GitHub, for example `ubuntu-latest`, `windows-2022`, `macos-15`, or `ubuntu-24.04-arm`, and the repository is public, Akasha shows a warning. A standard label has the name of the system, then a version, `latest`, or `slim`. It can end with `-arm`, `-intel`, `-large`, or `-xlarge`, and with no other text. Thus a label of the team, for example `ubuntu-22.04-gpu`, gets the warning. A larger runner of GitHub with a name that the team gave it also gets the warning: Akasha cannot tell it from a runner of the team. `infra --apply` and `setup --approve-infra` show the warning when they write `akasha.yml`. `infra` and `setup` show it after the change is on the default branch. The warning does not stop a handover.
 
-> **CAUTION:** An Akasha plugin that is not updated refuses `[ci]`. Make sure that each person updated the Akasha plugin before you add it.
+> **CAUTION:** An Akasha that is not updated refuses `[ci]`. Make sure that each person [updated Akasha](infrastructure.md#update-akasha) before you add it.
 
 ## `[context]`
 
@@ -214,7 +214,7 @@ The merge and watch helpers always run on `ubuntu-latest`. They can write to the
 
 The map folder is outside each task scope, and its files do not raise the risk level of a task, so that each task can update its map file. Use it only for the product map.
 
-> **CAUTION:** An Akasha plugin that is not updated refuses an unknown section, also `[context]`. Make sure that each person updated the Akasha plugin before you add it.
+> **CAUTION:** An Akasha that is not updated refuses an unknown section, also `[context]`. Make sure that each person [updated Akasha](infrastructure.md#update-akasha) before you add it.
 
 ## `[work]`
 
@@ -232,7 +232,7 @@ Akasha adds the task name to each prefix, so the result must be a correct branch
 
 A change applies to the new tasks. Each task keeps its branch, also after a takeover on another computer: its pull request and its branch on the server stay the same. A work copy of the task that a computer still has stays in its folder. A takeover finds the work of the last handoff with `wip_prefix` and with the default `akasha-wip/`. A handoff never pushes to the branch of the task: when the wip branch has its name, the handoff uses the default `akasha-wip/`. The guard stops a push to the branches of the prefixes of `[work]`, of the default prefixes, and of each task on this computer, also from the work copy of each task.
 
-> **CAUTION:** An Akasha plugin that is not updated refuses `[work]`. Make sure that each person updated the Akasha plugin before you add it.
+> **CAUTION:** An Akasha that is not updated refuses `[work]`. Make sure that each person [updated Akasha](infrastructure.md#update-akasha) before you add it.
 
 ## Product map and team context
 

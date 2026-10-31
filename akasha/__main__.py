@@ -13,6 +13,11 @@ from akasha.infra import github
 from akasha.repo import main_root
 from akasha.validators import runner
 
+# Who merges a pull request after the handover, for each value of [server] rules. The handover turns on auto-merge
+# only where GitHub merges.
+MERGES = {"github": "auto-merge is on",
+          "akasha": "the merge helper of Akasha merges it when the check passes and the code owners approve"}
+
 
 def _root() -> Path:
     root = main_root(Path.cwd())
@@ -97,7 +102,7 @@ def _parser() -> argparse.ArgumentParser:
     cancel.add_argument("--by", default="", help=by)
     cancel.add_argument("--reason", default="")
     for name, text in (("advance", "move the task to its next stage"), ("show", "show one task"),
-                       ("handover", "open the pull request and turn on auto-merge"),
+                       ("handover", "open the pull request: GitHub or the merge helper of Akasha merges it"),
                        ("handoff", "save the work on the server and free the task for another person"),
                        ("takeover", "hold a task that another person handed off, and continue it here"),
                        ("preview", "reserve the preview port of a task, run the seed command, and show the preview "
@@ -291,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "handover":
         address, blocked = flow.handover(root, args.task)
-        print(f"Pull request: {address} — auto-merge is on")
+        print(f"Pull request: {address} — {MERGES[flow.rules(root).server_rules]}")     # the rules of the handover
         for reason in blocked:
             print(f"  blocked — {reason}")
         _overlaps(args.task)

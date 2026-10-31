@@ -246,13 +246,19 @@ class FlowTests(unittest.TestCase):
             flow.advance(root, task.id)
         flow.brief(root, task.id, BRIEFING)
         opened = subprocess.CompletedProcess([], 0, PULL_REQUEST + "\n", "")
+        output = io.StringIO()
         with patch("akasha.flow.github.repository", return_value=("team/app", "main")), \
                 patch("akasha.flow.github.pull_request", return_value={}), \
                 patch("akasha.flow.github.merged", return_value=False), \
-                patch("akasha.flow.github.auto_merge") as auto_merge, patch("akasha.flow.gh", return_value=opened) as gh:
-            flow.handover(root, task.id)
+                patch("akasha.flow.github.auto_merge") as auto_merge, \
+                patch("akasha.flow.gh", return_value=opened) as gh, \
+                patch("akasha.__main__.main_root", return_value=root), redirect_stdout(output):
+            command_line.run(["handover", task.id])
         self.assertEqual(created(gh)[created(gh).index("--label") + 1], "akasha-merge")
         auto_merge.assert_not_called()                       # the merge workflow of Akasha merges it
+        self.assertIn(f"Pull request: {PULL_REQUEST} — the merge helper of Akasha merges it", output.getvalue())
+        self.assertNotIn("auto-merge is on", output.getvalue())
+        self.assertEqual(set(command_line.MERGES), set(config.SERVER_RULES))     # a sentence for each kind of rules
 
     def ready_to_hand_over(self) -> tuple[Path, Path, tasks.Task]:
         """A task at the handover stage. The check pushed its work to the task branch on the server."""
@@ -948,6 +954,12 @@ class ExistingHarnessTests(unittest.TestCase):
         board_gh = patch("akasha.coordinator.board.gh", FakeBoard(broken=True))   # origin is not on GitHub
         board_gh.start()
         self.addCleanup(board_gh.stop)
+
+    def test_the_codex_rules_agree_with_the_skills_and_with_the_version(self):
+        rules = " ".join(codex.RULES.split())                    # the rules wrap their lines
+        self.assertIn('pip install --force-reinstall "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"', rules)
+        self.assertIn("If Akasha also says that it saved or recorded the task, continue with that task", rules)
+        self.assertIn("do not record the task again. Else do the step again.", rules)    # nothing was recorded
 
     def test_the_hooks_of_codex_keep_the_hooks_of_the_team(self):
         root = make_repo(PASS)

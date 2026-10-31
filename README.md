@@ -188,7 +188,7 @@ Setup tries GitHub first and records which one applies in `akasha.toml`. After a
 
 An administrator makes the GitHub app of Akasha once. The setup skill tells the steps. With the app, Akasha's helpers bring a pull request that is behind up to date when the default branch moves, in both cases. Thus tasks that hand over at the same time all merge, one after another. A merge of the helpers also starts your other workflows, for example a deployment.
 
-When the server check fails on a pull request, or the pull request conflicts with the default branch, the helpers write a comment on the pull request and on the issue of the task. The AI of the holder shows it as news.
+When the server check fails on a pull request, the helpers write a comment on the pull request and on the issue of the task. With the app, they also write one when the pull request conflicts with the default branch. The AI of the holder shows these comments as news.
 
 The server check runs on the runner and with the Python of `[ci]` in `akasha.toml`. The default is `ubuntu-latest` with Python 3.12.
 
@@ -212,6 +212,7 @@ The server check runs on the runner and with the Python of `[ci]` in `akasha.tom
 | A preview environment | Your project provides it. The administrator gives the commands at setup.<br>Akasha reserves a port for each task and runs the seed command. The AI starts the preview |
 | A preview on another computer | The preview runs on the computer of the work copy.<br>A requester on another computer needs access to that preview. An approval works from any computer |
 | A security boundary | Hooks keep a cooperating AI on the rules.<br>They are not a sandbox |
+| The issue body of a task | People with write access to the repository can edit it, also the requester and the status of the task. Akasha cannot tell that edit from a write of Akasha.<br>Give write access only to the people that the team trusts. See [Roles](docs/roles.md) |
 | Correct business logic | That is what the inspection is for |
 | Data rollback | Reverting code does not restore data.<br>The impact record says how to reverse it |
 
@@ -258,7 +259,7 @@ The administrators own `akasha.toml`. Each command of a task reads it from the d
 | `[context]` | The folder of the product map. The default is `.akasha/context/map` |
 | `[work]` | The folder of the work copies and the prefixes of the task branches |
 
-> **CAUTION:** An Akasha plugin that is not updated refuses `[checks.<name>]`, `[ci]`, `[context]`, `[work]`, and the new keys of `[checks]` and `[preview]`. Make sure that each person updated the plugin before you add them.
+> **CAUTION:** An Akasha that is not updated refuses `[checks.<name>]`, `[ci]`, `[context]`, `[work]`, and the new keys of `[checks]` and `[preview]`. Make sure that each person updated Akasha before you add them. The first row of *When Akasha stops a step* tells how.
 
 </details>
 
@@ -269,8 +270,8 @@ The AI tells you each message in simple words. These are the most frequent:
 
 | Akasha says | What to do |
 |:--|:--|
-| A file of the server rules is different from the Akasha on this computer | Update Akasha: `/plugin update akasha@akasha` in Claude Code, or `pip install` again for Codex.<br>If the file is still different, an administrator sets up Akasha again |
-| It cannot read the shared task board, or your GitHub name | Log in to GitHub: `gh auth login`. Then do the step again |
+| A file of the server rules is different from the Akasha on this computer | Update Akasha. The version stays 1.0.0, so `/plugin update` and a plain `pip install` keep the old copy.<br>Claude Code: close it, remove the folder `.claude/plugins/cache/akasha` in your home folder, run `claude plugin install akasha@akasha` in a terminal, and open Claude Code again.<br>Codex: `pip install --force-reinstall "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"`.<br>If the file is still different, an administrator sets up Akasha again |
+| It cannot read the shared task board, or your GitHub name | Log in to GitHub: `gh auth login`. Then do the step again.<br>If Akasha says that it saved or recorded the task, continue with that task: do not ask for it again. When `gh` works again, the AI runs the command that Akasha shows |
 | It cannot fetch the default branch | Make sure that the network works and that git can log in to the server |
 | Another person holds the task | Ask that person to hand off the task. Then take it over |
 | You hold the task in another copy of the repository | Hand it off there. Then take it over here |

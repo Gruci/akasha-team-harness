@@ -56,7 +56,7 @@ flowchart LR
 | Branch protection and repository settings | GitHub | No |
 | Shared task board | GitHub issues with the label `akasha` | No |
 | Task state | The issue of the task on the shared task board. Each computer also keeps the task in `.akasha/state/tasks/<task>.json`, with its work copy folder and its preview port | No |
-| The person and the copy of the repository | `.akasha/state/me.json` (the GitHub name, for one hour) and `.akasha/state/machine.json` (the random mark of this copy) | No |
+| The person and the copy of the repository | `.akasha/state/me.json` (the GitHub name for the hooks, for one hour. Each command asks `gh`) and `.akasha/state/machine.json` (the random mark of this copy) | No |
 | Work copies | `.akasha/work/<task>/`, on the branch `akasha/<task>`. A handoff pushes the work to `akasha-wip/<task>`. `[work]` in `akasha.toml` can give another folder in the repository and other prefixes. Git ignores the folder: `.gitignore`, or `.git/info/exclude` on each computer | No |
 | Preview ports | `~/.akasha/ports.json` in the home folder of the person: the reserved ports of the previews of all copies of all repositories on this computer | No |
 | Notices | `.akasha/state/board.json` (the copy of the board for the hooks, five minutes at most), `.akasha/state/seen.json` (the overlap notices after an edit), and `.akasha/state/seen/<task>.json` (the last comment on the issue that this computer showed) | No |

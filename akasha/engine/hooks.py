@@ -169,7 +169,7 @@ def _task_lines(root: Path, team: config.Team) -> list[str]:
     gh. Without GitHub, or when gh does not answer in NETWORK_SECONDS, the tasks on this computer."""
     found = [task for task in tasks.all_tasks(root) if tasks.active(task)]
     listed = board.overview(root, timeout=NETWORK_SECONDS) if board.available(root) else None
-    name = repo.me(root, timeout=NETWORK_SECONDS) if listed is not None else ""
+    name = repo.me(root, timeout=NETWORK_SECONDS, kept=True) if listed is not None else ""
     if not name:
         return [_task_line(task, "", "", 0) for task in found]
     here = repo.host(root)

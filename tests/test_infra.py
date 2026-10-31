@@ -382,7 +382,12 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn(".github/workflows/akasha.yml on main is different from the file that the Akasha on this "
                       "computer makes", problems[0])
-        self.assertIn("update Akasha (/plugin update akasha@akasha", problems[0])
+        self.assertIn(f"update Akasha ({github.UPDATE})", problems[0])
+        # The version stays 1.0.0: /plugin update and a plain pip install keep the old copy.
+        self.assertNotIn("/plugin update", github.UPDATE)
+        self.assertIn('pip install --force-reinstall "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"',
+                      github.UPDATE)
+        self.assertIn("claude plugin install akasha@akasha", github.UPDATE)
         self.push({".github/workflows/akasha.yml": None})
         self.assertEqual(self.status(), [".github/workflows/akasha.yml is missing on main"])
 
@@ -400,7 +405,7 @@ class ReadinessTests(unittest.TestCase):
     def examined(self) -> bool:
         """Read the record. True when Akasha examined GitHub again."""
         with patch("akasha.repo.origin", return_value="team/app"), \
-                patch("akasha.repo.me", side_effect=lambda root: self.login), \
+                patch("akasha.repo.me", side_effect=lambda root, **_: self.login), \
                 patch("akasha.infra.github.status", side_effect=lambda root: github._remember(root, [], True, "github",
                                                                                            "main")) as status:
             github.readiness(self.root)

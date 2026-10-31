@@ -38,11 +38,20 @@ The check runs on each pull request and on each merge queue run. It runs on the 
 
 The rules come from the default branch. Thus a pull request that makes the checks weaker cannot pass with its own rules.
 
-Akasha makes `akasha.yml` from its template and `[ci]`. The examination of the server rules compares `akasha.yml` on the default branch with the file that the Akasha of this computer makes from `[ci]` on the default branch. It does the same for the two helpers. A fix of Akasha keeps the version 1.0.0, so two computers can make different files. When a file is different, the handover of the task waits, and Akasha tells the person to update Akasha: `/plugin update akasha@akasha` in Claude Code, or `pip install` again for Codex. When Akasha is up to date and the file is still different, an administrator sets up Akasha again.
+Akasha makes `akasha.yml` from its template and `[ci]`. The examination of the server rules compares `akasha.yml` on the default branch with the file that the Akasha of this computer makes from `[ci]` on the default branch. It does the same for the two helpers. A fix of Akasha keeps the version 1.0.0, so two computers can make different files. When a file is different, the handover of the task waits, and Akasha tells the person to [update Akasha](#update-akasha). When Akasha is up to date and the file is still different, an administrator sets up Akasha again.
 
 The merge and watch helpers always run on `ubuntu-latest`, because they can write to the repository. [Team config](team-config.md) tells the keys of `[ci]` and what a Windows runner needs.
 
 > **CAUTION:** In a public repository, a pull request from a fork runs its code in the required check. On a runner of the team, that code runs on a machine of the team. In this condition, Akasha shows a warning. `infra --apply` and `setup --approve-infra` show it for the team config in the checkout, when they write `akasha.yml`. `infra` and `setup` show it for the team config on the default branch. The warning does not stop a handover.
+
+### Update Akasha
+
+A fix of Akasha keeps the version 1.0.0, so `/plugin update` and a plain `pip install` keep the copy that they have. Claude Code keeps a plugin by its version, and it fetches the plugin again only when its folder in the plugin cache is missing. pip keeps an installed version 1.0.0. These steps get the fix:
+
+| Agent engine | Update |
+|:--|:--|
+| Claude Code | Close Claude Code. Remove the folder `.claude/plugins/cache/akasha` in your home folder. Run `claude plugin install akasha@akasha` in a terminal, then open Claude Code again |
+| Codex | `pip install --force-reinstall "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"` |
 
 ## GitHub branch protection and auto-merge
 

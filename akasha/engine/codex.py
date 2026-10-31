@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from akasha import SOURCE
+
 FILES = ("AGENTS.md", ".codex/hooks.json")         # the files that Codex reads, from the top of the repository
 START, END = "<!-- akasha:start -->", "<!-- akasha:end -->"
 HOOK_MARK = "-m akasha hook"                        # the command of each hook of Akasha has it
@@ -81,9 +83,10 @@ With GitHub, one person on one computer holds each task. If Akasha says that ano
 To let another person continue a task, run `python -m akasha handoff <task>` in the main checkout.
 To continue a task that another person handed off, run `python -m akasha takeover <task>`.
 If Akasha says that it cannot read the shared task board or your GitHub name, ask the user to log in with
-`gh auth login`. Do not record the task again.
+`gh auth login`. If Akasha also says that it saved or recorded the task, continue with that task: when gh works
+again, run the command that Akasha shows, and do not record the task again. Else do the step again.
 If Akasha says that a server file is different from the file that the Akasha on this computer makes, tell the user
-to install Akasha again with pip.
+to install Akasha again: `pip install --force-reinstall "{SOURCE}"`. A plain `pip install` keeps the old copy.
 Do not use a command that you cannot undo, for example a force push.
 {END}
 """

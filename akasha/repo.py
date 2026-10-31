@@ -70,27 +70,33 @@ def gh(root: Path, *args: str, payload: dict | None = None, timeout: float = 60)
         return subprocess.CompletedProcess(["gh", *args], 127, "", str(error))
 
 
-def me(root: Path, fresh: bool = False, timeout: float = 60) -> str:
+def me(root: Path, fresh: bool = False, timeout: float = 60, kept: bool = False) -> str:
     """The GitHub name of the person on this computer in lower case, or "" when gh does not answer in `timeout`.
 
-    Akasha asks gh once in each process. Each hook is a new process, so Akasha also keeps the name for one hour.
-    With `fresh`, Akasha asks gh and does not read the kept name: a person can edit the file."""
+    Akasha asks gh once in each process, and keeps the answer for one hour for the hooks. Each hook is a new process,
+    so a hook takes the kept name (`kept`). A command does not: after `gh auth login` with another account, the next
+    command has the new name. With `fresh`, Akasha asks gh again."""
     if root in _logins and not fresh:
         return _logins[root]
     path = root / _ME_FILE
-    try:
-        known = {} if fresh else json.loads(path.read_text(encoding="utf-8"))
-        login = str(known["login"]).lower() if time.time() - float(known["checked"]) < _ME_AGE else ""
-    except (OSError, ValueError, KeyError, TypeError):
-        login = ""
-    if not login:
-        asked = gh(root, "api", "user", "--jq", ".login", timeout=timeout)
-        login = asked.stdout.strip().lower() if asked.returncode == 0 else ""
-        if login:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps({"login": login, "checked": time.time()}), encoding="utf-8")
+    if kept and not fresh and (login := _kept_login(path)):
+        return login
+    asked = gh(root, "api", "user", "--jq", ".login", timeout=timeout)
+    login = asked.stdout.strip().lower() if asked.returncode == 0 else ""
+    if login:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"login": login, "checked": time.time()}), encoding="utf-8")
     _logins[root] = login
     return login
+
+
+def _kept_login(path: Path) -> str:
+    """The name that Akasha kept for the hooks, or "" when it is older than one hour or the file is damaged."""
+    try:
+        known = json.loads(path.read_text(encoding="utf-8"))
+        return str(known["login"]).lower() if time.time() - float(known["checked"]) < _ME_AGE else ""
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
 
 
 def write_whole(path: Path, text: str, replace: bool = True) -> bool:

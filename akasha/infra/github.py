@@ -10,7 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from akasha import config, repo
+from akasha import SOURCE, config, repo
 from akasha.core.handover import TASK_MARK
 from akasha.core.workcopy import fetch, git
 from akasha.infra import desired, server
@@ -20,7 +20,11 @@ SERVER_STATE = config.STATE_DIR / "server.json"      # the last examination of t
 RECORD_AGE = 3600                                      # one hour, in seconds
 ANSWER_SECONDS = 10                                    # git waits this long for the server to tell its default branch
 _NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no branch protection for private repositories
-UPDATE = "/plugin update akasha@akasha in Claude Code, or pip install again for Codex"
+# How to get a fix of Akasha. The version stays 1.0.0, so /plugin update and a plain pip install keep the old copy.
+# Claude Code fetches the plugin again only when its folder in the plugin cache is missing.
+UPDATE = ("in Claude Code, close Claude Code, remove the folder .claude/plugins/cache/akasha in your home folder, run "
+          "`claude plugin install akasha@akasha` in a terminal, and open Claude Code again; for Codex, run "
+          f'`pip install --force-reinstall "{SOURCE}"`')
 _HEAD = re.compile(r"^ref: refs/heads/(\S+)\tHEAD$", re.M)        # the answer of git ls-remote --symref origin HEAD
 APP_VARIABLE = "AKASHA_APP_CLIENT_ID"                  # the variable with the Client ID of the GitHub app
 NO_APP = (f"the GitHub app of Akasha is not set up: the variable {APP_VARIABLE} is missing in the repository and in "
@@ -191,9 +195,10 @@ def _installed() -> str:
 
 def _marks(root: Path, branch: str) -> dict:
     """What the last examination depends on, without the network: the default branch as this computer knows it, the
-    GitHub account of this person, and the files of Akasha. When one of them changes, the record is old."""
+    GitHub account of this person, and the files of Akasha. When one of them changes, the record is old. The hooks
+    read the record too, so the account can be the name that Akasha keeps for the hooks."""
     commit = git(root, "rev-parse", "-q", "--verify", f"refs/remotes/origin/{branch}").stdout.strip() if branch else ""
-    return {"commit": commit, "me": repo.me(root) if repo.origin(root) else "", "installed": _installed()}
+    return {"commit": commit, "me": repo.me(root, kept=True) if repo.origin(root) else "", "installed": _installed()}
 
 
 def _remember(root: Path, problems: list[str], admin: bool, rules: str = "github", branch: str = "",

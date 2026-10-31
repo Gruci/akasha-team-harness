@@ -79,18 +79,32 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(gh.call_args.args[1:], ("api", "user", "--jq", ".login"))
         repo._logins.clear()                                     # a new process, for example a hook
         with patch("akasha.repo.gh") as gh:
-            self.assertEqual(repo.me(root), "dev-a")
+            self.assertEqual(repo.me(root, kept=True), "dev-a")
         gh.assert_not_called()
         path = root / STATE_DIR / "me.json"
         path.write_text(json.dumps({"login": "dev-a", "checked": 0}), encoding="utf-8")
-        repo._logins.clear()                                     # after one hour, Akasha asks again
+        repo._logins.clear()                                     # after one hour, the hook asks again
         with patch("akasha.repo.gh", return_value=answer("dev-b\n")):
-            self.assertEqual(repo.me(root), "dev-b")
+            self.assertEqual(repo.me(root, kept=True), "dev-b")
         path.write_text(json.dumps({"login": "admin-a", "checked": time.time()}), encoding="utf-8")
         repo._logins.clear()                                     # a person edited the file
         with patch("akasha.repo.gh", return_value=answer("dev-b\n")):
-            self.assertEqual(repo.me(root), "admin-a")
+            self.assertEqual(repo.me(root, kept=True), "admin-a")
             self.assertEqual(repo.me(root, fresh=True), "dev-b")      # for a change of the GitHub settings
+
+    def test_a_command_after_a_login_with_another_account_has_the_new_name(self):
+        root = make_clone()
+        with patch("akasha.repo.gh", return_value=answer("admin-a\n")):
+            self.assertEqual(repo.me(root), "admin-a")
+        repo._logins.clear()                                     # gh auth login as dev-b, then a new command
+        with patch("akasha.repo.gh", return_value=answer("dev-b\n")) as gh:
+            self.assertEqual(repo.me(root), "dev-b")
+            self.assertEqual(repo.me(root), "dev-b")
+        self.assertEqual(gh.call_count, 1)                       # once in each process
+        repo._logins.clear()                                     # the next hook gets the name of the command
+        with patch("akasha.repo.gh") as gh:
+            self.assertEqual(repo.me(root, kept=True), "dev-b")
+        gh.assert_not_called()
 
     def test_me_is_empty_without_gh(self):
         with patch("akasha.repo.gh", return_value=answer("", 1)):
