@@ -18,7 +18,7 @@ from akasha.repo import write_whole
 
 STATUSES = ("preview", "approved", "landing", "merged", "closed")
 TASK_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,59}")
-LOCAL_ONLY = ("workcopy",)                       # a path on this computer. It never goes on GitHub
+LOCAL_ONLY = ("workcopy", "shown_in")           # this computer and this session only. They never go on GitHub
 BLOCK = re.compile(r"<!-- akasha:task (\{.*?\}) -->", re.S)
 PREVIEW, PLAN, RESEARCH, SUMMARY = "preview.html", "plan.md", "research.md", "summary.md"
 
@@ -36,11 +36,13 @@ class Task:
     number: int = 0
     preview_sha: str = ""           # the preview as `akasha preview` showed it
     shown_at: float = 0.0
+    shown_in: str = ""              # the session of the agent engine that showed it: only that session approves
     approval: dict = field(default_factory=dict)            # by, at, preview_sha, words, source
     review: dict = field(default_factory=dict)              # verdict, plan_sha, at, source, rounds
     checks: dict = field(default_factory=dict)              # status, tree, at
     failures: int = 0               # failed checks in a row
     stats: dict = field(default_factory=dict)               # for the retro: failed checks by name, review rounds
+    records_dir: str = RECORDS_DIR  # the folder of the records of the tasks, as [work] records was at the start
     workcopy: str = ""
 
 
@@ -51,18 +53,18 @@ def new_id(title: str, name: str = "") -> str:
         if not TASK_ID.fullmatch(name):
             raise ValueError(f"the task name {name!r} can have only a to z, 0 to 9, and -, up to 60 characters")
         return name
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40].strip("-") or "task"
-    return f"{slug}-{secrets.token_hex(2)}"
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40].strip("-")
+    return f"{slug}-{secrets.token_hex(2)}" if slug else f"task-{secrets.token_hex(4)}"
 
 
-def records(task_id: str) -> str:
+def records(task: Task) -> str:
     """The folder of the records of the task in the repository: preview, research, plan, and summary."""
-    return f"{RECORDS_DIR}/{task_id}"
+    return f"{task.records_dir}/{task.id}"
 
 
 def record(task: Task, name: str) -> Path:
     """A record file of the task in its work copy."""
-    return Path(task.workcopy) / records(task.id) / name
+    return Path(task.workcopy) / records(task) / name
 
 
 def digest(path: Path) -> str:

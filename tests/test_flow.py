@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from akasha import approval, flow, land, review
-from akasha.task import load
+from akasha.task import load, save
 from tests.helpers import Repository, run
 
 
@@ -37,9 +37,12 @@ class FlowTests(unittest.TestCase):
     def reviewed(self):
         task, records = self.approved()
         (records / "plan.md").write_text("# Plan\n- change app.py\n", encoding="utf-8")
-        mark = f"No problems\nAKASHA-REVIEW: {task.id} {review.plan_digest(task)} PASS"
-        review.on_subagent_stop(self.root, {"last_assistant_message": mark})
+        self.mark(f"No problems\nAKASHA-REVIEW: {task.id} {review.plan_digest(task)} PASS")
         return load(self.root, task.id), records
+
+    def mark(self, text: str) -> str:
+        return review.on_subagent_stop(self.root, {"agent_type": "akasha:akasha-reviewer",
+                                                   "last_assistant_message": text})
 
     def test_start_makes_a_work_copy_on_a_new_branch(self):
         task = self.started()
@@ -75,17 +78,119 @@ class FlowTests(unittest.TestCase):
         self.assertIn("did not pass the review", flow.gate(task))
         (records / "plan.md").write_text("# Plan v1\n", encoding="utf-8")
         old = review.plan_digest(task)
-        review.on_subagent_stop(self.root, {"last_assistant_message": f"AKASHA-REVIEW: {task.id} {old} CHANGES"})
+        self.mark(f"AKASHA-REVIEW: {task.id} {old} CHANGES")
         self.assertIn("did not pass", flow.gate(load(self.root, task.id)))
+        with self.assertRaises(ValueError):
+            flow.self_review(self.root, task.id, "pass")          # a self PASS never replaces the CHANGES
         (records / "plan.md").write_text("# Plan v2\n", encoding="utf-8")
-        told = review.on_subagent_stop(self.root, {"last_assistant_message": f"AKASHA-REVIEW: {task.id} {old} PASS"})
-        self.assertIn("another version", told)
+        self.assertIn("another version", self.mark(f"AKASHA-REVIEW: {task.id} {old} PASS"))
         task, _records = load(self.root, task.id), None
         new = review.plan_digest(task)
-        review.on_subagent_stop(self.root, {"last_assistant_message": f"AKASHA-REVIEW: {task.id} {new} PASS"})
+        self.mark(f"AKASHA-REVIEW: {task.id} {new} PASS\nAKASHA-REVIEW: {task.id} {new} PASS")
         task = load(self.root, task.id)
         self.assertEqual(flow.gate(task), "")
         self.assertEqual(task.review["rounds"], 2)
+
+    def test_claude_code_has_no_self_review(self):
+        task, records = self.approved()
+        (records / "plan.md").write_text("# Plan\n", encoding="utf-8")
+        with patch.dict("os.environ", {"CLAUDECODE": "1"}), self.assertRaises(ValueError):
+            flow.self_review(self.root, task.id, "pass")
+        self.assertEqual(flow.self_review(self.root, task.id, "pass").review["source"], "self")
+
+    def test_an_approval_belongs_to_the_session_that_showed_the_preview(self):
+        """A "좋아요" in one window approved the newest preview of another window (audit F07)."""
+        task = self.started()
+        records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
+        (records / "preview.html").write_text("<html>v1</html>", encoding="utf-8")
+        with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "session-a"}):
+            flow.preview(self.root, task.id)
+        self.assertIn("cannot tell", approval.on_prompt(self.root, self.root, "승인", "session-b"))
+        self.assertEqual(approval.on_prompt(self.root, self.root, "이 쿼리 결과 봐줘", "session-b"), "")
+        self.assertEqual(approval.on_prompt(self.root, self.root, "<task-notification>승인", "session-a"), "")
+        self.assertEqual(load(self.root, task.id).status, "preview")
+        self.assertIn("approved the preview", approval.on_prompt(self.root, self.root, "승인", "session-a"))
+
+    def test_an_old_preview_is_not_approved(self):
+        task = self.started()
+        records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
+        (records / "preview.html").write_text("<html>v1</html>", encoding="utf-8")
+        flow.preview(self.root, task.id)
+        task = load(self.root, task.id)
+        task.shown_at -= approval.MAX_AGE + 1
+        save(self.root, task)
+        self.assertEqual(approval.on_prompt(self.root, self.root, "승인"), "")
+
+    def test_two_previews_without_a_session_need_a_choice(self):
+        first = self.started()
+        second, _notes = flow.start(self.root, "두 번째", name="second")
+        for task in (first, second):
+            (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text("<p>x</p>",
+                                                                                            encoding="utf-8")
+            flow.preview(self.root, task.id)
+        self.assertIn("cannot tell", approval.on_prompt(self.root, self.root, "승인"))
+        self.assertIn("approved", approval.on_prompt(self.root, Path(second.workcopy), "승인"))
+        self.assertEqual(load(self.root, first.id).status, "preview")
+
+    def test_the_checks_see_new_files_in_the_index(self):
+        """MIS static_check lists the files with git ls-files (audit F19)."""
+        self.repo.close()
+        self.repo = Repository('[checks]\nrequired = ["tests"]\n[checks.tests]\n'
+                               'command = "git ls-files --error-unmatch new.py"\n')
+        self.root = self.repo.root
+        task = self.started()
+        tree = Path(task.workcopy)
+        records = tree / ".akasha" / "tasks" / task.id
+        (records / "preview.html").write_text("<p>x</p>", encoding="utf-8")
+        flow.preview(self.root, task.id)
+        approval.on_prompt(self.root, tree, "승인")
+        (records / "plan.md").write_text("plan", encoding="utf-8")
+        self.mark(f"AKASHA-REVIEW: {task.id} {review.plan_digest(load(self.root, task.id))} PASS")
+        (tree / "new.py").write_text("x = 1\n", encoding="utf-8")
+        result, _notes = flow.check(self.root, task.id)
+        self.assertEqual(result.status, {"tests": "PASS"})
+
+    def test_a_failed_start_can_run_again(self):
+        """A push or gh pr create that failed once left a task without a pull request (audit F31)."""
+        with patch("akasha.board.available", return_value=True), patch("akasha.board.read", return_value=[]), \
+                patch("akasha.repo.me", return_value="me"), patch("akasha.repo.fetch") as fetch, \
+                patch("akasha.flow.pr.create", side_effect=RuntimeError("gh pr create failed: proxy")):
+            fetch.return_value.returncode = 0
+            with self.assertRaises(RuntimeError):
+                flow.start(self.root, "Retry", name="retry")
+        with self.assertRaises(LookupError):
+            load(self.root, "retry")
+        self.assertEqual(run(self.root, "git", "branch", "--list", "akasha/retry").strip(), "")
+        self.assertNotIn("akasha/retry", run(self.root, "git", "ls-remote", "--heads", "origin"))
+        self.assertFalse((self.root / ".akasha" / "work" / "retry").exists())
+
+    def test_a_name_on_the_board_or_the_server_is_taken(self):
+        """Two teams picked the same name, and the second task went into the branch of the first (audit F16)."""
+        task = flow.Task(id="login", title="Login", branch="akasha/login")
+        other = flow.board.Entry(task=flow.Task(id="login", title="Login"), number=3, url="", draft=True, author="kim",
+                                 branch="akasha/login")
+        self.assertTrue(flow._name_taken(self.root, task, "main", [other], online=False))
+        self.assertFalse(flow._name_taken(self.root, task, "main", [], online=False))
+        run(self.root, "git", "push", "-q", "origin", "main:refs/heads/akasha/login")
+        self.assertTrue(flow._name_taken(self.root, task, "main", [], online=True))
+
+    def test_a_task_that_moved_to_another_person_leaves_this_computer(self):
+        """The old computer of a task went on, and its cancel closed the pull request of the new holder (audit F30)."""
+        task = self.started()
+        task.number = 7
+        save(self.root, task)
+        answer = {"state": "OPEN", "assignees": [{"login": "kim"}], "headRefOid": "x"}
+        with patch("akasha.board.available", return_value=True), patch("akasha.repo.me", return_value="me"), \
+                patch("akasha.repo.gh_json", return_value=answer), patch("akasha.repo.gh") as gh:
+            self.assertIn("@kim holds", flow.cancel(self.root, task.id))
+            gh.assert_not_called()
+        self.assertFalse(Path(task.workcopy).exists())
+
+    def test_handoff_and_cancel_wait_until_the_session_leaves_the_work_copy(self):
+        task = self.started()
+        with patch.object(Path, "cwd", return_value=Path(task.workcopy)), self.assertRaises(ValueError):
+            flow.cancel(self.root, task.id)
+        self.assertTrue(Path(task.workcopy).exists())
 
     def test_checks_save_the_work_and_land_waits_for_the_summary(self):
         task, records = self.reviewed()

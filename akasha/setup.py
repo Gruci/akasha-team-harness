@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import shlex
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
-from akasha import claude, codex, config, github, langs, repo
+from akasha import checks, claude, codex, config, github, langs, repo
 from akasha.config import CONFIG_FILE, STATE_DIR
+from akasha.task import all_local
 
-NEXT_STEPS = ("Next: commit these files on a new branch, open a pull request, and merge it. Then, on the computer of "
-              "an administrator of the GitHub repository, run `akasha setup --apply`.")
+NEXT_STEPS = ("Next: answer the questions of the setup in akasha.toml and run `akasha setup` again. An administrator "
+              "of the GitHub repository runs `akasha setup --apply` on their computer. Then commit these files on a "
+              "new branch, open a pull request, wait for its checks, and merge it.")
+HOOK_SCRIPT = Path(__file__).resolve().parents[1] / "hook.sh"      # in the plugin: the hooks find Python with it
 
 
 def first_config(root: Path) -> str:
@@ -77,12 +81,6 @@ def write_files(root: Path) -> list[str]:
     team = config.load(root)
     if _ignore(root, team):
         changed.append(".gitignore")
-    template = root / github.TEMPLATE_FILE
-    if not template.is_file():
-        template.parent.mkdir(parents=True, exist_ok=True)
-        template.write_text((github.TEMPLATES / "pull_request_template.md").read_text(encoding="utf-8"),
-                            encoding="utf-8")
-        changed.append(github.TEMPLATE_FILE)
     owners = _codeowners(root, team)
     changed += [owners] if owners else []
     for name, text in github.workflows(team).items():
@@ -116,13 +114,23 @@ def run(root: Path, apply: bool = False) -> list[str]:
                       "public, then run `akasha setup --apply` again."))
         report += [f"GitHub: {item}" for item in problems]
     changed = write_files(root)
+    if not apply and repo.origin(root) and config.load(root).server_rules != "akasha" and \
+            github.protected(root) is False:
+        # Until an administrator turns the protection on, nothing on GitHub stops a merge: Akasha and the watch do
+        config.set_server_rules(root, "akasha")
+        changed = list(dict.fromkeys(changed + [CONFIG_FILE] + write_files(root)))
+        report.append(f"GitHub does not protect {branch} now, so Akasha merges after its own examination, and the "
+                      "watch reports a change that went around it. `akasha setup --apply` turns the protection on "
+                      "where the plan of GitHub allows it.")
     report += [f"wrote {name}" for name in changed] or ["the files of Akasha are up to date"]
-    in_task = repo.main_root(root) not in (None, root.resolve(), root)
+    main = repo.main_root(root)
+    in_task = main is not None and any(task.workcopy and Path(task.workcopy).resolve() == root.resolve()
+                                       for task in all_local(main))
     if changed and in_task:
         report.append("Next: these files are in the work copy of the task. Run `akasha check <task>`, then land it.")
     elif changed:
         report.append(NEXT_STEPS if not apply else "Next: commit these files on a new branch, open a pull request, "
-                      "and merge it.")
+                      "wait for its checks, and merge it.")
     return report
 
 
@@ -135,11 +143,39 @@ def _tool(command: str) -> str:
     return words[0] if words else ""
 
 
+def _python() -> tuple[bool, str]:
+    """The Python that the hooks use. In the plugin, the hooks find it with hook.sh, which can differ from this one."""
+    if not HOOK_SCRIPT.is_file():
+        return sys.version_info >= (3, 11), f"Python {sys.version.split()[0]} (Akasha needs 3.11 or higher)"
+    try:
+        done = subprocess.run(["sh", str(HOOK_SCRIPT), "--python"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return False, "sh, which runs the hooks (install Git; on Windows it brings Git Bash)"
+    found = done.stdout.strip()
+    return done.returncode == 0, (f"Python for the hooks: {found}" if done.returncode == 0 else
+                                  "Python 3.11 or higher for the hooks (install it so that `py -3`, `python3`, or "
+                                  "`python` finds it, then restart the agent app)")
+
+
+def _check_ready(root: Path, name: str, check: config.Check | None, guide: bool) -> tuple[bool, str] | None:
+    """Whether this computer can run a check of the team: its `ready` command passes, else its program is there."""
+    where = " (follow [guides] join of akasha.toml)" if guide else ""
+    if check and check.ready:
+        status, detail = checks.shell(check.ready, root / check.cwd)
+        last = detail.strip().splitlines()[-1][:120] if status != "PASS" and detail.strip() else ""
+        return status == "PASS", f"the check {name} can run here{where}" + (f": {last}" if last else "")
+    program = _tool(checks.command(check)) if check else ""
+    if program and program not in (".", "./") and not program.startswith(("./", ".\\")):
+        return bool(shutil.which(program)), f"the program {program} of the check {name}{where}"
+    return None
+
+
 def doctor(root: Path) -> list[tuple[bool, str]]:
     """What this person needs to work with Akasha in this repository, with the fix of each problem."""
-    found: list[tuple[bool, str]] = []
-    found.append((sys.version_info >= (3, 11), f"Python {sys.version.split()[0]} (Akasha needs 3.11 or higher)"))
+    found: list[tuple[bool, str]] = [_python()]
     found.append((bool(shutil.which("git")), "git (install Git)"))
+    named = repo.git(root, "config", "user.name").stdout.strip() and repo.git(root, "config", "user.email").stdout.strip()
+    found.append((bool(named), "the name and the e-mail of git (git config --global user.name / user.email)"))
     has_gh = bool(shutil.which("gh"))
     found.append((has_gh, "GitHub CLI gh (install it: https://cli.github.com)"))
     slug = repo.origin(root)
@@ -151,19 +187,18 @@ def doctor(root: Path) -> list[tuple[bool, str]]:
         found.append((push, "write access to the repository (else an administrator adds you as a collaborator)"))
     branch = repo.default_branch(root)
     if slug:
-        repo.fetch(root, branch)
+        fetched = repo.fetch(root, branch).returncode == 0
+        found.append((fetched, f"git can read {branch} from origin (else run: gh auth setup-git, then doctor again)"))
     if not config.on_server(root, branch) and not (root / CONFIG_FILE).is_file():
-        found.append((False, f"{CONFIG_FILE} (an administrator sets up Akasha first)"))
+        found.append((False, f"{CONFIG_FILE} (an administrator sets up Akasha first: `akasha setup` writes it)"))
         return found
     try:
         team = config.shared(root, branch)
     except config.ConfigError as error:
         return found + [(False, f"{CONFIG_FILE}: {error}")]
     for name in team.required_checks:
-        check = team.checks.get(name)
-        program = _tool(check.command) if check else ""
-        if program and program not in (".", "./") and not program.startswith(("./", ".\\")):
-            found.append((bool(shutil.which(program)), f"the program {program} of the check {name}"))
+        ready = _check_ready(root, name, team.checks.get(name), "join" in team.guides)
+        found += [ready] if ready else []
     if slug and github.is_admin(root):
         problems = github.status(root)
         found += [(False, f"server: {item}") for item in problems] or [(True, "server rules of the team")]

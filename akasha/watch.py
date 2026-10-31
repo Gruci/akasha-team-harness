@@ -1,15 +1,17 @@
 """The watch: where GitHub cannot protect the default branch, a workflow examines each new commit after a push and
-reports each problem to the administrators. It changes no code: a revert would start a deployment that nobody asked
-for, and the administrators decide."""
+reports each problem to the administrators: a commit that no merged pull request brought, a merge before the required
+checks passed, a pull request that was not an Akasha task or had no approved preview or no passed plan review, and a
+change of a risky path or of the rules of the team without the review of its owners. It changes no code: a revert
+would start a deployment that nobody asked for, and the administrators decide."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from akasha import config, repo
-from akasha.checks import matches
+from akasha import config, github, repo
 from akasha.config import HELP_LABEL, Team
+from akasha.task import parse_block
 
 EMPTY = "0" * 40
 
@@ -28,10 +30,15 @@ def _team_at(root: Path, commit: str) -> Team:
 
 
 def _passed(root: Path, slug: str, sha: str, names: tuple[str, ...]) -> list[str]:
-    """The required checks that did not pass on the commit."""
+    """The required checks that did not pass on the commit. As in the landing, the latest run of a check that did not
+    skip decides: a skipped run alone is the draft, not a pass."""
     runs = (_api(root, f"repos/{slug}/commits/{sha}/check-runs?per_page=100") or {}).get("check_runs") or []
     statuses = (_api(root, f"repos/{slug}/commits/{sha}/status") or {}).get("statuses") or []
-    good = {run.get("name") for run in runs if run.get("conclusion") in ("success", "neutral", "skipped")}
+    latest = {}
+    for run in sorted(runs, key=lambda item: str(item.get("started_at") or "")):
+        if run.get("conclusion") != "skipped":
+            latest[run.get("name")] = run.get("conclusion")
+    good = {name for name, conclusion in latest.items() if conclusion in ("success", "neutral")}
     good |= {item.get("context") for item in statuses if item.get("state") == "success"}
     return [name for name in names if name not in good]
 
@@ -45,17 +52,24 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
     missing = _passed(root, slug, pull["head"]["sha"], team.status_checks)
     if missing:
         return f"pull request #{pull['number']} merged before {', '.join(missing)} passed"
-    if not (team.risk_paths and team.reviewers):
-        return ""
+    if repo.git(root, "cat-file", "-e", f"{sha}^1:{config.CONFIG_FILE}").returncode:
+        return ""                                     # the setup of Akasha itself: no task yet
+    task = parse_block(pull.get("body") or "")
+    if task is None:
+        return f"pull request #{pull['number']} was not an Akasha task"
+    if not task.approval:
+        return f"pull request #{pull['number']} merged without an approved preview"
+    if task.review.get("verdict") != "PASS":
+        return f"pull request #{pull['number']} merged without a passed plan review"
     changed = repo.names(root, "diff", "--name-only", "--no-renames", f"{sha}^1", sha)
-    risky = [path for path in changed if any(matches(path, item) for item in team.risk_paths)]
-    if not risky:
+    needs = github.reviews_needed(team, changed, {str((pull.get("user") or {}).get("login") or "").lower()})
+    if not needs:
         return ""
-    reviews = _api(root, f"repos/{slug}/pulls/{pull['number']}/reviews?per_page=100") or []
-    approved = {(item.get("user") or {}).get("login", "").lower() for item in reviews if item.get("state") == "APPROVED"}
-    if approved & set(team.reviewers):
-        return ""
-    return f"pull request #{pull['number']} changed {risky[0]} without the review of a reviewer"
+    states = github.review_states(_api(root, f"repos/{slug}/pulls/{pull['number']}/reviews?per_page=100"))
+    for path, people in needs:
+        if not any(states.get(name) == "APPROVED" for name in people):
+            return f"pull request #{pull['number']} changed {path} without the review of one of {sorted(people)}"
+    return ""
 
 
 def _issue(root: Path, slug: str, team: Team, title: str, text: str) -> None:

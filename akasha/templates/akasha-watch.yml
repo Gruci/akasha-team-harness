@@ -1,7 +1,8 @@
 # Akasha installs this file where GitHub cannot protect the default branch, for example a private repository on
-# GitHub Free. After each push to the default branch, it examines each new commit: the commit came from a pull
-# request whose checks passed, and a change of a risky path has the review of a reviewer. It reports each problem to
-# the administrators in an issue. It changes no code.
+# GitHub Free. After each push to the default branch, it examines each new commit: the commit came from the pull
+# request of an Akasha task, its checks passed, the person approved its preview and the plan passed its review, and a
+# change of a risky path or of the rules of the team has the review of its owners. It reports each problem to the
+# administrators in an issue. It changes no code.
 name: akasha-watch
 on:
   push:

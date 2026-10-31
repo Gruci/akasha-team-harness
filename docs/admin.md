@@ -10,7 +10,10 @@ The administrator sets up a repository once. The AI does each step with the akas
 | Who are the administrators? | `[team] admins` |
 | Which paths are risky, and who reviews a change there? | `[risk] paths`, `[team] reviewers` |
 | Which commands check a change? Does the team have its own CI? | `[checks]`, `[ci] required` |
+| What must each computer install to run the checks? | `[checks] setup`, `ready` of each check, `[guides] join` |
 | Which documents must the AI read before the preview, the plan, and the review? | `[guides]` |
+| Which folder do the checkers of the team skip, for the records of the tasks? | `[work] records` |
+| Which workflow deploys each merge? | `[deploy] workflow` |
 
 Start with the checks that the team already has. Add a check when the same problem comes back (see the retro below):
 a long list of rules on the first day stops each task.
@@ -26,24 +29,43 @@ a long list of rules on the first day stops each task.
    | `.gitignore` | Ignores `.akasha/state/`, the work folder, and the files that tests and builds make |
    | `.github/CODEOWNERS` | The Akasha block: the reviewers own the risky paths, the administrators own the rules |
    | `.github/workflows/akasha.yml` | The check of Akasha, when the team has no CI of its own |
-   | `.github/workflows/akasha-watch.yml` | The watch, where GitHub cannot protect the default branch |
-   | `.github/pull_request_template.md` | For a pull request that a person opens by hand |
+   | `.github/workflows/akasha-watch.yml` | The watch, where GitHub does not protect the default branch |
    | `.claude/settings.json` | Registers the marketplace of Akasha and turns the plugin on for each teammate |
+   | `CLAUDE.md` | The Akasha block for Claude Code: use the akasha-build skill, and this procedure comes first. The other text stays |
    | `AGENTS.md`, `.codex/hooks.json` | The rules and the hooks of Akasha for Codex. The other text and hooks stay |
 
-3. The AI asks the questions above and writes the answers into `akasha.toml`. Then `akasha setup` again.
+   Where GitHub does not protect the default branch now, `akasha setup` records `rules = "akasha"` and writes the
+   watch, so that nothing merges before the checks even before `--apply`.
+3. The AI reads the own agent rules of the repository (below), asks the questions above, and writes the answers into
+   `akasha.toml`. Then `akasha setup` again.
 4. `akasha setup --apply` on the computer of an administrator of the GitHub repository. It turns on the branch
-   protection, the squash merge, the auto-merge, the deletion of merged branches, and the labels. Where GitHub refuses
-   the protection because of the plan, it records `rules = "akasha"`.
-5. Commit the files on a branch, open a pull request, and merge it. Before this merge, the main checkout is free to
-   change. After it, each change is a task.
+   protection, the squash merge, the deletion of merged branches, and the labels, and the auto-merge where GitHub
+   protects the branch. Where GitHub refuses the protection because of the plan, it records `rules = "akasha"`.
+5. Commit the files on a branch, open a pull request, wait for the required checks of the team, and merge it. Before
+   this merge, the main checkout is free to change. After it, each change is a task.
+
+## A repository with its own agent rules
+
+A repository that an AI already works in often has its own procedure in `CLAUDE.md`, `AGENTS.md`, skills, and hooks:
+a scope interview, a plan that a person approves, plan files in a folder, worktrees in a folder, a task board, a merge
+by the AI. Akasha writes a block into `CLAUDE.md` and `AGENTS.md` that says its procedure comes first, but two
+procedures in one file confuse the AI. In the setup pull request, the AI and the administrator replace each such rule
+with a pointer to Akasha, and move the design and architecture documents into `[guides]`.
+
+Three more things to look at:
+
+- A checker of the repository that examines files by their folder, for example Markdown files: the records of each
+  task go into git. Put them where the checker does not look (`[work] records`), or make the checker skip them.
+- A hook of the repository that blocks edits in the main checkout: do the setup in a git worktree on a new branch.
+- The own save-time hooks of the repository see the work copy of a task when the session moves into it (Claude Code:
+  `EnterWorktree` with its path). The akasha-build skill does it.
 
 ## Server rules
 
 | Repository | What stops a bad merge |
 |:--|:--|
 | Public, or private on GitHub Pro, Team, or Enterprise | GitHub: the required checks on an up-to-date branch, the code owners, no force push |
-| Private on GitHub Free | Akasha on each computer merges only after the same examination. The watch examines each push to the default branch and opens an issue for the administrators when a change went around the rules. It changes no code |
+| Private on GitHub Free | Akasha on each computer merges only after its examination: the required checks passed on the current head, the branch is up to date, and a reviewer (risky paths) or an administrator (`akasha.toml`, `.github/`, CODEOWNERS) other than the author approved. GitHub does not enforce CODEOWNERS there, so Akasha reads the reviews itself. The watch examines each push to the default branch and opens an issue for the administrators when a change went around the rules: no Akasha task, no approved preview, no passed plan review, no passed checks, or no review of its owners. It changes no code |
 
 On GitHub Free, a person with write access can still merge by hand on GitHub. The watch tells it after the push. For
 protection before each merge, move to GitHub Pro or Team, or make the repository public, then run
@@ -51,8 +73,9 @@ protection before each merge, move to GitHub Pro or Team, or make the repository
 
 ## A team that has its own CI
 
-Write the names of its required checks in `[ci] required`. Akasha keeps its own check away, and waits for these
-checks on GitHub. Each push of a draft pull request starts the CI too. To save the runners, the CI can skip drafts:
+Write the names of its required checks in `[ci] required`, as GitHub shows the jobs (for example `checks`, not the name
+of the workflow). Akasha keeps its own check away, and waits for these checks on GitHub. Each push of a draft pull
+request starts the CI too. To save the runners, the CI can skip drafts:
 
 ```yaml
 on:
@@ -67,15 +90,19 @@ jobs:
 
 Each teammate installs the plugin once (`/plugin marketplace add Gruci/akasha-team-harness`, then
 `/plugin install akasha@akasha`), logs in with `gh auth login`, and opens the repository. The committed
-`.claude/settings.json` registers the marketplace when they trust the folder. The akasha-join skill checks the rest
-with `akasha doctor`: Python 3.11 or higher, the GitHub CLI, write access, and the programs of the checks.
+`.claude/settings.json` registers the marketplace when they trust the folder. The akasha-join skill reads
+`[guides] join` and checks the rest with `akasha doctor`: Python 3.11 or higher for the hooks (they try `py -3`,
+`python3`, and `python`), the name of git, the GitHub CLI and its login for git, write access, and each check of the
+team (its `ready` command, else its program).
 
-Codex needs Akasha as a package: `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"`.
+Codex needs Akasha as a package in the Python of its hooks: on Windows
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"`, elsewhere `python3 -m pip install …`.
 
 ## The retro: grow the rules from the problems
 
-`akasha retro` shows the checks that failed most, the checks that passed on a computer and failed on GitHub, the actions
-that Akasha stopped, and the review rounds of the plans of the last merged tasks. The akasha-retro skill turns a
+`akasha retro` shows the checks that failed most, the checks that passed on a computer and failed on GitHub, and the
+review rounds of the plans of the last merged tasks of the team, and the actions that Akasha stopped on the computer
+that runs it. The akasha-retro skill turns a
 repeated problem into a new check of the team, as an Akasha task. When a new check finds problems in the existing
 code, keep a list of the existing problems that it accepts, and let the list only get shorter.
 
@@ -83,7 +110,7 @@ code, keep a list of the existing problems that it accepts, and let the list onl
 
 After the first setup, a change of the rules is a task like each other change: `akasha start "<title>"`, change
 `akasha.toml` in the work copy of the task, run `akasha setup` there (it writes CODEOWNERS and the workflows into the
-work copy), then check and land it. A reviewer or an administrator owns these files through CODEOWNERS.
+work copy), then check and land it. The landing waits for the review of an administrator other than the author.
 
 Each release of Akasha has its own tag. To update, each teammate updates the plugin, and one task runs `akasha setup`
 with the new Akasha: it writes the new version into the workflows.

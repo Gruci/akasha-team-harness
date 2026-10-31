@@ -1,13 +1,26 @@
-"""The shared Claude Code settings of the repository: they register the marketplace of Akasha and turn the plugin on,
-so that a teammate who opens the repository gets Akasha after one install. Other keys stay."""
+"""The files that Claude Code reads: the shared settings of the repository, which register the marketplace of Akasha
+and turn the plugin on, so that a teammate who opens the repository gets Akasha after one install; and the Akasha
+block of CLAUDE.md, which Claude reads in each session. Other keys and other text stay."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+from akasha.codex import END, PRECEDENCE, START, with_block
+
 SETTINGS = ".claude/settings.json"
+INSTRUCTIONS = "CLAUDE.md"
 MARKETPLACE, REPOSITORY, PLUGIN = "akasha", "Gruci/akasha-team-harness", "akasha@akasha"
+RULES = f"""{START}
+## Akasha
+
+This repository uses Akasha. Each change is an Akasha task: use the akasha-build skill for each request to add,
+change, or repair something, also for a small fix. {PRECEDENCE}
+
+Never merge a pull request yourself, never force a push, and never change .akasha/state.
+{END}
+"""
 
 
 def settings_text(text: str | None) -> str | None:
@@ -28,13 +41,16 @@ def settings_text(text: str | None) -> str | None:
 
 
 def write(root: Path) -> list[str]:
-    path = root / SETTINGS
-    old = path.read_text(encoding="utf-8") if path.is_file() else None
-    new = settings_text(old)
-    if new is None:
-        return [f"{SETTINGS} is not a JSON object, so Akasha did not change it"]
-    if new == old:
-        return []
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(new, encoding="utf-8")
-    return [SETTINGS]
+    """Write the Akasha part of each file. Return the files that changed and the problems."""
+    changed = []
+    for name, maker in ((SETTINGS, settings_text), (INSTRUCTIONS, lambda text: with_block(text, RULES))):
+        path = root / name
+        old = path.read_text(encoding="utf-8") if path.is_file() else None
+        new = maker(old)
+        if new is None:
+            changed.append(f"{name} is not a JSON object, so Akasha did not change it")
+        elif new != old:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(new, encoding="utf-8")
+            changed.append(name)
+    return changed

@@ -16,14 +16,15 @@ from pathlib import Path
 
 from akasha import approval, board, config, flow, repo, review, secrets, trace
 from akasha.checks import matches
-from akasha.guard import check_command, check_edit
+from akasha.guard import check_command, check_edit, folders
 from akasha.task import all_local, records
 
 SHELL_TOOLS = ("Bash", "PowerShell", "shell", "exec_command", "local_shell")
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch")
 _PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update) File: (.+)$", re.M)
 NETWORK_SECONDS = 5
-SESSION_SECONDS = 12
+TIDY_SECONDS = 8
+SESSION_SECONDS = 10
 OTHERS_SHOWN = 8
 SEEN = config.STATE_DIR / "seen.json"
 
@@ -59,8 +60,8 @@ def _context(event: str, text: str) -> None:
     print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}, ensure_ascii=False))
 
 
-def _in_time(work: Callable[[], list[str]], seconds: float) -> list[str]:
-    """The lines of the work, or none when it does not end in time. A problem gives no lines."""
+def _in_time(work: Callable[[], list[str]], seconds: float, late: str = "") -> list[str]:
+    """The lines of the work, or the line `late` when it does not end in time. A problem gives no lines."""
     done: list[list[str]] = []
 
     def run() -> None:
@@ -73,7 +74,7 @@ def _in_time(work: Callable[[], list[str]], seconds: float) -> list[str]:
     worker = threading.Thread(target=run, daemon=True)
     worker.start()
     worker.join(max(seconds, 1))
-    return done[0] if done else []
+    return done[0] if done else [late] if late else []
 
 
 def _uses_akasha(root: Path, branch: str) -> bool:
@@ -85,24 +86,25 @@ def _team_lines(root: Path) -> list[str]:
         team = flow.rules(root)
     except config.ConfigError as error:
         return [f"[AKASHA] The team config has a problem: {error}. Tell an administrator."]
-    names = {"preview": "before the preview", "plan": "before the plan", "build": "while you build",
-             "review": "for the reviewer"}
+    names = {"join": "for a new teammate", "preview": "before the preview", "plan": "before the plan",
+             "build": "while you build", "review": "for the reviewer"}
     return [f"[AKASHA] Team guide {names[step]}: {', '.join(files)}" for step, files in team.guides.items()]
 
 
-def _network_lines(root: Path) -> list[str]:
-    lines = [f"[AKASHA] {line}" for line in flow.tidy(root)]
+def _board_lines(root: Path) -> list[str]:
     if not board.available(root):
-        return lines
+        return []
     me = repo.me(root, kept=True, timeout=NETWORK_SECONDS)
     if not me:
-        return lines + ["[AKASHA] GitHub does not know this person. Ask the person to log in: gh auth login"]
+        return ["[AKASHA] Akasha could not get the GitHub name of this person: gh did not answer, or the person is not "
+                "logged in. Run `gh auth status`; only when it says that nobody is logged in, ask the person to run "
+                "`gh auth login`."]
     entries = board.cached(root, timeout=NETWORK_SECONDS) or []
     others = [entry for entry in entries if entry.person != me]
-    if others:
-        lines.append(f"[AKASHA] Open tasks of the team ({len(others)}): do not change their files without need.")
-        lines += [f"[AKASHA]   {line}" for line in board.lines(others[:OTHERS_SHOWN], me)]
-    return lines
+    if not others:
+        return []
+    return [f"[AKASHA] Open tasks of the team ({len(others)}): do not change their files without need."] + \
+        [f"[AKASHA]   {line}" for line in board.lines(others[:OTHERS_SHOWN], me)]
 
 
 def session_start(root: Path) -> int:
@@ -118,26 +120,32 @@ def session_start(root: Path) -> int:
         lines.append(f"[AKASHA] This checkout is older than {branch} on the server. Pull it first: git pull origin "
                      f"{branch}")
     lines += _team_lines(root)
+    # First the tasks that merged, closed, or moved to another person, so that they are not named as yours
+    lines += _in_time(lambda: [f"[AKASHA] {line}" for line in flow.tidy(root, timeout=TIDY_SECONDS)], TIDY_SECONDS,
+                      "[AKASHA] GitHub was slow: Akasha did not look for merged tasks. `akasha tidy` does it.")
     for task in all_local(root):
         if task.status not in ("merged", "closed"):
             lines.append(f"[AKASHA] Your task {task.id} ({task.title}): {flow.next_step(task)}")
-    lines += _in_time(lambda: _network_lines(root), SESSION_SECONDS)
+    lines += _in_time(lambda: _board_lines(root), SESSION_SECONDS,
+                      "[AKASHA] GitHub was slow: the board of the team is not shown. `akasha board` shows it.")
     print("\n".join(lines))
     return 0
 
 
 def on_prompt(root: Path, cwd: Path, payload: dict) -> int:
-    text = approval.on_prompt(root, cwd, str(payload.get("prompt") or ""))
+    text = approval.on_prompt(root, cwd, str(payload.get("prompt") or ""), str(payload.get("session_id") or ""))
     if text:
         _context("UserPromptSubmit", text)
     return 0
 
 
-def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict) -> int:
+def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict, here: bool = True) -> int:
+    """Stop the tool when it breaks a rule of this repository. `here` is False when the session works in another
+    folder and the tool acts on this repository."""
     reason = None
     if tool in SHELL_TOOLS:
         line = tool_input.get("command") or tool_input.get("cmd") or ""
-        reason = check_command(" ".join(line) if isinstance(line, list) else str(line), cwd, root)
+        reason = check_command(" ".join(line) if isinstance(line, list) else str(line), cwd, root, git_only=not here)
     elif tool in EDIT_TOOLS:
         tasks = all_local(root)
         set_up = config.on_server(root, repo.default_branch(root))
@@ -164,7 +172,7 @@ def _overlaps(root: Path, paths: list[Path]) -> list[str]:
     for task in all_local(root):
         tree = Path(task.workcopy) if task.workcopy else None
         for path in paths:
-            if tree is not None and repo.inside(path, tree) and not repo.inside(path, tree / records(task.id)):
+            if tree is not None and repo.inside(path, tree) and not repo.inside(path, tree / records(task)):
                 edits.append((task, path.resolve().relative_to(tree.resolve()).as_posix()))
     if not edits or not board.available(root):
         return []
@@ -211,18 +219,46 @@ def after_tool(root: Path, cwd: Path, tool: str, tool_input: dict) -> int:
     return 0
 
 
+def _targets(cwd: Path, tool: str, tool_input: dict) -> list[Path]:
+    """The folders that a tool acts on: the folders of the edited files, or of `git -C` and `cd` in a command."""
+    if tool in EDIT_TOOLS:
+        return [path.parent for path in _edited(tool, tool_input, cwd)]
+    if tool in SHELL_TOOLS:
+        line = tool_input.get("command") or tool_input.get("cmd") or ""
+        return folders(" ".join(line) if isinstance(line, list) else str(line), cwd)
+    return []
+
+
+def _other_roots(root: Path | None, cwd: Path, tool: str, tool_input: dict) -> list[Path]:
+    """The main checkouts of the other repositories that the tool acts on and that use Akasha."""
+    found: list[Path] = []
+    for folder in _targets(cwd, tool, tool_input):
+        while not folder.is_dir() and folder != folder.parent:
+            folder = folder.parent
+        other = repo.main_root(folder)
+        if other is not None and other not in found and (root is None or other.resolve() != root.resolve()) and \
+                _uses_akasha(other, repo.default_branch(other)):
+            found.append(other)
+    return found
+
+
 def main(agent: str, event: str) -> int:
     payload = _payload()
     cwd = Path(str(payload.get("cwd") or Path.cwd()))
     root = repo.main_root(cwd)
+    tool = str(payload.get("tool_name") or "")
+    tool_input = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
+    if event == "PreToolUse":
+        # A session in one folder can change a repository in another: each repository that uses Akasha examines it
+        for other in _other_roots(root, cwd, tool, tool_input):
+            if before_tool(other, cwd, tool, tool_input, here=False):
+                return 2
     if root is None:
         return 0
     if event == "SessionStart":
         return session_start(root)
     if not _uses_akasha(root, repo.default_branch(root)):
         return 0
-    tool = str(payload.get("tool_name") or "")
-    tool_input = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     if event == "UserPromptSubmit":
         return on_prompt(root, cwd, payload)
     if event == "PreToolUse":
@@ -230,5 +266,5 @@ def main(agent: str, event: str) -> int:
     if event == "PostToolUse":
         return after_tool(root, cwd, tool, tool_input)
     if event == "SubagentStop":
-        review.on_subagent_stop(root, payload)
+        review.on_subagent_stop(root, payload, agent)
     return 0

@@ -18,7 +18,7 @@ def meta(task: Task) -> list[str]:
     lines = []
     if task.approval:
         lines.append(f"- Preview approved by @{task.approval.get('by', '?')} at {task.approval.get('at', '?')} "
-                     f"(preview `{task.approval.get('preview_sha', '')}`)")
+                     f"with \"{task.approval.get('words', '')}\" (preview `{task.approval.get('preview_sha', '')}`)")
     else:
         lines.append("- Preview: not approved yet")
     if task.review:
@@ -29,7 +29,7 @@ def meta(task: Task) -> list[str]:
         lines.append(f"- Checks on this computer: {status}")
     if task.scope:
         lines.append(f"- Planned files: {', '.join(f'`{item}`' for item in task.scope)}")
-    lines.append(f"- Records: `{records(task.id)}/` (preview, research, plan, summary)")
+    lines.append(f"- Records: `{records(task)}/` (preview, research, plan, summary)")
     return lines
 
 
@@ -76,4 +76,5 @@ def update(root: Path, task: Task) -> bool:
 
 def view(root: Path, task: Task) -> dict | None:
     return gh_json(root, "pr", "view", str(task.number), "--json",
-                   "state,isDraft,mergeStateStatus,statusCheckRollup,reviewDecision,headRefOid,baseRefName,url")
+                   "state,isDraft,mergeStateStatus,statusCheckRollup,reviewDecision,headRefOid,baseRefName,url,author,"
+                   "files,autoMergeRequest,mergeCommit")

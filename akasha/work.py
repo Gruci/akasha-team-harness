@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 from akasha.repo import git
@@ -116,12 +117,34 @@ def pull(tree: Path, branch: str) -> None:
                            f"origin/{branch} there, repair the conflicts, and commit")
 
 
+def contains(tree: Path, commit: str, number: int = 0) -> bool:
+    """True when `commit` has each commit of the work copy: it is its HEAD, or a commit after it. Git fetches the
+    head of pull request `number` when it does not know the commit."""
+    local = head(tree)
+    if local == commit:
+        return True
+    if number and git(tree, "cat-file", "-e", f"{commit}^{{commit}}").returncode:
+        git(tree, "fetch", "-q", "origin", f"refs/pull/{number}/head", timeout=PUSH_SECONDS)
+    return git(tree, "merge-base", "--is-ancestor", local, commit).returncode == 0
+
+
+def _registered(root: Path, path: Path) -> bool:
+    listed = git(root, "worktree", "list", "--porcelain").stdout
+    return any(Path(line[len("worktree "):]).resolve() == path.resolve()
+               for line in listed.splitlines() if line.startswith("worktree "))
+
+
 def remove(root: Path, path: Path, branch: str, force: bool = False) -> str:
-    """Remove the work copy and the local branch. Return a problem, or ""."""
+    """Remove the work copy and the local branch. Return a problem, or "" when the folder is gone."""
     if path.is_dir():
         done = git(root, "worktree", "remove", *(["--force"] if force else []), str(path))
         if done.returncode:
-            return f"git cannot remove the work copy {path}: {done.stderr.strip()[:200]}"
+            git(root, "worktree", "prune")
+            if _registered(root, path):
+                return f"git cannot remove the work copy {path}: {done.stderr.strip()[:200]}"
+            shutil.rmtree(path, ignore_errors=True)            # git let go of it: what is left is no work copy
+            if path.is_dir():
+                return f"a program still uses files in {path}: close it, then run `akasha tidy` or remove the folder"
     git(root, "worktree", "prune")
     if branch:
         git(root, "branch", "-D", branch)

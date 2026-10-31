@@ -10,17 +10,21 @@ or `akasha <command>`.
 | `doctor` | What this person needs to work in the repository, with the fix of each problem |
 | `start "<title>" [--name <name>] [--scope <patterns>]` | Start a task: a work copy on a new branch, and a draft pull request on the board |
 | `preview <task> [--text <text>] [--no-open]` | Show the preview to the person and wait for the approval |
-| `review <task> --verdict pass\|changes` | Record a self-review, where no reviewer agent exists |
-| `check <task> [--only <checks>]` | Run the checks of the team. When each passes, save the work and push it |
-| `land <task> [--wait <seconds>]` | Make the pull request ready and merge it when the checks pass. Exit code 3: still waiting |
-| `status [<task>]` | The tasks on this computer, the plan digest, and the next step |
+| `review <task> --verdict pass\|changes` | Record a self-review, only where no reviewer agent exists (not in Claude Code) |
+| `check <task> [--only <checks>]` | Run the checks of the team. When each passes, save the work and push it. With `--only`, run only those checks and save nothing: run `check <task>` before `land` |
+| `land <task> [--wait <seconds>]` | Make the pull request ready and merge it when the checks pass, then follow the deployment of `[deploy]`. Exit code 3: still waiting (WAITING, DEPLOYING) |
+| `status [<task>]` | The tasks on this computer, the records folder, the plan digest, and the next step |
 | `board` | The open tasks of the team |
-| `resume <task or #number> [--force]` | Continue a task of the board on this computer |
+| `resume <task or #number> [--force]` | Continue a task of the board on this computer. It runs `[checks] setup` in the new work copy |
 | `handoff <task>` | Save the work on the server and free the task |
-| `cancel <task> [--force]` | Stop a task for good: close its pull request and remove the work copy |
+| `cancel <task> [--force]` | Stop a task for good: close its pull request and remove the work copy. When another person holds it, only remove the copy here |
 | `help <task> "<text>"` | Ask the administrators on the pull request of the task |
-| `tidy` | Remove the work copies of the tasks whose pull request merged or closed |
+| `tidy` | Remove the work copies of the tasks whose pull request merged or closed, or that another person holds now |
 | `retro` | What stops the work again and again |
 | `version` | The version of Akasha |
 
-The workflows run `check --ci` (the check of Akasha) and `server watch` (the watch). The hooks run `hook --event`.
+The results of `land`: MERGED, DEPLOYED, and CLOSED end the task (exit code 0). WAITING and DEPLOYING ask for the same
+command again (exit code 3). FAILED, CONFLICT, REVIEW, BLOCKED, and DEPLOY_FAILED tell what to do (exit code 1).
+
+The workflows run `check --ci` (the check of Akasha) and `server watch` (the watch). The hooks run `hook --event`
+through `hook.sh`, which finds Python 3.11 or higher.
