@@ -2,7 +2,7 @@
 # merge: after the check akasha passes, or after an approval, it brings the pull request up to date when the default
 #   branch moved, because GitHub does not do it. Where GitHub has no auto-merge, for example a private repository on
 #   GitHub Free, it then merges the pull request when the code owners approved. When GitHub protects the default
-#   branch, GitHub merges.
+#   branch, GitHub merges. Each run also examines the other pull requests with the label.
 # failed: after the check akasha fails, it tells the holder of the task on the pull request and on the issue.
 # The GitHub app of Akasha (the variable AKASHA_APP_CLIENT_ID and the secret AKASHA_APP_KEY) gives a token that starts
 # other workflows, for example a deployment after a merge and the check after an update. Without the app, the secret
@@ -29,6 +29,8 @@ jobs:
       && github.event.pull_request.head.repo.full_name == github.repository)
     concurrency:
       group: akasha-merge                           # one at a time: no other merge between the comparison and the merge
+      # GitHub keeps only the newest waiting run. Each run examines all pull requests with the label, so a waiting
+      # run that GitHub cancels is no loss
       cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:

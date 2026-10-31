@@ -22,11 +22,11 @@ ANSWER_SECONDS = 10                                    # git waits this long for
 _NO_PLAN = "Upgrade to GitHub Pro"                     # GitHub Free has no branch protection for private repositories
 UPDATE = "/plugin update akasha@akasha in Claude Code, or pip install again for Codex"
 _HEAD = re.compile(r"^ref: refs/heads/(\S+)\tHEAD$", re.M)        # the answer of git ls-remote --symref origin HEAD
-APP_VARIABLE = "AKASHA_APP_CLIENT_ID"                  # the repository variable with the Client ID of the GitHub app
-NO_APP = (f"the GitHub app of Akasha is not set up: the repository variable {APP_VARIABLE} is missing. Without the "
-          "app, the pull requests of the tasks do not come up to date when the default branch moves, and a merge or "
-          "an undo of the helpers does not start other workflows, for example a deployment. The akasha-setup skill "
-          "tells how to make the app")
+APP_VARIABLE = "AKASHA_APP_CLIENT_ID"                  # the variable with the Client ID of the GitHub app
+NO_APP = (f"the GitHub app of Akasha is not set up: the variable {APP_VARIABLE} is missing in the repository and in "
+          "its organization. Without the app, the pull requests of the tasks do not come up to date when the default "
+          "branch moves, and a merge or an undo of the helpers does not start other workflows, for example a "
+          "deployment. The akasha-setup skill tells how to make the app")
 
 
 def repository(root: Path) -> tuple[str, str] | None:
@@ -150,12 +150,23 @@ def _app_warnings(root: Path, slug: str, current: dict) -> list[str]:
     """A notice for an administrator when the repository has no GitHub app of Akasha. It does not stop a handover:
     without the app, the helpers work as in Akasha 1.0.0.
 
-    The documents of GitHub do not agree on who can read the repository variables, so Akasha asks only an
-    administrator. Only "not found" means that the variable is missing."""
+    The workflows also read a variable that the organization shares with the repository. The documents of GitHub do
+    not agree on who can read the variables, so Akasha asks only an administrator. Only "not found" means that the
+    variable is missing."""
     if not (current.get("permissions") or {}).get("admin"):
         return []
     read = gh(root, "api", f"repos/{slug}/actions/variables/{APP_VARIABLE}")
-    return [NO_APP] if read.returncode and "HTTP 404" in read.stderr + read.stdout else []
+    if not _not_found(read):
+        return []
+    shared = gh(root, "api", "--paginate", f"repos/{slug}/actions/organization-variables?per_page=30",
+                "--jq", ".variables[].name")
+    if shared.returncode and not _not_found(shared):
+        return []
+    return [] if APP_VARIABLE in shared.stdout.split() else [NO_APP]
+
+
+def _not_found(done: subprocess.CompletedProcess) -> bool:
+    return bool(done.returncode) and "HTTP 404" in (done.stderr or "") + (done.stdout or "")
 
 
 def warnings(root: Path) -> list[str]:

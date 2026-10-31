@@ -43,15 +43,17 @@ def labeled(number: int, head: str, body: str = "Closes #3\n\n<!-- akasha-task: 
 
 class FakeGitHub:
     """Answers the gh calls of the server helpers and records them. Comments that Akasha writes stay, so that a second
-    run finds them. `fail` names the parts of the API paths that do not answer."""
+    run finds them. `fail` names the parts of the API paths that do not answer. `account` is the person of the token;
+    the token of an app has none."""
 
     def __init__(self, protected: bool = False, pulls: dict | None = None, behind: int | dict = 0,
                  listed: list | None = None, conclusions: dict | None = None, files: dict | None = None,
                  reviews: dict | None = None, updates: dict | None = None, issues: dict | None = None,
-                 fail: tuple[str, ...] = ()):
+                 fail: tuple[str, ...] = (), account: str = ""):
         self.protected, self.pulls, self.behind, self.listed = protected, pulls or {}, behind, listed or []
         self.conclusions, self.files, self.reviews = conclusions or {}, files or {}, reviews or {}
         self.updates, self.issues, self.fail = updates or {}, issues or {"3": task_issue()}, fail
+        self.account = account
         self.calls: list[tuple[str, ...]] = []
         self.comments: dict[str, list[str]] = {}
 
@@ -60,9 +62,13 @@ class FakeGitHub:
         if args[:1] != ("api",):
             return answer("")
         method = args[args.index("--method") + 1] if "--method" in args else "GET"
-        path = next(arg for arg in args[1:] if "/" in arg)
+        path = next((arg for arg in args[1:] if "/" in arg), args[1])
         if any(part in path for part in self.fail):
             return refused(502, "Server Error")
+        if path == "user":
+            return answer(self.account) if self.account else refused(403, "Resource not accessible by integration")
+        if path.count("/") == 2:
+            return answer({"default_branch": "main"})
         number = path.split("/")[4] if len(path.split("/")) > 4 else ""
         if path.endswith("/branches/main"):
             return answer({"protected": self.protected})
@@ -122,9 +128,9 @@ class MergeTests(unittest.TestCase):
         found = labeled(7, SHA, body="## Why\n\nA reason.\n\nCloses #3\n\n<!-- akasha-task: t-1 -->\n", label=labeled_)
         return {SHA: [found]}
 
-    def merge(self, fake: FakeGitHub, update_branch: bool = False) -> str:
+    def merge(self, fake: FakeGitHub, update_branch: bool = False, legacy: bool = False) -> str:
         with patch("akasha.infra.server.gh", fake):
-            return server.merge(self.root, "team/app", SHA, update_branch)
+            return server.merge(self.root, "team/app", SHA, update_branch, legacy)
 
     def test_merges_a_marked_pull_request_on_the_latest_branch(self):
         fake = FakeGitHub(pulls=self.pull())
@@ -145,7 +151,11 @@ class MergeTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, self.merge(fake))
                 self.assertFalse(fake.did("pr", "merge"))
-        self.assertTrue(cases["is behind main"].did("pr", "comment"))    # without a token that starts workflows
+        behind = cases["is behind main"]                              # without a token that starts workflows
+        self.assertIn("pull request #7 is behind main", self.merge(behind))     # also after an approval
+        self.assertEqual(len(behind.comments["7"]), 1)               # one comment for each head
+        self.assertTrue(behind.comments["7"][0].startswith("Akasha: the default branch moved after the check."))
+        self.assertIn(f"<!-- akasha-behind: {SHA} -->", behind.comments["7"][0])
 
     def test_a_pull_request_that_is_behind_comes_up_to_date_in_each_repository(self):
         for protected in (False, True):
@@ -177,6 +187,38 @@ class MergeTests(unittest.TestCase):
         self.assertIn("waits for the approval", self.merge(fake))
         fake.reviews = {"7": [changes, approved, comment]}         # a comment does not take an approval back
         self.assertEqual(self.merge(fake), "merged #7")
+
+    def test_each_run_settles_the_other_pull_requests(self):
+        """GitHub cancels a waiting run of the merge job when a newer run comes. The newer run must merge a pull
+        request that the cancelled run would merge."""
+        owned = {"7": [{"filename": ".github/x.yml"}]}
+        listed = [labeled(9, "e" * 40, draft=True), labeled(8, OTHER), labeled(6, "d" * 40, label=False),
+                  labeled(7, SHA)]                                    # GitHub lists the newest first
+        fake = FakeGitHub(pulls=self.pull(), files=owned, listed=listed)
+        self.assertEqual(self.merge(fake).splitlines(), ["pull request #7 waits for the approval of @Admin-A",
+                                                         "merged #8"])
+        self.assertEqual([call[2] for call in fake.calls if call[:2] == ("pr", "merge")], ["8"])
+        for name, trigger in (("another pull request", {}), ("no label", self.pull(labeled_=False))):
+            with self.subTest(trigger=name):
+                fake = FakeGitHub(pulls=trigger, listed=[labeled(8, OTHER)])
+                self.assertEqual(self.merge(fake).splitlines()[1:], ["merged #8"])
+        fake = FakeGitHub(pulls=self.pull(), files=owned, listed=listed, behind={OTHER: 1})
+        self.assertEqual(self.merge(fake).splitlines()[1:], ["pull request #8 is behind main"])
+        self.assertEqual(len(fake.comments["8"]), 1)                 # the cancelled run would ask for the handover
+        fake = FakeGitHub(pulls=self.pull(), files=owned, listed=listed, behind={OTHER: 1})
+        self.assertEqual(self.merge(fake, update_branch=True).splitlines()[1:],
+                         ["pull request #8 comes up to date with main"])
+        fake = FakeGitHub(pulls=self.pull(), files=owned, listed=listed, conclusions={OTHER: [""]})
+        self.assertIn("did not pass on the head of pull request #8", self.merge(fake).splitlines()[1])
+        self.assertFalse(fake.did("pr", "merge"))
+
+    def test_a_workflow_file_of_akasha_1_0_0_merges_as_before(self):
+        """Its job runs only after the check passed, and its token cannot read the checks."""
+        fake = FakeGitHub(pulls=self.pull(), listed=[labeled(8, OTHER)], fail=("/check-runs",))
+        self.assertEqual(self.merge(fake, legacy=True), "merged #7")
+        self.assertFalse(any("/pulls?" in " ".join(call) for call in fake.calls))     # its runs do not wait
+        with self.assertRaises(server.ServerError):                  # the new file can read the checks
+            self.merge(FakeGitHub(pulls=self.pull(), fail=("/check-runs",)))
 
     def test_github_that_does_not_answer_stops_the_merge(self):
         fake = FakeGitHub(pulls=self.pull(), fail=("/compare/",))
@@ -256,7 +298,11 @@ class FailedTests(unittest.TestCase):
                 called.assert_called_once()
         with patch("akasha.infra.server.merge", return_value="") as merged, patch("sys.stdout"):
             command_line.main(["server", "merge", "--repository", "team/app", "--head-sha", SHA])
-        self.assertEqual(merged.call_args.args[1:], ("team/app", SHA, False))    # the workflow of Akasha 1.0.0
+            self.assertEqual((merged.call_args.args[1:], merged.call_args.kwargs),
+                             (("team/app", SHA, False), {"legacy": True}))     # the workflow of Akasha 1.0.0
+            command_line.main(["server", "merge", "--repository", "team/app", "--head-sha", SHA,
+                               "--update-branch", "false"])
+            self.assertEqual(merged.call_args.kwargs, {"legacy": False})
 
 
 class WatchTests(unittest.TestCase):
@@ -292,9 +338,42 @@ class WatchTests(unittest.TestCase):
         self.assertTrue(git(self.remote, "log", "-1", "--format=%s", "main").stdout.startswith(server.UNDO_MARK))
         self.assertFalse((self.root / "app.py").exists())
         self.assertTrue(fake.did("issue", "create"))
-        undo = git(self.root, "rev-parse", "HEAD").stdout.strip()
-        with patch("akasha.infra.server.gh", FakeGitHub()):
-            self.assertEqual(server._reason(self.root, "team/app", server._team_at(self.root, self.before), undo), "")
+        self.before, self.after = self.after, git(self.root, "rev-parse", "HEAD").stdout.strip()
+        self.assertEqual(self.watch(FakeGitHub(), pusher="akasha-app[bot]"), "all changes are in order")
+
+    def test_the_watch_keeps_its_own_undo_also_when_the_undone_change_made_new_rules(self):
+        """With the app token, the undo starts the watch again, and that run reads the rules of the undone commit."""
+        (self.root / "akasha.toml").write_text('[roles]\nadministrators = ["admin-a", "dev-a"]\n', encoding="utf-8")
+        self.before, self.after = self.after, self.commit("make dev-a an administrator")   # merged by dev-a
+        merged = {self.after: [{"number": 5, "merged_at": "now", "head": {"sha": SHA}}]}     # and no owner approved
+        self.assertEqual(self.watch(FakeGitHub(pulls=merged)), "undid 1 change(s)")
+        undone = git(self.remote, "show", "main:akasha.toml").stdout
+        self.before, self.after = self.after, git(self.remote, "rev-parse", "main").stdout.strip()
+        self.assertEqual(self.watch(FakeGitHub(pulls=merged), pusher="akasha-app[bot]"), "all changes are in order")
+        self.assertEqual(git(self.remote, "show", "main:akasha.toml").stdout, undone)
+        self.assertNotIn("dev-a", undone)
+
+    def test_only_a_helper_can_push_an_undo(self):
+        """A person can copy the subject and the exact reverse change, for example of a commit from before Akasha."""
+        git(self.root, "revert", "--no-commit", self.after)
+        self.before, self.after = self.after, self.commit(f"{server.UNDO_MARK} {self.after[:12]}: it went around the "
+                                                          "check")
+        for pusher, fake in (("akasha-app[bot]", FakeGitHub()), ("ci-owner", FakeGitHub(account="CI-Owner"))):
+            with self.subTest(pusher=pusher):
+                self.assertEqual(self.watch(fake, pusher=pusher), "all changes are in order")
+        with self.assertRaises(server.ServerError):                  # no answer is not "the token of an app"
+            self.watch(FakeGitHub(fail=("user",)))
+        self.assertEqual(git(self.remote, "rev-parse", "main").stdout.strip(), self.after)
+        self.assertEqual(self.watch(FakeGitHub()), "undid 1 change(s)")
+        self.assertIn("app.py", self.remote_files())                # the change from before Akasha comes back
+
+    def test_the_patch_id_keeps_text_that_is_not_utf_8(self):
+        def change(text: str) -> str:
+            (self.root / "limit.txt").write_bytes(text.encode("cp949"))
+            return self.commit(text)
+        old, new, other = change("limit = '가'\n"), change("limit = '나'\n"), change("limit = '하'\n")
+        self.assertTrue(server._patch_id(self.root, new, old))
+        self.assertNotEqual(server._patch_id(self.root, new, old), server._patch_id(self.root, new, other))
 
     def test_an_undo_that_is_not_exact_is_undone(self):
         git(self.root, "rm", "-q", "app.py")

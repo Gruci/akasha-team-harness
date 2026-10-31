@@ -65,16 +65,20 @@ The branch must be up to date, but GitHub does not bring a branch up to date. Ak
 
 | Helper | When it runs | What it does |
 |:--|:--|:--|
-| `akasha-merge` | After each run of the check `akasha` on a pull request, and after each approval of a pull request | Works on a pull request with the label `akasha-merge`. When the check passed and the branch is behind, it brings the branch up to date. Where GitHub has no auto-merge, it merges the pull request when the check passed on its latest commit, the branch is up to date, and an owner of each changed file with owners approved. Then it closes the linked board issue and brings the other pull requests with the label up to date. When the check failed, it tells the holder of the task |
+| `akasha-merge` | After each run of the check `akasha` on a pull request, and after each approval of a pull request | Works on a pull request with the label `akasha-merge`. When the check passed and the branch is behind, it brings the branch up to date. Where GitHub has no auto-merge, it merges the pull request when the check passed on its latest commit, the branch is up to date, and an owner of each changed file with owners approved. Then it closes the linked board issue and brings the other pull requests with the label up to date. Each run also examines the other pull requests with the label. When the check failed, it tells the holder of the task |
 | `akasha-watch` | After each push to the default branch | Where GitHub has no branch protection, it examines each new commit and opens an issue for each problem. It undoes a commit without a pull request and a passed check. It also undoes a commit that changed an owned file without the approval of an owner. With the GitHub app, it also brings each pull request with the label up to date |
 
 Before the merge helper merges, it applies the rules of the watch. The code owners come from the team config on the default branch, and the last review of each person counts: a later comment does not take an approval back. When an owner did not approve, the helper writes one comment on the pull request with the names of the owners, and it does not merge. The approval of an owner starts the merge helper again. Thus the watch does not undo a merge of the helper.
 
+The merge helper runs one run at a time. GitHub keeps only the newest waiting run and cancels the others. Thus each run also examines the other pull requests with the label, the oldest first: it merges a pull request that is ready, and it brings up to date or comments on a pull request that is behind. A waiting run that GitHub cancels is then no loss.
+
 The watch reports a force push and a push of an administrator, and it does not undo them. This agrees with GitHub protection, where administrators can go around the rules.
 
-The watch undoes on the latest default branch on the server. When another push came first and the server refuses the push of the watch, the watch fetches and undoes again, three times at most. Each undo commit starts with `Akasha undid <commit>`. The watch keeps such a commit only when it is the exact reverse of an earlier commit on the branch that was not in order. Thus a person cannot put a change on the branch with a copy of the subject, or undo a change that the team accepted.
+The watch undoes on the latest default branch on the server. When another push came first and the server refuses the push of the watch, the watch fetches and undoes again, three times at most. Each undo commit starts with `Akasha undid <commit>`. The watch keeps such a commit only when a helper pushed it and it is the exact reverse of an earlier commit on the branch. A helper is a GitHub app, for example the app of Akasha, or the account whose token is in the secret `AKASHA_TOKEN`. Thus a person cannot put a change on the branch with a copy of the subject, or undo a change with a copy of an undo. The watch does not examine the undone commit again: when the rules changed, two runs that do not agree would undo each other without end.
 
 When GitHub does not answer, the helpers do nothing, and their run fails. For example, the watch does not read a failed answer as "no merged pull request".
+
+A merge helper file of Akasha 1.0.0 also works with this Akasha, until an administrator runs `infra --apply`. It merges after the check passes, when the owners approved. That file does not run after an approval. Thus a pull request that waits for an owner merges after the next run of its check.
 
 > **CAUTION:** GitHub protection stops a bad change before it merges. The watch undoes it right after it arrives. For a change of data, the undo of the code does not undo the data.
 
@@ -109,13 +113,13 @@ A merge or a push with the workflow token starts no other workflow, for example 
 | Repository secret `AKASHA_APP_KEY` | A private key of the app |
 | Permissions of the app | Contents, Pull requests, Issues, and Workflows: read and write. Checks: read |
 
-The helpers use the first token that they have: the token of the app, the secret `AKASHA_TOKEN`, then the workflow token. The `update` job of `akasha-watch` runs only with the app. Without the app and without `AKASHA_TOKEN`, the helpers work as in Akasha 1.0.0: they do not bring a pull request up to date, and where GitHub has no auto-merge, the merge helper asks for the handover again on a pull request that is behind.
+The helpers use the first token that they have: the token of the app, the secret `AKASHA_TOKEN`, then the workflow token. The `update` job of `akasha-watch` runs only with the app. Without the app and without `AKASHA_TOKEN`, the helpers work as in Akasha 1.0.0: they do not bring a pull request up to date, and where GitHub has no auto-merge, the merge helper asks for the handover again on a pull request that is behind, once for each commit.
 
 An app is better than a personal token in `AKASHA_TOKEN`: it belongs to no person, its token expires after one hour, and it can have access to one repository only.
 
 > **CAUTION:** Without the Workflows permission, the merge helper cannot merge a pull request that changes `.github/workflows/`, and the watch cannot undo such a commit. The watch needs this permission.
 
-When the variable is missing, `infra` and `setup` tell an administrator. This notice does not stop a handover. Akasha asks only an administrator, because the documents of GitHub do not agree on who can read the variables. The `akasha-setup` skill tells how to make the app.
+When the variable is missing in the repository and in its organization, `infra` and `setup` tell an administrator. This notice does not stop a handover. Akasha asks only an administrator, because the documents of GitHub do not agree on who can read the variables. The `akasha-setup` skill tells how to make the app.
 
 ## CODEOWNERS
 

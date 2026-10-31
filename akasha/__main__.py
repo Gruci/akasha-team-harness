@@ -109,8 +109,9 @@ def _parser() -> argparse.ArgumentParser:
     merge = jobs.add_parser("merge", help="merge a pull request with the label akasha-merge after its check passed")
     merge.add_argument("--repository", required=True)
     merge.add_argument("--head-sha", required=True)
-    merge.add_argument("--update-branch", default="false", metavar="true|false",
-                       help="bring a pull request that is behind up to date: only with a token that starts workflows")
+    merge.add_argument("--update-branch", metavar="true|false",
+                       help="bring a pull request that is behind up to date: only with a token that starts workflows. "
+                            "Only the workflow file of Akasha 1.0.0 leaves it out")
     watch = jobs.add_parser("watch", help="undo a change on the default branch that went around the check")
     watch.add_argument("--repository", required=True)
     for name in ("branch", "before", "after", "forced", "pusher"):
@@ -136,7 +137,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "server":                      # GitHub Actions run this, in the checkout for merge and watch
         from akasha.infra import server
         if args.job == "merge":
-            print(server.merge(Path.cwd(), args.repository, args.head_sha, args.update_branch.lower() == "true"))
+            print(server.merge(Path.cwd(), args.repository, args.head_sha, (args.update_branch or "").lower() == "true",
+                               legacy=args.update_branch is None))
         elif args.job == "watch":
             print(server.watch(Path.cwd(), args.repository, args.branch, args.before, args.after,
                                args.forced.lower() == "true", args.pusher))

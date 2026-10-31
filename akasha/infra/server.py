@@ -1,10 +1,11 @@
 """The helper workflows of Akasha run these functions on GitHub.
 
-`merge` runs after each passed check and after each approval. Where GitHub has no auto-merge, for example a private
-repository on GitHub Free, it merges a pull request with the label akasha-merge, as strict branch protection with
-code owner reviews does. `watch` runs after each push to the default branch. Where GitHub has no branch protection, it
-undoes each change that went around the check. GitHub protection stops a change before it merges. The watch undoes
-it right after it arrives.
+`merge` runs after each passed check and after each approval, one run at a time. Where GitHub has no auto-merge, for
+example a private repository on GitHub Free, it merges a pull request with the label akasha-merge, as strict branch
+protection with code owner reviews does. Each run also examines the other pull requests with the label, because
+GitHub cancels a waiting run when a newer run comes. `watch` runs after each push to the default branch. Where GitHub
+has no branch protection, it undoes each change that went around the check. GitHub protection stops a change before
+it merges. The watch undoes it right after it arrives.
 
 In each repository, also where GitHub protects the default branch, the helpers bring each pull request with the label
 up to date when the default branch moves (`update`), because GitHub does not do it. They also tell the holder of a
@@ -252,50 +253,87 @@ def _waiting(root: Path, slug: str, pull: dict) -> str:
     return f"pull request #{number} waits for the approval of {named}"
 
 
-def merge(root: Path, slug: str, head_sha: str, update_branch: bool = False) -> str:
-    """Merge the pull request with the head head_sha when Akasha marked it, its check passed on that head, it is up to
-    date, and the owners of its files approved. Return what occurred.
+def _settle(root: Path, slug: str, pull: dict, update_branch: bool, passed: bool = False) -> tuple[bool, str]:
+    """Merge a pull request with the label when its check passed on its head, it is up to date, and the owners of its
+    files approved. Return True when it merged, and what occurred. `passed` tells that the check passed on the head.
 
     Like strict branch protection, Akasha does not merge a branch that is behind the default branch. With
     `update_branch`, the token starts workflows: in each repository, Akasha brings such a pull request up to date,
-    and the pass of the check on the new head merges it. After a merge, the other pull requests with the label also
-    come up to date. Without `update_branch`, as in Akasha 1.0.0, a comment asks for the handover again where GitHub
-    does not protect the branch."""
-    pull = _open_pull(root, slug, head_sha)
-    if pull is None:
-        return "no open pull request has this commit as its head"
-    number, base = str(pull["number"]), pull["base"]["ref"]
-    if not _labeled(pull):
-        return f"pull request #{number} has no {MERGE_LABEL} label"
-    if "success" not in _conclusions(root, slug, head_sha):     # an approval can come before the check passes
-        return f"the check {desired.CHECK_NAME} did not pass on the head of pull request #{number}"
-    behind = _behind(root, slug, base, head_sha)
+    and the pass of the check on the new head merges it. Without `update_branch`, as in Akasha 1.0.0, a comment asks
+    for the handover again where GitHub does not protect the branch, once for each head."""
+    number, head, base = str(pull["number"]), pull["head"]["sha"], pull["base"]["ref"]
+    if not passed and "success" not in _conclusions(root, slug, head):   # an approval can come before the pass
+        return False, f"the check {desired.CHECK_NAME} did not pass on the head of pull request #{number}"
+    behind = _behind(root, slug, base, head)
     if behind and update_branch:
-        return _bring_up_to_date(root, slug, pull)
+        return False, _bring_up_to_date(root, slug, pull)
     if _protected(root, slug, base):
-        return f"GitHub protects {base}, so GitHub merges pull request #{number}"
+        return False, f"GitHub protects {base}, so GitHub merges pull request #{number}"
     if behind:
-        gh(root, "pr", "comment", number, "--repo", slug, "--body", "Akasha: the default branch moved after the "
-           "check. Do the handover again, so that the check runs on the latest branch.")
-        return f"pull request #{number} is behind {base}"
+        _tell(root, slug, (number,), f"<!-- akasha-behind: {head} -->", "Akasha: the default branch moved after the "
+              "check. Do the handover again, so that the check runs on the latest branch.")
+        return False, f"pull request #{number} is behind {base}"
     waiting = _waiting(root, slug, pull)
     if waiting:
-        return waiting
-    done = gh(root, "pr", "merge", number, "--repo", slug, "--squash", "--match-head-commit", head_sha,
+        return False, waiting
+    done = gh(root, "pr", "merge", number, "--repo", slug, "--squash", "--match-head-commit", head,
               "--subject", f"{pull['title']} (#{number})", "--body", commit_body(pull.get("body") or ""))
     if done.returncode:
-        return f"GitHub refused the merge: {done.stderr.strip()[:300]}"
+        return False, f"GitHub refused the merge of #{number}: {done.stderr.strip()[:300]}"
     # GitHub does not close the linked issues after a merge with the workflow token, so Akasha closes them. With the
     # token of the app, GitHub can close them first, and gh leaves a closed issue as it is.
     for issue in _CLOSES.findall(pull.get("body") or ""):
         gh(root, "issue", "close", issue, "--repo", slug, "--reason", "completed",
            "--comment", f"Akasha merged pull request #{number}.")
-    if not update_branch:
-        return f"merged #{number}"
+    return True, f"merged #{number}"
+
+
+def _others(root: Path, slug: str, branch: str, head_sha: str, update_branch: bool) -> list[str]:
+    """Settle each other open pull request with the label on the branch, the oldest first. Skip a draft. A failure
+    of GitHub for one pull request does not stop the others: it goes into its line."""
+    lines = []
+    for pull in reversed(_pages(root, f"repos/{slug}/pulls?state=open&base={branch}&per_page=100")):
+        if not _labeled(pull) or pull.get("draft") or pull["head"]["sha"] == head_sha:
+            continue
+        try:
+            lines.append(_settle(root, slug, pull, update_branch)[1])
+        except ServerError as error:
+            lines.append(f"pull request #{pull['number']}: {error}")
+    return lines
+
+
+def merge(root: Path, slug: str, head_sha: str, update_branch: bool = False, legacy: bool = False) -> str:
+    """Merge the pull request with the head head_sha when Akasha marked it, its check passed on that head, it is up to
+    date, and the owners of its files approved (_settle). Return what occurred, one line for each pull request.
+
+    After a merge with `update_branch`, the other pull requests with the label come up to date. Else Akasha settles
+    each other pull request with the label in the same way: GitHub keeps only the newest waiting run of the merge
+    job and cancels the others, so a run must not leave a pull request that can merge.
+
+    `legacy` tells that the merge job of a workflow file of Akasha 1.0.0 runs this. That job runs only after the
+    check passed on the head, its token cannot read the checks, and its runs do not wait for each other. Thus Akasha
+    settles only this pull request, until an administrator installs the new files. The owners must still approve."""
+    pull = _open_pull(root, slug, head_sha)
+    if pull is None:
+        merged, first = False, "no open pull request has this commit as its head"
+    elif not _labeled(pull):
+        merged, first = False, f"pull request #{pull['number']} has no {MERGE_LABEL} label"
+    else:
+        merged, first = _settle(root, slug, pull, update_branch, passed=legacy)
+    if legacy:
+        return first
+    if pull is not None and _labeled(pull):
+        branch = pull["base"]["ref"]
+    else:                                             # the run of another pull request can cancel a run of a task
+        branch = (_api(root, f"repos/{slug}") or {}).get("default_branch") or ""
     try:
-        return f"merged #{number}\n{update(root, slug, base)}"
-    except ServerError as error:                      # the merge stays; the next push to the branch updates them
-        return f"merged #{number}\nAkasha did not bring the other pull requests up to date: {error}"
+        if merged and update_branch:
+            return f"{first}\n{update(root, slug, branch)}"
+        return "\n".join([first, *(_others(root, slug, branch, head_sha, update_branch) if branch else [])])
+    except ServerError as error:
+        if not merged:
+            raise
+        return f"{first}\nAkasha did not examine the other pull requests: {error}"   # the merge stays
 
 
 def _team_at(root: Path, commit: str) -> config.Team:
@@ -330,32 +368,49 @@ def _owners(team: config.Team, path: str) -> set[str]:
 
 def _patch_id(root: Path, old: str, new: str) -> str:
     """The patch id of the change from old to new, or "" for no change. Without context lines: an undo on a later
-    commit has other lines around the change."""
-    diff = git(root, "diff", "-U0", "--binary", "--no-renames", old, new)
+    commit has other lines around the change. The diff stays bytes: text that is not UTF-8, for example CP949, must
+    not become the same replacement characters for two different changes."""
+    diff = subprocess.run(["git", "diff", "-U0", "--binary", "--no-renames", old, new], cwd=root,
+                          capture_output=True)
     if diff.returncode or not diff.stdout:
         return ""
-    found = subprocess.run(["git", "patch-id", "--stable"], cwd=root, input=diff.stdout, capture_output=True,
-                           text=True, encoding="utf-8", errors="replace")
-    return (found.stdout.split() or [""])[0] if found.returncode == 0 else ""
+    found = subprocess.run(["git", "patch-id", "--stable"], cwd=root, input=diff.stdout, capture_output=True)
+    return (found.stdout.decode("ascii", "replace").split() or [""])[0] if found.returncode == 0 else ""
 
 
-def _true_undo(root: Path, slug: str, team: config.Team, sha: str) -> bool:
-    """True when the commit is an undo of the watch: its subject names an earlier commit on the branch, it makes
-    exactly the reverse change of that commit, and that commit is not in order.
+def _helper(root: Path, pusher: str) -> bool:
+    """True when a helper of Akasha pushed: a GitHub app, for example the app of Akasha, or the account of the token
+    of the watch (the secret AKASHA_TOKEN). The login of a person cannot end with [bot]."""
+    if pusher.lower().endswith("[bot]"):
+        return True
+    account = gh(root, "api", "user", "--jq", ".login")
+    if account.returncode:
+        status, message = _failure(account)
+        if status == 403:                             # the token of an app has no account of a person
+            return False
+        raise ServerError(f"GitHub did not tell the account of the token: {message}")
+    return bool(pusher) and account.stdout.strip().lower() == pusher.lower()
 
-    Each person can copy the subject. The exact reverse change stops other changes, and the last condition stops the
-    undo of a change that the team accepted."""
+
+def _true_undo(root: Path, sha: str) -> bool:
+    """True when the commit is an undo of the watch: its subject names an earlier commit on the branch, and it makes
+    exactly the reverse change of that commit. Only a push of a helper can have such a commit (_reason)."""
     named = _UNDONE.match(git(root, "log", "-1", "--format=%s", sha).stdout)
     target = git(root, "rev-parse", "-q", "--verify", f"{named.group(1)}^{{commit}}").stdout.strip() if named else ""
     if not target or git(root, "merge-base", "--is-ancestor", target, f"{sha}^1").returncode:
         return False
     change = _patch_id(root, f"{sha}^1", sha)
-    return bool(change) and change == _patch_id(root, target, f"{target}^1") and bool(_reason(root, slug, team, target))
+    return bool(change) and change == _patch_id(root, target, f"{target}^1")
 
 
-def _reason(root: Path, slug: str, team: config.Team, sha: str) -> str:
-    """Why a commit on the default branch is not in order, or "" when it is in order."""
-    if _true_undo(root, slug, team, sha):
+def _reason(root: Path, slug: str, team: config.Team, sha: str, helper: bool = False) -> str:
+    """Why a commit on the default branch is not in order, or "" when it is in order. `helper` tells that a helper
+    of Akasha pushed the commit.
+
+    Each person can copy the subject and the change of an undo, so an undo counts only in a push of a helper. The
+    watch does not examine the undone commit again: the rules can be different now, and two runs that do not agree
+    would undo each other without end."""
+    if helper and _true_undo(root, sha):
         return ""
     pulls = [pull for pull in _api(root, f"repos/{slug}/commits/{sha}/pulls") or [] if pull.get("merged_at")]
     if not pulls:
@@ -409,8 +464,8 @@ def _undo(root: Path, slug: str, branch: str, wrong: list[tuple[str, str]], list
 def watch(root: Path, slug: str, branch: str, before: str, after: str, forced: bool, pusher: str) -> str:
     """Undo each change on the default branch that went around Akasha, and open an issue. Return what occurred.
 
-    A force push and a push of an administrator are reported, not undone. When GitHub does not answer, the watch
-    undoes nothing and stops with an error."""
+    A force push and a push of an administrator are reported, not undone. An undo commit stays only in a push of a
+    helper (_reason). When GitHub does not answer, the watch undoes nothing and stops with an error."""
     if _protected(root, slug, branch):
         return f"GitHub protects {branch}, so the watch does nothing"
     if forced:
@@ -421,7 +476,9 @@ def watch(root: Path, slug: str, branch: str, before: str, after: str, forced: b
         return "a new branch"
     team = _team_at(root, before)
     commits = git(root, "rev-list", "--first-parent", "--reverse", f"{before}..{after}").stdout.split()
-    wrong = [(sha, reason) for sha in commits if (reason := _reason(root, slug, team, sha))]
+    subjects = git(root, "log", "--first-parent", "--format=%s", f"{before}..{after}").stdout.splitlines()
+    helper = any(_UNDONE.match(subject) for subject in subjects) and _helper(root, pusher)
+    wrong = [(sha, reason) for sha in commits if (reason := _reason(root, slug, team, sha, helper))]
     if not wrong:
         return "all changes are in order"
     listing = "\n".join(f"- {sha[:12]}: {reason}" for sha, reason in wrong)

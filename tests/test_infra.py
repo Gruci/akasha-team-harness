@@ -309,27 +309,40 @@ class StatusTests(unittest.TestCase):
                      ("update-ref", "refs/remotes/origin/main", "HEAD")):
             subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
 
-    def status(self, private: bool = True, admin: bool = True,
-               variable: subprocess.CompletedProcess | None = None) -> list[str]:
-        """Examine the settings. `variable` is the answer of GitHub for the variable of the GitHub app."""
+    def status(self, private: bool = True, admin: bool = True, variable: subprocess.CompletedProcess | None = None,
+               shared: subprocess.CompletedProcess | None = None) -> list[str]:
+        """Examine the settings. `variable` is the answer of GitHub for the variable of the GitHub app, and `shared`
+        for the names of the variables that the organization shares with the repository."""
         correct = {"required_status_checks": {"strict": True, "contexts": ["akasha"]},
                    "required_pull_request_reviews": {"require_code_owner_reviews": True}}
         found = variable or subprocess.CompletedProcess([], 0, '{"name": "AKASHA_APP_CLIENT_ID"}', "")
+        listed = shared or subprocess.CompletedProcess([], 0, "", "")
+
+        def answer(root, *args):
+            return listed if any("organization-variables" in arg for arg in args) else found
+
         with patch("akasha.infra.github.repository", return_value=("team/app", "main")), \
                 patch("akasha.infra.github.settings", return_value={"private": private, "permissions": {"admin": admin}}), \
                 patch("akasha.infra.github.protection", return_value=correct), \
-                patch("akasha.infra.github.fetch"), patch("akasha.infra.github.gh", return_value=found) as self.gh:
+                patch("akasha.infra.github.fetch"), patch("akasha.infra.github.gh", side_effect=answer) as self.gh:
             return github.status(self.root)
 
     def test_only_an_administrator_is_told_about_a_missing_app(self):
         missing = subprocess.CompletedProcess([], 1, '{"message": "Not Found"}', "gh: Not Found (HTTP 404)")
         self.assertEqual(self.status(variable=missing), [])           # a notice does not stop a handover
         self.assertEqual(github.warnings(self.root), [github.NO_APP])
-        self.assertEqual(self.gh.call_args.args[1:], ("api", f"repos/team/app/actions/variables/{github.APP_VARIABLE}"))
+        self.assertEqual([call.args[1:3] for call in self.gh.call_args_list],
+                         [("api", f"repos/team/app/actions/variables/{github.APP_VARIABLE}"),
+                          ("api", "--paginate")])                     # then the variables of the organization
+        self.assertIn("repos/team/app/actions/organization-variables", self.gh.call_args.args[3])
+        self.status(variable=missing, shared=missing)                 # a repository of a person has no organization
+        self.assertEqual(github.warnings(self.root), [github.NO_APP])
         hidden = subprocess.CompletedProcess([], 1, '{"message": "Forbidden"}', "gh: Forbidden (HTTP 403)")
-        for admin, answer in ((True, None), (True, hidden), (False, missing)):
-            with self.subTest(admin=admin, answer=answer):
-                self.assertEqual(self.status(admin=admin, variable=answer), [])
+        organization = subprocess.CompletedProcess([], 0, f"OTHER\n{github.APP_VARIABLE}\n", "")
+        for admin, answer, shared in ((True, None, None), (True, hidden, None), (True, missing, organization),
+                                      (True, missing, hidden), (False, missing, None)):
+            with self.subTest(admin=admin, answer=answer, shared=shared):
+                self.assertEqual(self.status(admin=admin, variable=answer, shared=shared), [])
                 self.assertEqual(github.warnings(self.root), [])
         self.gh.assert_not_called()                                   # only an administrator is asked
 

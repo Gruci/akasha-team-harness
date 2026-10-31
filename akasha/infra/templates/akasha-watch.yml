@@ -38,8 +38,8 @@ jobs:
       - name: Undo a change that went around the check
         env:
           # A push with the app token starts the workflows of the default branch, for example a deployment. The watch
-          # then examines its own undo and keeps it, so there is no loop. A push with the workflow token starts no
-          # workflow.
+          # then examines its own undo and keeps it, because the app pushed it, so there is no loop. A push with the
+          # workflow token starts no workflow.
           GH_TOKEN: ${{ steps.app.outputs.token || secrets.AKASHA_TOKEN || github.token }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.after }}

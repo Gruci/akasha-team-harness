@@ -149,7 +149,7 @@ Small changes use the `small` workflow, defects the `fix` workflow.
 
 ## Server Rules
 
-GitHub's own protection comes first. Akasha's helper workflows fill in only where the GitHub plan has none.
+GitHub's own protection comes first. Akasha's helper workflows merge and undo only where the GitHub plan has none.
 
 | Repository | Enforced by |
 |:--|:--|
