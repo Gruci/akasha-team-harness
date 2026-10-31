@@ -2,7 +2,9 @@
 
 import io
 import json
+import os
 import subprocess
+import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -58,6 +60,21 @@ class HookTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("approved the preview", json.loads(out)["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(load(self.root, task.id).approval["source"], "prompt")
+
+    def test_the_hook_reads_utf8_without_the_utf8_mode_of_python(self):
+        """A real run: `akasha hook` of pip, without -X utf8, read "승인" in cp949 on Windows (2026-10-31)."""
+        task, _notes = flow.start(self.root, "Title", name="t4")
+        records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
+        (records / "preview.html").write_text("<html>x</html>", encoding="utf-8")
+        flow.preview(self.root, task.id)
+        env = {**os.environ, "PYTHONUTF8": "0", "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+        env.pop("PYTHONIOENCODING", None)
+        payload = json.dumps({"cwd": str(self.root), "prompt": "승인"}, ensure_ascii=False).encode("utf-8")
+        done = subprocess.run([sys.executable, "-m", "akasha", "hook", "--event", "UserPromptSubmit"], input=payload,
+                              cwd=self.root, env=env, capture_output=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("approved the preview", done.stdout.decode("utf-8"))
+        self.assertEqual(load(self.root, task.id).approval["words"], "승인")
 
     def test_a_secret_key_goes_back_to_the_agent(self):
         path = Path(self.repo.folder.name) / "notes.txt"

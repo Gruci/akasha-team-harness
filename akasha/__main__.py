@@ -180,8 +180,18 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
+def _utf8() -> None:
+    """Write UTF-8, also where Python writes the code page of Windows by default: the agent engine reads UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def run(argv: list[str] | None = None) -> int:
     """Run a command. Tell an expected problem in one line, without a traceback."""
+    _utf8()
     try:
         return main(argv)
     except (ValueError, LookupError, RuntimeError, PermissionError) as error:

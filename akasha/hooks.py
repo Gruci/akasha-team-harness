@@ -29,9 +29,12 @@ SEEN = config.STATE_DIR / "seen.json"
 
 
 def _payload() -> dict:
+    """The JSON of the agent engine on the standard input. It is UTF-8, also where Python reads the code page of
+    Windows by default, for example cp949: else "승인" would not be an approval."""
     try:
-        data = json.loads(sys.stdin.read() or "{}")
-    except ValueError:
+        raw = sys.stdin.buffer.read() if hasattr(sys.stdin, "buffer") else sys.stdin.read().encode("utf-8")
+        data = json.loads(raw.decode("utf-8", errors="replace") or "{}")
+    except (ValueError, OSError):
         return {}
     return data if isinstance(data, dict) else {}
 
