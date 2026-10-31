@@ -104,6 +104,21 @@ class InfraTests(unittest.TestCase):
         self.assertEqual(again.count(desired.START), 1)
         self.assertIn("* @team-leads", again)
 
+    def test_a_line_of_the_team_that_the_block_wins_over_is_told(self):
+        block = desired.codeowners(Team(administrators=("admin",)))
+        merged = desired.merge("/.github/workflows/ @ops\nsrc/ @dev\n# /akasha.toml @boss\n\n*.py @python\n", block)
+        [warned] = desired.shadowed(merged)
+        self.assertTrue(warned.startswith("the CODEOWNERS line `/.github/workflows/ @ops` of the team covers files of "
+                                          "the Akasha lines /.github/. The Akasha block is last"))
+        [everything] = desired.shadowed(desired.merge("* @team-leads\n", block))
+        self.assertIn("/akasha.toml, /.akasha/workflows/, /.github/ and 2 more", everything)
+        self.assertEqual(desired.shadowed(block), [])
+        self.assertEqual(desired.shadowed("* @team-leads\n"), [])             # no Akasha block yet
+        gated = desired.codeowners(Team(developers=("lead",), risk={"high": ("**/auth/**",)},
+                                        approval={"high": ("developer",)}, map_dir="docs/features"))
+        lines = desired.shadowed(desired.merge("docs/ @writers\n/src/auth/ @security\n/src/billing/ @billing\n", gated))
+        self.assertEqual([line.split("`")[1] for line in lines], ["docs/ @writers", "/src/auth/ @security"])
+
     def test_protection_and_settings(self):
         wanted = desired.protection()
         self.assertEqual(wanted["required_status_checks"], {"strict": True, "contexts": ["akasha"]})
@@ -255,6 +270,17 @@ class ApplyTests(unittest.TestCase):
         problems, warned = self.apply("admin-a", private=False)
         self.assertEqual(problems, [])                                   # a warning does not stop a handover
         self.assertIn("a pull request from a fork runs its code on that machine", warned[0])
+
+    def test_the_administrator_is_told_about_the_lines_of_the_team_that_lose_their_effect(self):
+        owners = self.root / ".github" / "CODEOWNERS"
+        owners.parent.mkdir()
+        owners.write_text("/akasha.toml @boss\n", encoding="utf-8")
+        problems, warned = self.apply("admin-a")
+        self.assertEqual((problems, len(warned)), ([], 1))                  # a warning does not stop a handover
+        self.assertIn("`/akasha.toml @boss`", warned[0])
+        self.assertTrue(owners.read_text(encoding="utf-8").startswith("/akasha.toml @boss\n\n# akasha:start"))
+        self.assertEqual(self.apply("", by="admin-a", origin=""),
+                         (["Akasha wrote the files, but cannot reach GitHub to change the settings"], warned))
 
     def test_the_open_pull_requests_of_the_tasks_get_the_merge_label(self):
         listed = [{"number": 4, "body": "## Why\n\n<!-- akasha-task: t-1 -->\n", "labels": []},

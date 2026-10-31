@@ -7,6 +7,13 @@ from pathlib import Path
 
 FILES = ("AGENTS.md", ".codex/hooks.json")         # the files that Codex reads, from the top of the repository
 START, END = "<!-- akasha:start -->", "<!-- akasha:end -->"
+HOOK_MARK = "-m akasha hook"                        # the command of each hook of Akasha has it
+# The events of the hooks of Akasha, with the tools that each hook examines. Codex gives the standard output of the
+# SessionStart hook to the agent, as Claude Code does.
+EVENTS = (("SessionStart", None), ("PreToolUse", "Bash|apply_patch|Edit|Write"),
+          ("PostToolUse", "Edit|Write|apply_patch"), ("Stop", None))
+NOT_JSON = ("{name} is not JSON in the form of the hooks of Codex, so Akasha did not change it. Repair the JSON or "
+            "remove the file, then run the setup again: Akasha adds its hooks and keeps the other hooks.")
 RULES = f"""{START}
 ## Akasha
 
@@ -84,25 +91,51 @@ def _hook(event: str, matcher: str | None) -> dict:
 
 def _changed(path: Path, text: str) -> bool:
     """Write the text into the file when the file has other text. True when the file changed."""
-    if path.is_file() and path.read_text(encoding="utf-8") == text:
+    if read(path) == text:
         return False
     path.parent.mkdir(exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return True
 
 
-def made(name: str, text: str | None) -> str:
-    """The file `name` of FILES as this Akasha makes it from the current text of the file, or from no file. Only
-    the Akasha block of AGENTS.md changes: the other text stays.
+def _ours(hook: object) -> bool:
+    """True for a hook of Akasha: its command runs `python -m akasha hook`."""
+    commands = (hook.get("command"), hook.get("commandWindows")) if isinstance(hook, dict) else ()
+    return any(HOOK_MARK in str(command or "") for command in commands)
 
-    Codex gives the standard output of the SessionStart hook to the agent, as Claude Code does."""
+
+def _hooks(text: str | None) -> str | None:
+    """The hooks file with the hooks of this Akasha, from the current text of the file or from no file. None when the
+    text is not JSON in the form of the hooks of Codex: Akasha does not change such a file.
+
+    The hooks of the team stay. In each event, Akasha removes only its own hooks, and only the groups that become
+    empty, then adds its group at the end. The other events and the other keys stay. Thus the file gets one set of
+    the hooks of Akasha, also after many runs."""
+    try:
+        data = json.loads(text.lstrip("\ufeff")) if text and text.strip() else {}
+    except ValueError:
+        return None
+    hooks = data.get("hooks", {}) if isinstance(data, dict) else None
+    if not isinstance(hooks, dict) or not all(isinstance(groups, list) for groups in hooks.values()):
+        return None
+    for event, matcher in EVENTS:
+        kept = []
+        for group in hooks.get(event, []):
+            inner = group.get("hooks") if isinstance(group, dict) else None
+            if not isinstance(inner, list) or not any(_ours(hook) for hook in inner):
+                kept.append(group)
+            elif not all(_ours(hook) for hook in inner):
+                kept.append({**group, "hooks": [hook for hook in inner if not _ours(hook)]})
+        hooks[event] = kept + [_hook(event, matcher)]
+    return json.dumps({**data, "hooks": hooks}, indent=2, ensure_ascii=False) + "\n"
+
+
+def made(name: str, text: str | None) -> str | None:
+    """The file `name` of FILES as this Akasha makes it from the current text of the file, or from no file. Only
+    the Akasha block of AGENTS.md and the hooks of Akasha in .codex/hooks.json change: the other text and the other
+    hooks stay. None for a hooks file that Akasha cannot read (_hooks)."""
     if name != "AGENTS.md":
-        return json.dumps({"hooks": {
-            "SessionStart": [_hook("SessionStart", None)],
-            "PreToolUse": [_hook("PreToolUse", "Bash|apply_patch|Edit|Write")],
-            "PostToolUse": [_hook("PostToolUse", "Edit|Write|apply_patch")],
-            "Stop": [_hook("Stop", None)],
-        }}, indent=2) + "\n"
+        return _hooks(text)
     text = text or ""
     if START in text and END in text:
         text = text[:text.index(START)] + RULES.strip() + text[text.index(END) + len(END):]
@@ -112,17 +145,29 @@ def made(name: str, text: str | None) -> str:
 
 
 def current(name: str, text: str | None) -> bool:
-    """True when the text of the file `name` of FILES is as this Akasha makes it."""
+    """True when the text of the file `name` of FILES is as this Akasha makes it. A hooks file that Akasha cannot
+    read is not."""
     return text is not None and made(name, text) == text
 
 
 def write(root: Path, names: tuple[str, ...] = FILES) -> list[str]:
     """Put the Akasha rules into AGENTS.md and the hooks into .codex/hooks.json, or only into the files `names`.
-    Keep the other text of AGENTS.md. Return the files that changed, so that the setup tells the person to commit
-    them."""
-    return [name for name in names if _changed(root / name, made(name, read(root / name)))]
+    Keep the other text of AGENTS.md and the other hooks of .codex/hooks.json. A hooks file that Akasha cannot read
+    stays as it is (unreadable). Return the files that changed, so that the setup tells the person to commit them."""
+    changed = []
+    for name in names:
+        text = made(name, read(root / name))
+        if text is not None and _changed(root / name, text):
+            changed.append(name)
+    return changed
+
+
+def unreadable(root: Path) -> list[str]:
+    """The files of Codex that Akasha does not change, because it cannot read them: a .codex/hooks.json that is not
+    JSON in the form of the hooks of Codex. The setup tells them (NOT_JSON)."""
+    return [name for name in FILES if made(name, read(root / name)) is None]
 
 
 def read(path: Path) -> str | None:
-    """The text of a file of Codex, or None when the file is not there."""
-    return path.read_text(encoding="utf-8") if path.is_file() else None
+    """The text of a file of Codex without a byte order mark, or None when the file is not there."""
+    return path.read_text(encoding="utf-8-sig") if path.is_file() else None

@@ -85,6 +85,21 @@ class GuardTests(unittest.TestCase):
                 self.assertIsNotNone(guard.check_command(line, work, self.root))
                 self.assertIsNone(guard.check_command("git push origin feature-x", work, self.root))
 
+    def test_the_guard_uses_the_names_of_work_in_the_team_config(self):
+        team = Team(work_dir="tools/worktrees", branch_prefix="feat/", wip_prefix="wip/")
+        work = self.root / "tools" / "worktrees" / "t-1"
+        work.mkdir(parents=True)
+        for line in ("git push origin feat/t-1", "git push origin HEAD:refs/heads/wip/t-1",
+                     "git push origin --delete feat/t-1", "git push origin akasha/t-1",     # also the default prefixes
+                     "git push origin akasha-wip/t-1"):
+            with self.subTest(line=line):
+                self.assertIsNotNone(guard.check_command(line, self.root, self.root, team))
+        for line in ("git push", "git push -u origin HEAD"):                              # in its work copy
+            with self.subTest(line=line):
+                self.assertIsNotNone(guard.check_command(line, work, self.root, team))
+        self.assertIsNone(guard.check_command("git push origin feature-x", work, self.root, team))
+        self.assertIsNone(guard.check_command("git push origin feat/t-1", self.root, self.root))    # not a task branch
+
     def test_edits_go_into_the_work_copy_of_an_active_task(self):
         work = self.root / ".akasha" / "work" / "t-1"
         task = Task(id="t-1", title="x", workflow="feature", stage="build", workcopy=str(work))

@@ -118,6 +118,33 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.load(self.repo('[context]\nfolder = "docs"\n'))
 
+    def test_the_work_folder_and_the_branch_prefixes(self):
+        team = config.load(self.repo())
+        self.assertEqual((team.work_dir, team.branch_prefix, team.wip_prefix),
+                         (".akasha/work", "akasha/", "akasha-wip/"))
+        own = config.load(self.repo("[work]\nfolder = 'tools\\worktrees\\'\nbranch_prefix = \"feat/\"\n"
+                                    'wip_prefix = "wip/feat-"\n'))
+        self.assertEqual((own.work_dir, own.branch_prefix, own.wip_prefix), ("tools/worktrees", "feat/", "wip/feat-"))
+        for value in ('"/srv/work"', '"C:/work"', '"../work"', '"tools/../../work"', '"."', '""', '"aux"', 1,
+                      '".git/work"', '".GIT"', '".akasha"', '".akasha/state/work"', '".akasha/context/work"',
+                      '".akasha/workflows/work"', '".akasha/Context"'):      # the folders of git and of Akasha
+            with self.subTest(folder=value), self.assertRaises(config.ConfigError):
+                config.load(self.repo(f"[work]\nfolder = {value}\n"))
+        with self.assertRaises(config.ConfigError) as refused:            # the map folder of the team
+            config.load(self.repo('[context]\nmap = "docs/map"\n[work]\nfolder = "docs"\n'))
+        self.assertIn("[work] folder docs cannot be docs/map, in it, or around it", str(refused.exception))
+        for value in ('""', '" "', "1", '"feat /"', '"feat~"', '"feat^"', '"feat:"', '"a..b/"', '"-feat/"', '"/feat"',
+                      '"feat//"', '".feat/"', '"feat.lock/"', '"feat@{"', '"fe*at/"', '"feat?"', '"feat["',
+                      '"feat\\\\"', '"feat\\t"'):
+            with self.subTest(prefix=value), self.assertRaises(config.ConfigError):
+                config.load(self.repo(f"[work]\nbranch_prefix = {value}\n"))
+        for branch, wip in (("x/", "x/"), ("akasha/", "akasha/wip/"), ("Feat/", "feat/"), ("wip/", "wip/old-")):
+            with self.subTest(branch=branch, wip=wip), self.assertRaises(config.ConfigError) as refused:
+                config.load(self.repo(f'[work]\nbranch_prefix = "{branch}"\nwip_prefix = "{wip}"\n'))
+            self.assertIn("one cannot start with the other", str(refused.exception))
+        with self.assertRaises(config.ConfigError):
+            config.load(self.repo('[work]\nprefix = "feat/"\n'))
+
     def test_the_machine_and_the_python_of_the_server_check(self):
         team = config.load(self.repo())
         self.assertEqual((team.runs_on, team.python), (("ubuntu-latest",), "3.12"))

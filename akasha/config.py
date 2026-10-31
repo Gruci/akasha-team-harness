@@ -21,6 +21,13 @@ TEAM_CONTEXT = Path(".akasha") / "context"           # the decisions and lessons
 MAP_DIR = TEAM_CONTEXT / "map"
 MAP_README = "README.md"                             # the guide of the map folder. It maps no feature
 LEGACY_MAP = TEAM_CONTEXT / "product-map.md"
+# The work copies: a git worktree for each task in <work folder>/<task>, on the task branch <branch prefix><task>. A
+# handoff pushes the work to <wip prefix><task>. [work] changes them, for a repository that has its own names.
+WORK_DIR = Path(".akasha") / "work"
+BRANCH_PREFIX = "akasha/"
+WIP_PREFIX = "akasha-wip/"
+# The text that git refuses in a branch name (git check-ref-format)
+NOT_IN_BRANCH = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{")
 # The device names of Windows. Windows cannot make a file or a folder with such a name, also with an extension, so
 # git cannot check out a commit that has one.
 WINDOWS_NAMES = "(?:con|prn|aux|nul|com[0-9]|lpt[0-9])"
@@ -43,6 +50,7 @@ _KEYS: dict[str, set[str] | None] = {
     "server": {"rules"},
     "context": {"map"},
     "ci": {"runs-on", "python"},
+    "work": {"folder", "branch_prefix", "wip_prefix"},
 }
 # Who enforces the server rules: "github" (branch protection and auto-merge of GitHub) or "akasha" (the merge and
 # watch workflows of Akasha, for a plan without branch protection). The setup selects it.
@@ -123,6 +131,9 @@ class Team:
     map_dir: str = MAP_DIR.as_posix()                                # the map folder, with / between the parts
     runs_on: tuple[str, ...] = RUNS_ON                               # the runner labels of the server check
     python: str = PYTHON                                             # the Python version of the server check
+    work_dir: str = WORK_DIR.as_posix()                              # the folder of the work copies, with /
+    branch_prefix: str = BRANCH_PREFIX                               # the task branches: <prefix><task>
+    wip_prefix: str = WIP_PREFIX                                     # the branches of the handoffs: <prefix><task>
 
 
 def _strings(value: object, where: str) -> tuple[str, ...]:
@@ -162,15 +173,56 @@ def _relative(value: object, where: str, example: str, top: bool = True) -> str:
     return "/".join(path.parts)
 
 
-def _folder(value: object, where: str) -> str:
-    """The map folder, with / between the parts. The top of the repository is refused too: Akasha puts the folder
-    outside each task scope. A device name of Windows is refused too, because each Windows checkout of the folder
-    would fail."""
-    folder = _relative(value, where, MAP_DIR.as_posix(), top=False)
+def _folder(value: object, where: str, example: str) -> str:
+    """A folder of Akasha in the repository, the map folder or the work folder, with / between the parts. The top of
+    the repository is refused too: the map folder is outside each task scope, and the work folder holds only the
+    work copies. A device name of Windows is refused too, because Windows cannot make the folder."""
+    folder = _relative(value, where, example, top=False)
     device = [part for part in folder.split("/") if re.fullmatch(WINDOWS_NAMES, part.split(".")[0].rstrip(" "), re.I)]
     if device:
         raise ConfigError(f"{CONFIG_FILE}: {where} cannot have the part {device[0]}: it is a device name of Windows")
     return folder
+
+
+def _nested(folder: str, other: str) -> bool:
+    """True when one folder is the other folder or is in it. Case does not count, as on Windows and macOS."""
+    folder, other = folder.lower() + "/", other.lower() + "/"
+    return folder.startswith(other) or other.startswith(folder)
+
+
+def _work_folder(value: object, map_dir: str) -> str:
+    """The folder of the work copies. It is in the repository: outside it, the guard stops each recursive delete in a
+    work copy, and two clones on one computer share one folder. It stays apart from the folders of git and of
+    Akasha, and from the map folder."""
+    folder = _folder(value, "[work] folder", WORK_DIR.as_posix())
+    for other in (".git", STATE_DIR.as_posix(), TEAM_CONTEXT.as_posix(), TEAM_WORKFLOWS.as_posix(), map_dir):
+        if _nested(folder, other):
+            raise ConfigError(f"{CONFIG_FILE}: [work] folder {folder} cannot be {other}, in it, or around it — use "
+                              f"another folder, for example {WORK_DIR.as_posix()}")
+    return folder
+
+
+def _prefix(value: object, where: str) -> str:
+    """A prefix of branch names, for example feat/. Akasha adds the task name to it, so the result must be a correct
+    branch name of git."""
+    prefix = _text(value, where)
+    if NOT_IN_BRANCH.search(prefix) or prefix.startswith("-") or \
+            any(not part or part.startswith(".") or part.endswith(".lock") for part in (prefix + "x").split("/")):
+        raise ConfigError(f"{CONFIG_FILE}: {where} {prefix!r} cannot start a branch name of git. Use letters, digits, "
+                          "-, and / between the parts, for example feat/")
+    return prefix
+
+
+def _work(section: dict, map_dir: str) -> tuple[str, str, str]:
+    """[work]: the folder of the work copies, and the prefixes of the task branches and of the wip branches. Akasha
+    tells a task branch from a wip branch by the prefix, so one prefix cannot start with the other."""
+    folder = _work_folder(section.get("folder", WORK_DIR.as_posix()), map_dir)
+    branch = _prefix(section.get("branch_prefix", BRANCH_PREFIX), "[work] branch_prefix")
+    wip = _prefix(section.get("wip_prefix", WIP_PREFIX), "[work] wip_prefix")
+    if branch.lower().startswith(wip.lower()) or wip.lower().startswith(branch.lower()):
+        raise ConfigError(f"{CONFIG_FILE}: [work] branch_prefix {branch} and wip_prefix {wip} must be different, and "
+                          "one cannot start with the other")
+    return folder, branch, wip
 
 
 def _check(name: str, value: object) -> Check:
@@ -331,6 +383,8 @@ def _team(data: dict, flows: dict[str, Workflow]) -> Team:
     setup = _text(checks["setup"], "[checks] setup") if "setup" in checks else ""
     if setup and "setup" in required:                 # Akasha 1.0.0 ran setup as a check when required named it
         named["setup"] = Check(setup)
+    map_dir = _folder(data.get("context", {}).get("map", MAP_DIR.as_posix()), "[context] map", MAP_DIR.as_posix())
+    work_dir, branch_prefix, wip_prefix = _work(data.get("work", {}), map_dir)
     return Team(
         developers=_strings(roles.get("developers", []), "[roles] developers"),
         administrators=_strings(roles.get("administrators", []), "[roles] administrators"),
@@ -346,9 +400,12 @@ def _team(data: dict, flows: dict[str, Workflow]) -> Team:
         workflows={name: flows[name] for name in enabled},
         defined=dict(flows),
         server_rules=rules,
-        map_dir=_folder(data.get("context", {}).get("map", MAP_DIR.as_posix()), "[context] map"),
+        map_dir=map_dir,
         runs_on=_runs_on(ci.get("runs-on", list(RUNS_ON))),
         python=_python(ci.get("python", PYTHON)),
+        work_dir=work_dir,
+        branch_prefix=branch_prefix,
+        wip_prefix=wip_prefix,
     )
 
 

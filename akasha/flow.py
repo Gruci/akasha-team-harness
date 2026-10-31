@@ -600,9 +600,13 @@ def _find(root: Path, task_id: str) -> Task | None:
 
 
 def _taken(root: Path, task_id: str) -> bool:
-    """True when a task file, a branch on this computer or on the server, or an issue on the board has this id."""
-    branches = [f"refs/heads/{prefix}{task_id}" for prefix in (workcopy.BRANCH_PREFIX, workcopy.WIP_PREFIX)]
-    if tasks.exists(root, task_id) or workcopy.git(root, "rev-parse", "--verify", "-q", branches[0]).returncode == 0:
+    """True when a task file, a branch on this computer or on the server, or an issue on the board has this id. The
+    branches have the prefixes of [work] or the default prefixes."""
+    team = rules(root)
+    prefixes = (team.branch_prefix, team.wip_prefix, config.BRANCH_PREFIX, config.WIP_PREFIX)
+    branches = [f"refs/heads/{prefix}{task_id}" for prefix in dict.fromkeys(prefixes)]
+    if tasks.exists(root, task_id) or \
+            any(workcopy.git(root, "rev-parse", "--verify", "-q", branch).returncode == 0 for branch in branches):
         return True
     if board.find(root, task_id) is not None:
         return True
@@ -708,11 +712,17 @@ def _tidy(root: Path) -> None:
 
 def _earlier(root: Path, task: Task) -> tuple[Task | None, str]:
     """The earlier task that this task builds on, or None when nobody can find it, and the branch of the earlier
-    task. Another computer can have made that branch, so its name comes from the task. The issue of a task of Akasha
-    1.0.0 has no branch: then the branch is akasha/<task>."""
+    task. Another computer can have made that branch, and the team can have changed the branch prefix since, so the
+    name comes from the task. The issue of a task of Akasha 1.0.0 has no branch: then the branch is akasha/<task>, as
+    Akasha 1.0.0 made it. An earlier task without a branch stops the command."""
     earlier = _find(root, task.builds_on)
-    named = earlier.branch if earlier is not None and earlier.branch else ""
-    return earlier, named or f"{workcopy.BRANCH_PREFIX}{task.builds_on}"
+    if earlier is not None and earlier.branch:
+        return earlier, earlier.branch
+    if earlier is not None and earlier.format >= tasks.FORMAT:
+        raise RuntimeError(f"the earlier task {task.builds_on} has no branch yet, so its work is not on this computer "
+                           "or on the server yet — it gets a branch at its build stage, and the branch goes to the "
+                           "server when all checks of that task pass")
+    return earlier, f"{config.BRANCH_PREFIX}{task.builds_on}"
 
 
 def _start_ref(root: Path, task: Task) -> str:
@@ -768,10 +778,10 @@ def _open_workcopy(root: Path, team: Team, task: Task, start: str = "") -> None:
     setup becomes a note. The caller puts the task on the board.
 
     A task that continues from `start`, for example the work of another computer, keeps its base: its changes stay
-    the changes since that base. The output of a failed setup stays on this computer, because it can show paths and
-    secrets."""
+    the changes since that base. Each task keeps its branch (workcopy.create). The output of a failed setup stays on
+    this computer, because it can show paths and secrets."""
     kept = task.base if start else ""
-    workcopy.create(root, task, start or _start_ref(root, task))
+    workcopy.create(root, team, task, start or _start_ref(root, task))
     task.base = kept or task.base
     task.revision += 1          # a stop during the setup command must not lose the work copy, the branch, or the base:
     tasks.save(root, task)      # the next command finds this newer state on this computer and puts it on the issue
@@ -1504,10 +1514,17 @@ def handover(root: Path, task_id: str) -> tuple[str, list[str]]:
     return task.pull_request, advance(root, task_id)
 
 
+def _wip_branches(team: Team, task: Task) -> list[str]:
+    """The branches on the server where the last handoff of the task can be: the wip branch with the prefix of the
+    team, and with the default prefix, for a handoff before the team changed it."""
+    return list(dict.fromkeys((f"{team.wip_prefix}{task.id}", f"{config.WIP_PREFIX}{task.id}")))
+
+
 def _drop_wip(root: Path, task: Task) -> None:
     """Delete the branch of the last handoff on the server. A failure does not matter: the branch only waits there."""
     if task.wip:
-        workcopy.git(root, "push", "-q", "origin", "--delete", f"{workcopy.WIP_PREFIX}{task.id}")
+        for branch in _wip_branches(rules(root), task):
+            workcopy.git(root, "push", "-q", "origin", "--delete", branch)
         task.wip = ""
 
 
@@ -1540,7 +1557,7 @@ def handoff(root: Path, task_id: str) -> Task:
             raise RuntimeError(f"the work copy has files outside the scope: {', '.join(strays[:5])}. Remove them, add "
                                "them to .gitignore, or widen the scope with specify --scope. Then do the handoff again")
         _commit(tree, f"wip: {task.title}")
-        pushed = workcopy.git(tree, "push", "-q", "origin", f"HEAD:refs/heads/{workcopy.WIP_PREFIX}{task.id}")
+        pushed = workcopy.git(tree, "push", "-q", "origin", f"HEAD:refs/heads/{rules(root).wip_prefix}{task.id}")
         if pushed.returncode:
             raise RuntimeError(f"git push failed: {pushed.stderr.strip()[:300]}. Akasha never forces this push: when "
                                "the server has newer work of this task, this work copy is behind it")
@@ -1563,24 +1580,25 @@ def _contains(tree: Path, ref: str, commit: str) -> bool:
     return workcopy.git(tree, "merge-base", "--is-ancestor", commit, ref).returncode == 0
 
 
-def _work_on_server(root: Path, task: Task) -> str:
+def _work_on_server(root: Path, team: Team, task: Task) -> str:
     """Where the work copy of a task from another computer starts: the work of the last handoff, else the task branch
     on the server. A work copy or a branch of the task that this computer still has must go forward to it, so that
     no old work of this computer replaces the newer work of another person."""
-    wip, found = f"{workcopy.WIP_PREFIX}{task.id}", set()
-    for branch in (wip, task.branch):
+    wips, found = _wip_branches(team, task), set()
+    for branch in (*(wips if task.wip else []), task.branch):
         if workcopy.fetch(root, branch).returncode == 0:
             found.add(branch)
     start = f"origin/{task.branch}" if task.branch in found else ""
-    handed = wip in found and workcopy.git(root, "rev-parse", f"origin/{wip}").stdout.strip() == task.wip
-    if task.wip and handed and not (start and _contains(root, start, task.wip)):
-        start = f"origin/{wip}"
+    handed = next((wip for wip in wips if wip in found
+                   and workcopy.git(root, "rev-parse", f"origin/{wip}").stdout.strip() == task.wip), "")
+    if handed and not (start and _contains(root, start, task.wip)):
+        start = f"origin/{handed}"
     if not start:
-        raise RuntimeError(f"the work of the task {task.id} is not on the server: no branch {wip} and no branch "
+        raise RuntimeError(f"the work of the task {task.id} is not on the server: no branch {wips[0]} and no branch "
                            f"{task.branch}. Ask {task.holder or 'the last holder'} to hand it off with akasha handoff "
                            f"{task.id}")
     workcopy.git(root, "worktree", "prune")          # forget the work copies whose folders a person removed
-    tree = Path(task.workcopy) if task.workcopy else root / workcopy.WORK_DIR / task.id
+    tree = Path(task.workcopy) if task.workcopy else root / team.work_dir / task.id
     if tree.is_dir():
         if not _on_branch(tree, task.branch) or workcopy.git(tree, "status", "--porcelain").stdout.strip() \
                 or not _contains(tree, start, "HEAD"):
@@ -1634,7 +1652,7 @@ def takeover(root: Path, task_id: str) -> Task:
                           f"{task.id}")
     if forced:
         _examine_role(team, "developer", name)        # a stopped task waits for a developer
-    start = _work_on_server(root, task) if task.branch else ""
+    start = _work_on_server(root, team, task) if task.branch else ""
     if start and not task.base:                       # a task of Akasha 1.0.0 can have no base
         task.base = workcopy.git(root, "merge-base", _default_ref(root), start).stdout.strip()
     task.holder, task.holder_host = name, host

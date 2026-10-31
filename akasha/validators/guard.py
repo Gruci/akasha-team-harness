@@ -13,13 +13,12 @@ import shlex
 from collections.abc import Iterable
 from pathlib import Path
 
-from akasha.config import STATE_DIR
+from akasha.config import BRANCH_PREFIX, STATE_DIR, WIP_PREFIX, WORK_DIR, Team
 from akasha.coordinator.board import DECISIONS
 from akasha.core.task import Task
-from akasha.core.workcopy import BRANCH_PREFIX, WIP_PREFIX, WORK_DIR
 
 DEFAULT_BRANCHES = ("main", "master")
-TASK_BRANCHES = (BRANCH_PREFIX, WIP_PREFIX)             # Akasha pushes these branches itself
+TASK_BRANCHES = (BRANCH_PREFIX, WIP_PREFIX)             # Akasha pushes these branches itself, and those of [work]
 _SEPARATORS = re.compile(r"&&|\|\||[;|&\n]")
 _CONTINUATION = re.compile(r"[\\`]\r?\n")              # a line that goes on in the next line (shell and PowerShell)
 _DRIVE = re.compile(r"^[A-Za-z]:/")
@@ -98,7 +97,7 @@ def _short_flag(arg: str, letter: str) -> bool:
     return re.fullmatch(rf"-[A-Za-z]*{letter}[A-Za-z]*", arg) is not None
 
 
-def _git_reason(args: list[str], in_work_copy: bool = False) -> str | None:
+def _git_reason(args: list[str], in_work_copy: bool = False, branches: tuple[str, ...] = TASK_BRANCHES) -> str | None:
     if "push" in args:
         rest = args[args.index("push") + 1:]
         if any(arg.startswith("--force") or _short_flag(arg, "f") or (arg.startswith("+") and len(arg) > 1)
@@ -113,7 +112,7 @@ def _git_reason(args: list[str], in_work_copy: bool = False) -> str | None:
         targets = {arg.split(":")[-1].removeprefix("refs/heads/") for arg in named}
         if targets & set(DEFAULT_BRANCHES):
             return "it pushes straight to the default branch. Akasha merges each change through a pull request"
-        if any(target.startswith(TASK_BRANCHES) for target in targets):
+        if any(target.startswith(branches) for target in targets):
             return _TASK_PUSH
         if "--all" in rest or "--mirror" in rest:
             return "it pushes all branches, also the task branches. Push one branch by its name"
@@ -236,11 +235,16 @@ def _delete_reason(args: list[str], cwd: Path, root: Path, moved: bool) -> str |
     return None
 
 
-def check_command(line: str, cwd: Path, root: Path) -> str | None:
+def check_command(line: str, cwd: Path, root: Path, team: Team | None = None) -> str | None:
     """The reason to stop the shell command, or None when the command is safe to run.
 
     In a work copy, a push of the current branch is a push of the task branch. The folder of git is the folder of the
-    command, the folder after a change of the folder in the same command, or the folder of `git -C`."""
+    command, the folder after a change of the folder in the same command, or the folder of `git -C`. The task
+    branches and the work copies have the prefixes and the folder of [work] in the team rules `team`, and the default
+    ones too, for the tasks from before a change of [work]."""
+    team = team or Team()
+    branches = tuple(dict.fromkeys((*TASK_BRANCHES, team.branch_prefix, team.wip_prefix)))
+    folders = (root / WORK_DIR, root / team.work_dir)
     moved, here = False, cwd
     commands = [args for args in map(_program, _commands(line)) if args]
     for args in commands:
@@ -249,7 +253,8 @@ def check_command(line: str, cwd: Path, root: Path) -> str | None:
             continue
         if args[0] == "git":
             folder = _git_folder(args[1:], here)
-            reason = _git_reason(args[1:], folder is not None and _inside(folder, root / WORK_DIR))
+            in_work_copy = folder is not None and any(_inside(folder, work) for work in folders)
+            reason = _git_reason(args[1:], in_work_copy, branches)
         elif args[0].lower() in _GH:
             reason = _gh_reason(args, line, commands, cwd)
         else:

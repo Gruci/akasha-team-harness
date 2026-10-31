@@ -41,6 +41,11 @@ enabled = ["feature", "fix", "small"]
 [ci]
 runs-on = "ubuntu-latest"
 python = "3.12"
+
+[work]
+folder = ".akasha/work"
+branch_prefix = "akasha/"
+wip_prefix = "akasha-wip/"
 ```
 
 ## `[roles]`
@@ -193,6 +198,24 @@ The merge and watch helpers always run on `ubuntu-latest`. They can write to the
 The map folder is outside each task scope, and its files do not raise the risk level of a task, so that each task can update its map file. Use it only for the product map.
 
 > **CAUTION:** An Akasha plugin that is not updated refuses an unknown section, also `[context]`. Make sure that each person updated the Akasha plugin before you add it.
+
+## `[work]`
+
+The work copies and the branches of the tasks. Change these keys when the repository already uses the default names, for example for its own branches or for another tool.
+
+| Key | Value |
+|:--|:--|
+| `folder` | The folder of the work copies, relative to the top of the repository. The default is `.akasha/work`. The work copy of each task is `<folder>/<task>`. Akasha refuses an absolute path, a drive, `..`, the top of the repository, and a device name of Windows. It also refuses `.git`, `.akasha/state`, `.akasha/context`, `.akasha/workflows`, and the map folder, a folder in one of them, and a folder around one of them |
+| `branch_prefix` | The prefix of the task branches. The default is `akasha/`. The branch of a task is `<prefix><task>`, for example `feat/add-a-date-filter-1f3a9c0b` |
+| `wip_prefix` | The prefix of the branches of the handoffs. The default is `akasha-wip/` |
+
+The folder must be in the repository. Outside it, the guard stops each recursive delete in a work copy, and two clones on one computer share one folder. Git must not track the work copies. When no ignore file names the folder, Akasha adds it to `.git/info/exclude` at the first work copy on each computer. Nobody commits that file. `setup` also adds the folder to `.gitignore`.
+
+Akasha adds the task name to each prefix, so the result must be a correct branch name of git. Akasha refuses a space, `~`, `^`, `:`, `?`, `*`, `[`, `\`, `..`, `@{`, a leading `-`, and a part that starts with `.` or ends with `.lock`. Akasha tells a task branch from a wip branch by the prefix. Thus it also refuses two prefixes when one starts with the other, for example `akasha/` and `akasha/wip/`. Case does not count.
+
+A change applies to the new tasks. Each task keeps its branch, also after a takeover on another computer: its pull request and its branch on the server stay the same. A takeover finds the work of the last handoff with `wip_prefix` and with the default `akasha-wip/`. The guard stops a push to the branches of the prefixes of `[work]` and of the default prefixes.
+
+> **CAUTION:** An Akasha plugin that is not updated refuses `[work]`. Make sure that each person updated the Akasha plugin before you add it.
 
 ## Product map and team context
 

@@ -133,6 +133,8 @@ A plain GitHub name gets the prefix `@`.
 
 > **NOTE:** In CODEOWNERS, the last matching line wins. A line of the team for all files, for example `* @team-leads`, makes each pull request wait for that review.
 
+The Akasha block is last, so for the files of its lines, a line of the team has no effect. When a line of the team covers a file of a line of the block, `infra --apply` and `setup --approve-infra` show a warning with the two lines, for example for `/.github/workflows/ @ops` and the line of the block for `/.github/`. Akasha compares the common patterns: `*`, `?`, `**`, a folder, and a pattern with or without a leading `/`. The warning does not stop a handover.
+
 ## Procedure: examine and correct the settings
 
 1. Run `infra`. Akasha shows each setting that is different from the team config. It reads the server files and the team config from the default branch. It also shows the warnings that do not stop a handover, for example a runner of the team in a public repository.

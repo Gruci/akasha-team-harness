@@ -12,7 +12,8 @@ Akasha examines the repository first. Do only the part that the repository needs
 ## Procedure
 
 1. Run `akasha setup`.
-2. If Akasha says that the repository is ready, tell the user that Akasha is ready. If Akasha also says that it updated `AGENTS.md` or `.codex/hooks.json`, an update of Akasha changed the files that Codex reads: make a new branch, commit these files on it, and open a pull request. Stop here.
+2. If Akasha says that the repository is ready, tell the user that Akasha is ready. If Akasha also says that it updated `AGENTS.md` or `.codex/hooks.json`, an update of Akasha changed the files that Codex reads. If Akasha says that it added a folder to `.gitignore`, the team changed `[work]`. Then make a new branch, commit these files on it, and open a pull request. Stop here.
+   Akasha keeps the other text of `AGENTS.md` and the other hooks in `.codex/hooks.json`. If Akasha says that `.codex/hooks.json` is not JSON, tell the user: Akasha did not change it. The user repairs the file or removes it. Then run `akasha setup` again.
    If Akasha says that this checkout is old, tell the user to pull the default branch with the command that Akasha shows. If Akasha says that a newer Akasha wrote the files, tell the user to update Akasha, then run `akasha setup` again. Do not change these files yourself.
    If Akasha says that the default branch on the server already has `akasha.toml`, the setup is done, and this checkout is old. Tell the user to pull the default branch with the command that Akasha shows. Then run `akasha setup` again.
 3. If Akasha wrote `akasha.toml`, the repository did not use Akasha yet. Ask the user these questions. Ask one question at a time.
@@ -27,6 +28,7 @@ Akasha examines the repository first. Do only the part that the repository needs
    - If the owner must change the plan or make the repository public, tell the user. The server rules cannot go on before that.
    - If the user is not an administrator, tell the user to ask an administrator. The work can start now. The handover waits for the server rules.
    - If Akasha shows a GitHub warning, tell the user. A warning does not stop the work or the handover.
+   - If the warning says that a CODEOWNERS line of the team has no effect on some files, tell the administrator which line. The Akasha block decides the owners of these files.
    - If the warning says that the GitHub app of Akasha is not set up, tell the administrator to make it. Do the steps in [Make the GitHub app of Akasha](#make-the-github-app-of-akasha).
    - If the user is an administrator, ask the user to approve the GitHub changes. Then run `akasha setup --approve-infra <GitHub name>`. The name must be the GitHub account of this computer: Akasha asks GitHub, and only an administrator of the repository can change the settings. If this output shows a GitHub warning, tell the user before the pull request.
 6. Make a new branch. Commit the new and changed files on it and open a pull request.

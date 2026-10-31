@@ -260,7 +260,8 @@ def apply(root: Path, approved_by: str = "") -> tuple[list[str], list[str]]:
     each open pull request of a task gets the merge label, so that the helpers bring it up to date. Akasha keeps the
     CODEOWNERS lines and the pull request template that the team already has. The server files get the values of
     the team config in this checkout: the administrator commits them with the team config in one pull request. Thus
-    the warnings are for the team config in this checkout, before the pull request merges."""
+    the warnings are for the team config in this checkout, before the pull request merges. They also name each
+    CODEOWNERS line of the team that the Akasha block wins over (desired.shadowed)."""
     team = config.load(root)
     _examine_administrator(root, team, approved_by)
     for target, text in desired.workflows(team).items():
@@ -269,14 +270,15 @@ def apply(root: Path, approved_by: str = "") -> tuple[list[str], list[str]]:
         path.write_text(text, encoding="utf-8")
     owners = next((root / path for path in desired.CODEOWNERS_FILES if (root / path).is_file()),
                   root / desired.CODEOWNERS_FILES[0])
-    owners.write_text(desired.merge(owners.read_text(encoding="utf-8") if owners.is_file() else "",
-                                    desired.codeowners(team)), encoding="utf-8")
+    merged = desired.merge(owners.read_text(encoding="utf-8") if owners.is_file() else "", desired.codeowners(team))
+    owners.write_text(merged, encoding="utf-8")
+    shadowed = desired.shadowed(merged)               # the lines of the team that the Akasha block wins over
     template = root / desired.TEMPLATE_FILE
     if not template.is_file():
         template.write_text(desired.template(), encoding="utf-8")
     found = repository(root)
     if found is None:
-        return ["Akasha wrote the files, but cannot reach GitHub to change the settings"], []
+        return ["Akasha wrote the files, but cannot reach GitHub to change the settings"], shadowed
     slug, branch = found
     problems = []
     rules = "github"
@@ -297,7 +299,7 @@ def apply(root: Path, approved_by: str = "") -> tuple[list[str], list[str]]:
     # free plan. Thus Akasha reads the settings again.
     current = settings(root, slug)
     problems += [f"GitHub kept a setting off: {item}" for item in desired.settings_drift(current, wanted)]
-    return problems, desired.warnings(team, current) + _app_warnings(root, slug, current)
+    return problems, desired.warnings(team, current) + _app_warnings(root, slug, current) + shadowed
 
 
 def _label_pulls(root: Path) -> None:

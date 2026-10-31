@@ -28,6 +28,8 @@ PLAIN_LABEL = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9.]+)+")     # YAML reads ubu
 # ubuntu-24.04-arm. Only the suffixes of GitHub: a runner of the team can have a label such as ubuntu-22.04-gpu. Other
 # labels name a runner of the team, or a larger runner of GitHub with the name that the team gave it.
 HOSTED = re.compile(r"(?:ubuntu|windows|macos)-(?:latest|slim|\d+(?:\.\d+)?)(?:-(?:arm|intel|large|xlarge))?", re.I)
+# The wildcards of a CODEOWNERS pattern as regular expressions: ** also matches over the parts of a path
+_WILDCARDS = {"**/": "(?:.*/)?", "/**": "(?:/.*)?", "**": ".*", "*": "[^/]*", "?": "[^/]"}
 
 
 def protection() -> dict:
@@ -92,6 +94,40 @@ def merge(text: str, new_block: str) -> str:
     old = block(text)
     rest = text.replace(old, "") if old else text
     return (rest.rstrip() + "\n\n" if rest.strip() else "") + new_block
+
+
+def _owner_pattern(pattern: str) -> re.Pattern:
+    """A CODEOWNERS pattern as a regular expression for a path, for the common patterns: * and ? match in one part of
+    the path, and ** also over parts. A pattern with a / before its end starts at the top of the repository, else it
+    matches at each depth. A pattern covers the files in a folder with its name."""
+    tokens = re.split(r"(\*\*/|/\*\*|\*\*|\*|\?)", pattern.strip("/"))
+    text = "".join(_WILDCARDS.get(token, re.escape(token)) for token in tokens)
+    top = "" if "/" in pattern.rstrip("/") else "(?:.*/)?"
+    return re.compile(top + text + ("/.*" if pattern.endswith("/") else "(?:/.*)?"))
+
+
+def _example(pattern: str) -> str:
+    """A file that the CODEOWNERS pattern covers: each wildcard becomes the name x."""
+    path = re.sub(r"\*\*/|\*\*|\*|\?", lambda found: "" if found.group() == "**/" else "x", pattern.strip("/"))
+    return f"{path}/x".lstrip("/") if pattern.endswith("/") or not path else path
+
+
+def shadowed(text: str) -> list[str]:
+    """A warning for each line of the team in a CODEOWNERS text that covers a file of a line in the Akasha block.
+    The block is last, and the last matching line wins, so the line of the team has no effect on these files."""
+    own = block(text)
+    ours = [line.split()[0] for line in own.splitlines() if line.strip() and not line.startswith("#")]
+    warned = []
+    for line in text.replace(own, "").splitlines() if own else []:
+        pattern = (line.split() or ["#"])[0]
+        hits = [item for item in ours if not pattern.startswith("#") and (
+            _owner_pattern(pattern).fullmatch(_example(item)) or _owner_pattern(item).fullmatch(_example(pattern)))]
+        if hits:
+            more = f" and {len(hits) - 3} more" if len(hits) > 3 else ""
+            warned.append(f"the CODEOWNERS line `{line.strip()}` of the team covers files of the Akasha lines "
+                          f"{', '.join(hits[:3])}{more}. The Akasha block is last, and the last matching line wins: "
+                          "for these files, the line of the team has no effect")
+    return warned
 
 
 def runs_on(labels: tuple[str, ...]) -> str:

@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 from pathlib import Path
 
+from akasha.config import Team
 from akasha.core.task import Task
 
-WORK_DIR = Path(".akasha") / "work"
-BRANCH_PREFIX = "akasha/"                              # the branch of each task: akasha/<task>
-WIP_PREFIX = "akasha-wip/"                             # the work that a person hands off before the checks pass
 _QUIET = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}     # git must fail, not wait for a password that nobody types
 # A new process group, so that a timeout stops a program and all the programs that it started
 GROUP = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
@@ -62,17 +61,39 @@ def names(cwd: Path, *args: str) -> list[str]:
     return [name for name in listed.stdout.split("\0") if name.strip()]
 
 
-def create(root: Path, task: Task, start: str = "HEAD") -> Path:
-    """Make the work copy of the task on a new branch from the start commit.
+def _exclude(root: Path, folder: str) -> None:
+    """Make git ignore the work folder when no ignore file does: in the info/exclude file of this copy of the
+    repository. Nobody commits that file, and each computer adds the folder at its first work copy. Else git status
+    in the main checkout shows each work copy as a new folder."""
+    if git(root, "check-ignore", "-q", f"{folder}/").returncode == 0:
+        return
+    found = git(root, "rev-parse", "--git-path", "info/exclude").stdout.strip()
+    if not found:
+        return
+    path = Path(found) if Path(found).is_absolute() else root / found
+    line = ("/" + re.sub(r"([*?\[])", r"\\\1", folder) + "/").encode("utf-8")      # the wildcards stay plain text
+    known = path.read_bytes() if path.is_file() else b""
+    if line in known.splitlines():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("ab") as file:
+        file.write((b"\n" if known and not known.endswith(b"\n") else b"") + line + b"\n")
+
+
+def create(root: Path, team: Team, task: Task, start: str = "HEAD") -> Path:
+    """Make the work copy of the task in the work folder of the team, on the branch of the task from the start commit.
+    A task that has a branch keeps it, for example a task from another computer: its branch and its pull request on
+    the server stay the same, also after the team changed the branch prefix. A new task gets <branch prefix><task>.
 
     When an earlier run stopped after it made the branch or the folder, Akasha uses them again."""
     head = git(root, "rev-parse", start)
     if head.returncode:
         raise RuntimeError("the repository has no commit — make the first commit before a task starts"
                            if start == "HEAD" else f"git cannot find {start}")
-    path = root / WORK_DIR / task.id
-    branch = f"{BRANCH_PREFIX}{task.id}"
+    path = root / team.work_dir / task.id
+    branch = task.branch or f"{team.branch_prefix}{task.id}"
     base = head.stdout.strip()
+    _exclude(root, team.work_dir)
     if git(root, "rev-parse", "--verify", "-q", branch).returncode == 0:
         base = git(root, "merge-base", base, branch).stdout.strip() or base
         made = git(root, "worktree", "add", str(path), branch) if not path.is_dir() else None

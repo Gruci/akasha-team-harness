@@ -211,8 +211,11 @@ def _server_notice(root: Path) -> list[str]:
 
 
 def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict) -> int:
+    """Before a tool runs. Only a git command needs the team rules: the prefixes of the task branches and the work
+    folder of [work]."""
     if tool in SHELL_TOOLS:
-        reason = guard.check_command(str(tool_input.get("command") or ""), cwd, root)
+        line = str(tool_input.get("command") or "")
+        reason = guard.check_command(line, cwd, root, _rules(root) if "git" in line else None)
     elif tool in EDIT_TOOLS:
         known = tasks.all_tasks(root)
         reasons = [guard.check_edit(path, root, known) for path in _edited(tool, tool_input, cwd)]

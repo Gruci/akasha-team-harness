@@ -80,7 +80,7 @@ With GitHub, one person in one copy of the repository holds each task. The perso
 A task can go to another person, or to the same person on another computer. The same person in another copy of the repository also needs the handoff. Else the work that the first copy did not push stays there.
 
 1. The holder runs `handoff <task>` in the main checkout, not in the work copy. The handoff removes the work copy, and on Windows a program cannot remove the folder that it works in. Akasha examines the work copy first. If it has a secret key or a file outside the scope, the handoff stops.
-2. Akasha saves the work as a commit and pushes it to the wip branch `akasha-wip/<task>`. Akasha never forces this push. Thus a work copy that is behind the server cannot write over newer work.
+2. Akasha saves the work as a commit and pushes it to the wip branch `akasha-wip/<task>`, or `<wip_prefix><task>` with `[work]` in `akasha.toml`. Akasha never forces this push. Thus a work copy that is behind the server cannot write over newer work.
 3. Akasha frees the task, so that nobody holds it, and writes the commit and the free task on the issue. Then it removes the work copy and the local branch of the task. If the removal fails, for example because a program uses the folder, the task is free all the same. Close the program, then remove the folder.
 4. The other person runs `takeover <task>` on their computer. The work copy starts from the commit of the last handoff, or from the task branch on the server when that branch has the newer work. The task keeps its branch and its base. The setup command runs in the new work copy.
 5. If that computer still has a work copy or a branch of the task, it must be able to go forward to the work on the server. A work copy with changes, a folder that is not on the branch of the task, or a branch with commits that are not on the server stops the takeover. Examine them, then remove them.
@@ -100,7 +100,7 @@ A developer can take over a stopped task when its holder did not hand it off, al
 
 When the handover pushes the task branch, Akasha deletes the wip branch on the server. A cancel also deletes it.
 
-The handoff pushes to the wip branch, not to the task branch `akasha/<task>`. The task branch on the server always passed the checks, and later tasks build on it.
+The handoff pushes to the wip branch, not to the task branch. The task branch on the server always passed the checks, and later tasks build on it.
 
 If another person took over a task while this computer still has its work copy, each command for the task on this computer stops and tells you to examine the work copy, save what you need, and remove it.
 
@@ -148,8 +148,10 @@ When two people want the same feature, the second task builds on the first task.
 
 ## Work copies
 
-Each task builds in its own work copy: a git worktree in `.akasha/work/<task>`, on the branch `akasha/<task>`.
+Each task builds in its own work copy: a git worktree in `.akasha/work/<task>`, on the task branch `akasha/<task>`. `[work]` in `akasha.toml` can give another folder and other prefixes, for a repository that already uses these names ([Team config](team-config.md)).
 
+- Each task keeps its branch, also after a takeover on another computer or a change of `[work]`. Thus its pull request and its branch on the server stay the same.
+- Git does not track the work copies. When no ignore file names the work folder, Akasha adds it to `.git/info/exclude` at the first work copy on each computer.
 - A work copy starts from the latest default branch on the server, or from the branch of the earlier task. Akasha asks the server for the name of its default branch: GitHub tells it, else git asks the server. Thus a clone from before the team renamed the default branch starts from the correct branch.
 - While a task builds, Akasha stops edits in the main checkout.
 - Two tasks never write in the same folder.
