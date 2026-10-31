@@ -117,6 +117,17 @@ class HookTests(unittest.TestCase):
         self.assertIn("Each change of this repository is an Akasha task", out)
         self.assertIn("Your task t3", out)
 
+    def test_a_new_session_shows_the_preview_again(self):
+        """Only the session that showed a preview takes its approval, so a session after /clear shows it again."""
+        task, _notes = flow.start(self.root, "Title", name="t6")
+        (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text("<p>x</p>", encoding="utf-8")
+        with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "old"}):
+            flow.preview(self.root, task.id)
+        _code, out, _err = self.hook("SessionStart", {"session_id": "new"})
+        self.assertIn("Show the preview in this session", out)
+        _code, out, _err = self.hook("SessionStart", {"session_id": "old"})
+        self.assertIn("Wait for the person to approve", out)
+
 
 class SetupTests(unittest.TestCase):
     def setUp(self):
@@ -171,6 +182,13 @@ class SetupTests(unittest.TestCase):
         lines = setup.run(tree)
         self.assertTrue((tree / ".claude" / "settings.json").is_file())
         self.assertIn("work copy of the task", lines[-1])
+
+    def test_the_hooks_find_python_3_11_or_higher(self):
+        """The first python on PATH was 3.10 on a real computer, and each hook did nothing (audit F02)."""
+        done = subprocess.run(["sh", str(setup.HOOK_SCRIPT), "--python"], capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        major, minor = done.stdout.split()[-1].split(".")[:2]
+        self.assertGreaterEqual((int(major), int(minor)), (3, 11))
 
     def test_doctor_names_each_problem(self):
         found = dict((text, good) for good, text in setup.doctor(self.root))

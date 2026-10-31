@@ -71,9 +71,9 @@ def _push_reason(rest: list[str], folder: Path | None, root: Path) -> str | None
     if any(arg.startswith("--force") or _short_flag(arg, "f") or (arg.startswith("+") and len(arg) > 1)
            for arg in rest):
         return "a force push replaces history on the server"
-    if "--all" in rest or "--mirror" in rest:
-        return f"it pushes each branch, also the default branch. {LAND}"
     named = [arg for arg in rest if not arg.startswith("-")]
+    if "--all" in rest or "--mirror" in rest or any(arg.lstrip("+") == ":" for arg in named[1:]):
+        return f"it pushes each branch, also the default branch. {LAND}"
     targets = {arg.split(":")[-1].removeprefix("refs/heads/") for arg in named}
     defaults = set(DEFAULT_BRANCHES) | {default_branch(root)}
     if ("--delete" in rest or any(_short_flag(arg, "d") for arg in rest)) and targets & defaults:
@@ -83,8 +83,8 @@ def _push_reason(rest: list[str], folder: Path | None, root: Path) -> str | None
     if targets & defaults:
         return f"it pushes straight to the default branch. {LAND}"
     refspecs = named[1:]
-    if refspecs and not any(spec.split(":")[0] in ("HEAD", "@") for spec in refspecs):
-        return None
+    if refspecs and not any(spec in ("HEAD", "@") for spec in refspecs):
+        return None                                   # each one names its branch, and none is the default branch
     if folder is None:
         return ("it pushes the current branch after a change of the folder, so Akasha cannot see the branch. Run "
                 "`git -C <folder> push` instead")

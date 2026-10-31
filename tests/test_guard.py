@@ -41,9 +41,11 @@ class CurrentBranchTests(unittest.TestCase):
 
     def test_a_push_of_the_current_branch_is_examined(self):
         for line in ("git push", "git push origin", "git push origin HEAD", "git push origin @", "git -C . push",
-                     "git push --all", "cd x && git push", "git worktree add worktrees/x -b x"):
+                     "git push --all", "git push origin :", "git push origin +:", "cd x && git push",
+                     "git worktree add worktrees/x -b x"):
             with self.subTest(line=line):
                 self.assertIsNotNone(check_command(line, self.root, self.root))
+        self.assertIsNone(check_command("git push origin HEAD:akasha/x", self.root, self.root))
         run(self.root, "git", "switch", "-q", "-c", "akasha/x")
         for line in ("git push", "git push -u origin HEAD", f"git -C {self.root.as_posix()} push"):
             with self.subTest(line=line):

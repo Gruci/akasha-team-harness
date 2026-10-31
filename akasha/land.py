@@ -12,6 +12,7 @@ waits for that deployment, because the change is live only after it."""
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from pathlib import Path
@@ -65,7 +66,7 @@ def land(root: Path, task_id: str, wait: float = 0) -> tuple[str, list[str]]:
     if holder:
         return BLOCKED, [f"@{holder} holds task {task.id} now. Run `akasha tidy` to remove the copy on this computer"]
     # No answer from GitHub is no protection: then Akasha merges itself, after its own examination
-    akasha_merges = team.server_rules == "akasha" or not github.protected(root)
+    akasha_merges = team.server_rules == "akasha" or not github.protected(root, team)
     told: list[str] = []
     if task.status != "landing":
         problem = _ready(task)
@@ -196,9 +197,19 @@ def _failed(root: Path, task: Task, view: dict, failed: list[str], cancelled: bo
                           f"the work copy, run `akasha check {task.id}`, then land again"]
 
 
+def _files(root: Path, number: int) -> list[str] | None:
+    """Each file that the pull request changes, also beyond the first 100, or None when GitHub does not answer."""
+    done = repo.gh(root, "api", "--paginate", f"repos/{repo.origin(root)}/pulls/{number}/files?per_page=100",
+                   "--jq", ".[].filename")
+    return None if done.returncode else [line for line in done.stdout.splitlines() if line.strip()]
+
+
 def _waiting_review(root: Path, team: Team, task: Task, view: dict) -> tuple[str, set[str]]:
-    """Who must still approve the pull request, or nobody. "CHANGES" when one of them asked for changes."""
-    files = [str(item.get("path") or "") for item in view.get("files") or []]
+    """Who must still approve the pull request, or nobody. "CHANGES" when one of them asked for changes, "WAIT" also
+    when GitHub did not list the files."""
+    files = _files(root, task.number)
+    if files is None:
+        return "WAIT", set()
     authors = {str((view.get("author") or {}).get("login") or "").lower(), repo.me(root), str(task.owner)}
     needs = github.reviews_needed(team, files, authors)
     if not needs:
@@ -309,9 +320,9 @@ def _late(task: Task, view: dict, states: dict[str, str], waiting_for: set[str])
 
 
 def _finish(root: Path, team: Team, task: Task, state: str, view: dict, deadline: float) -> tuple[str, list[str]]:
-    task.status = state.lower()
+    task.status, task.checks["head"] = state.lower(), str(view.get("headRefOid") or "?")
     save(root, task)
-    problem = drop(root, task, merged=str(view.get("headRefOid") or "?") if state == MERGED else "")
+    problem = drop(root, task, server=task.checks["head"])
     lines = [f"task {task.id} {state.lower()}: {task.pr}"] + ([problem] if problem else [])
     if state != MERGED or not team.deploy_workflow:
         return state, lines
@@ -329,17 +340,28 @@ def _finish(root: Path, team: Team, task: Task, state: str, view: dict, deadline
 def _deploy(root: Path, team: Team, task: Task, deadline: float) -> tuple[str, list[str]]:
     """Wait for the run of the deployment workflow on the merge commit."""
     while True:
-        runs = repo.gh_json(root, "run", "list", "--workflow", team.deploy_workflow, "--commit",
-                            str(task.checks.get("merge")), "--json", "status,conclusion,url", "--limit", "5")
+        done = repo.gh(root, "run", "list", "--workflow", team.deploy_workflow, "--commit",
+                       str(task.checks.get("merge")), "--json", "status,conclusion,url", "--limit", "5")
+        try:
+            runs = json.loads(done.stdout or "null") if done.returncode == 0 else None
+        except ValueError:
+            runs = None
         latest = runs[0] if isinstance(runs, list) and runs else None
-        if latest and str(latest.get("status") or "").lower() == "completed":
-            drop(root, task)
+        late = time.time() - float(task.checks.get("merged_at") or 0) > DEPLOY_GRACE
+        done_now = bool(latest) and str(latest.get("status") or "").lower() == "completed"
+        if done_now or (late and not latest):
+            task.checks.pop("merge", None)            # the task is an ended merged task again
+            save(root, task)
+            drop(root, task, server=str(task.checks.get("head") or "?"))
+        if done_now:
             if str(latest.get("conclusion") or "").lower() == "success":
                 return DEPLOYED, [f"the deployment put the change live: {latest.get('url')}"]
             return DEPLOY_FAILED, [f"the deployment failed: {latest.get('url')}. Tell the person, and ask an "
                                    f"administrator: `akasha help {task.id} \"<the deployment failed>\"`"]
-        if runs == [] and time.time() - float(task.checks.get("merged_at") or 0) > DEPLOY_GRACE:
-            drop(root, task)
+        if late and not latest:
+            if runs is None:
+                return MERGED, [f"Akasha cannot read the runs of the workflow {team.deploy_workflow}: "
+                                f"{done.stderr.strip()[:200]}. Tell an administrator to correct [deploy] workflow"]
             return MERGED, ["no deployment started for this change (the deployment workflow skipped it): it needs "
                             "none"]
         if time.monotonic() >= deadline:

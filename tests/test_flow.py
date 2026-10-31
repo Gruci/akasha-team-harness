@@ -179,12 +179,44 @@ class FlowTests(unittest.TestCase):
         task = self.started()
         task.number = 7
         save(self.root, task)
-        answer = {"state": "OPEN", "assignees": [{"login": "kim"}], "headRefOid": "x"}
+        answer = {"state": "OPEN", "assignees": [{"login": "kim"}], "headRefOid": run(Path(task.workcopy), "git",
+                                                                                       "rev-parse", "HEAD").strip()}
         with patch("akasha.board.available", return_value=True), patch("akasha.repo.me", return_value="me"), \
                 patch("akasha.repo.gh_json", return_value=answer), patch("akasha.repo.gh") as gh:
+            with self.assertRaises(ValueError):
+                flow.preview(self.root, task.id, text="x")           # nothing goes to the branch of the new holder
             self.assertIn("@kim holds", flow.cancel(self.root, task.id))
             gh.assert_not_called()
         self.assertFalse(Path(task.workcopy).exists())
+
+    def test_a_commit_that_is_only_here_stays_when_another_person_took_the_task(self):
+        """tidy removed a copy whose commit never reached GitHub (review)."""
+        task = self.started()
+        task.number = 7
+        save(self.root, task)
+        tree = Path(task.workcopy)
+        head = run(tree, "git", "rev-parse", "HEAD").strip()
+        (tree / "app.py").write_text("print('only here')\n", encoding="utf-8")
+        run(tree, "git", "commit", "-q", "-am", "only here")
+        answer = {"state": "OPEN", "assignees": [{"login": "kim"}], "headRefOid": head}
+        with patch("akasha.board.available", return_value=True), patch("akasha.repo.me", return_value="me"), \
+                patch("akasha.repo.gh_json", return_value=answer):
+            lines = flow.tidy(self.root)
+        self.assertIn("not on GitHub", lines[0])
+        self.assertTrue(tree.is_dir())
+        self.assertEqual(load(self.root, task.id).id, task.id)
+
+    def test_a_name_that_another_team_pushed_a_moment_ago_is_not_taken_over(self):
+        """The undo of a failed start deleted the branch of another team (review)."""
+        other = run(self.root, "git", "commit-tree", "HEAD^{tree}", "-m", "the start of another team").strip()
+        run(self.root, "git", "push", "-q", "origin", f"{other}:refs/heads/akasha/race")
+        with patch("akasha.board.available", return_value=True), patch("akasha.board.read", return_value=[]), \
+                patch("akasha.repo.me", return_value="me"), patch("akasha.flow._name_taken", return_value=False), \
+                patch("akasha.flow.pr.create") as create:
+            with self.assertRaises(ValueError):
+                flow.start(self.root, "Race", name="race")
+            create.assert_not_called()
+        self.assertIn("akasha/race", run(self.root, "git", "ls-remote", "--heads", "origin"))
 
     def test_handoff_and_cancel_wait_until_the_session_leaves_the_work_copy(self):
         task = self.started()
@@ -233,6 +265,8 @@ class FlowTests(unittest.TestCase):
         flow.handoff(self.root, task.id)
         self.assertIn(task.branch, run(self.root, "git", "ls-remote", "--heads", "origin"))
         self.assertFalse(Path(task.workcopy).exists())
+        with self.assertRaises(LookupError):
+            load(self.root, task.id)
 
 
 class CheckArtifactTests(unittest.TestCase):

@@ -115,7 +115,7 @@ def run(root: Path, apply: bool = False) -> list[str]:
         report += [f"GitHub: {item}" for item in problems]
     changed = write_files(root)
     if not apply and repo.origin(root) and config.load(root).server_rules != "akasha" and \
-            github.protected(root) is False:
+            github.protected(root, config.load(root)) is False:
         # Until an administrator turns the protection on, nothing on GitHub stops a merge: Akasha and the watch do
         config.set_server_rules(root, "akasha")
         changed = list(dict.fromkeys(changed + [CONFIG_FILE] + write_files(root)))

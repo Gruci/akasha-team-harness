@@ -83,7 +83,8 @@ a task of yours, do its next step first.
    - BLOCKED: do what the message says, then land again.
    - MERGED: tell the person in simple words what changed and where to see it. If the team deploys each merge,
      Akasha follows the deployment: DEPLOYING (exit code 3) means run the same command again, DEPLOYED means the
-     change is live, and DEPLOY_FAILED means tell the person and run `akasha help <task>`.
+     change is live, and DEPLOY_FAILED means tell the person and run `akasha help <task>`. If Akasha says that the
+     work copy has changes that are not on GitHub, tell the person, and start a new task for them.
 3. Never ask the person to merge, to approve, or to mark the pull request ready on GitHub. Akasha lands each task.
 
 ## Between people and computers

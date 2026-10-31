@@ -80,9 +80,9 @@ def _issue(root: Path, slug: str, team: Team, title: str, text: str) -> None:
 
 
 def watch(root: Path, slug: str, branch: str, before: str, after: str, forced: bool, pusher: str) -> str:
-    if (_api(root, f"repos/{slug}/branches/{branch}") or {}).get("protected"):
-        return f"GitHub protects {branch}, so the watch does nothing"
     team = _team_at(root, before) if before and before != EMPTY else config.load(root)
+    if github.guards_checks(_api(root, f"repos/{slug}/branches/{branch}") or {}, team):
+        return f"GitHub protects {branch} with the checks of the team, so the watch does nothing"
     if forced:
         _issue(root, slug, team, "A force push changed the default branch",
                f"{pusher} replaced the history of {branch} from {before[:12]} to {after[:12]}.")

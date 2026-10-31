@@ -118,20 +118,23 @@ for the reviews that the change needs, and follows the pull request:
 A change of a risky path needs the approval of a reviewer, and a change of `akasha.toml`, `.github/`, or CODEOWNERS
 the approval of an administrator. The person who made the change does not count.
 
-Who merges depends on GitHub. Before each landing, Akasha asks GitHub whether it protects the default branch:
+Who merges depends on GitHub. Before each landing, Akasha asks GitHub whether its protection of the default branch
+requires each check of the team:
 
 | Repository | Who merges |
 |:--|:--|
-| GitHub protects the default branch (public, or private on GitHub Pro, Team, or Enterprise, after `akasha setup --apply`) | GitHub, with its auto-merge and branch protection, as the person who landed |
-| GitHub does not protect it (a private repository on GitHub Free, or before `--apply`) | Akasha, on the computer of the person, after the same examination. A watch workflow reports each change that went around the rules |
+| The protection requires the checks of the team (public, or private on GitHub Pro, Team, or Enterprise, after `akasha setup --apply`) | GitHub, with its auto-merge and branch protection, as the person who landed |
+| No protection, or one without these checks (a private repository on GitHub Free, or before `--apply`) | Akasha, on the computer of the person, after the same examination. A watch workflow reports each change that went around the rules |
 
 In both cases the merge comes from the account of the person, so the workflows after a merge start, for example a
 deployment. Where Akasha merges, a merge happens only while `akasha land` runs: a change that waits for a review
 merges when the AI of the person who holds it lands it again after the review, in the same session or when the person
 says "이어서 해 줘" in a later one.
 
-When the pull request merged with work that the work copy has and GitHub lacks, Akasha keeps the work copy and says
-so. A work copy that the session works in stays until `akasha tidy`.
+Akasha never removes work that did not reach GitHub: when a pull request merged or closed, or another person took the
+task, while the work copy has an edit or a commit that GitHub lacks, Akasha keeps the work copy and says so. A work
+copy that the session works in stays until `akasha tidy`. A task that waits for its deployment stays until the landing
+sees the end of the deployment, also across a new session.
 
 ## Many people at the same time
 

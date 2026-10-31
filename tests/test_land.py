@@ -1,14 +1,16 @@
-"""The landing with a GitHub that the tests play: the answers of `gh pr view` come from a list, and the other answers
-of gh from `answers`."""
+"""The landing with a GitHub that the tests play: the answers of `gh pr view` come from a list, the JSON answers of
+gh from `answers`, and the other calls of gh from `Landing.github`."""
 
+import json
 import subprocess
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from akasha import approval, flow, land, review
 from akasha.task import load, save
-from tests.helpers import TEAM, Repository
+from tests.helpers import TEAM, Repository, run
 
 
 def done(stdout: str = "", code: int = 0, stderr: str = "") -> subprocess.CompletedProcess:
@@ -16,18 +18,17 @@ def done(stdout: str = "", code: int = 0, stderr: str = "") -> subprocess.Comple
 
 
 def view(head: str, checks: str = "SUCCESS", status: str = "COMPLETED", state: str = "OPEN", review_state: str = "",
-         merge: str = "CLEAN", files=("app.py",), draft: bool = False, name: str = "akasha") -> dict:
+         merge: str = "CLEAN", draft: bool = False, name: str = "akasha") -> dict:
     return {"state": state, "isDraft": draft, "mergeStateStatus": merge, "reviewDecision": review_state,
             "headRefOid": head, "baseRefName": "main", "url": "https://github.com/o/r/pull/7",
-            "author": {"login": "me"}, "files": [{"path": path} for path in files],
-            "mergeCommit": {"oid": "m1"} if state == "MERGED" else None,
+            "author": {"login": "me"}, "mergeCommit": {"oid": "m1"} if state == "MERGED" else None,
             "statusCheckRollup": [{"__typename": "CheckRun", "name": name, "status": status,
                                    "conclusion": checks if status == "COMPLETED" else "",
                                    "detailsUrl": "https://github.com/o/r/actions/runs/55/job/1"}]}
 
 
-def answers(behind=0, reviews=(), protected=False, runs=None, assignees=()):
-    """The answers of `gh api` and the other JSON calls of gh."""
+def answers(behind=0, reviews=(), protected=False, assignees=()):
+    """The JSON answers of gh. `protected` is None for no answer about the branch."""
     def gh_json(_root, *args, **_kwargs):
         path = next((arg for arg in args if arg.startswith("repos/")), "")
         if "/compare/" in path:
@@ -35,11 +36,10 @@ def answers(behind=0, reviews=(), protected=False, runs=None, assignees=()):
         if "/reviews" in path:
             return list(reviews)
         if "/branches/" in path:
-            return {"protected": protected}
+            return None if protected is None else {
+                "protected": protected, "protection": {"required_status_checks": {"contexts": ["akasha"]}}}
         if "assignees" in args:
             return {"assignees": [{"login": name} for name in assignees]}
-        if args[:2] == ("run", "list"):
-            return runs
         return None
     return gh_json
 
@@ -78,7 +78,8 @@ class Landing(unittest.TestCase):
             patcher = patch(target, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.gh = patch("akasha.repo.gh", return_value=done()).start()
+        self.files, self.runs, self.merge_error = ["app.py"], None, ""
+        self.gh = patch("akasha.repo.gh", side_effect=self.github).start()
         patch("akasha.pr.gh", self.gh).start()
         patch("akasha.repo.me", return_value="me").start()
         patch("akasha.repo.origin", return_value="o/r").start()
@@ -116,6 +117,16 @@ class Landing(unittest.TestCase):
         with patch("akasha.pr.view", **({"side_effect": views} if many else {"return_value": views})), \
                 patch("akasha.repo.gh_json", side_effect=answers(protected=self.protected, **kwargs)):
             return land.land(self.root, self.task.id, wait=wait)
+
+    def github(self, _root, *args, **_kwargs) -> subprocess.CompletedProcess:
+        """The other calls of gh: the files of the pull request, the runs of the deployment, and the merge."""
+        if "--paginate" in args:
+            return done("\n".join(self.files))
+        if args[:2] == ("run", "list"):
+            return done(json.dumps(self.runs)) if self.runs is not None else done("", 1, "could not find any workflows")
+        if args[:2] == ("pr", "merge") and "--match-head-commit" in args and self.merge_error:
+            return done("", 1, self.merge_error)
+        return done()
 
     def calls(self, word: str) -> list:
         return [call.args for call in self.gh.call_args_list if word in call.args]
@@ -180,26 +191,57 @@ class LandTests(Landing):
         self.assertEqual(load(self.root, self.task.id).status, "approved")
 
     def test_a_risky_change_waits_for_a_reviewer(self):
-        risky = view(self.head, files=("db/x.sql",))
-        state, lines = self.land(risky, wait=0)
+        self.files = [f"app/{number:03}.py" for number in range(150)] + ["db/x.sql"]     # beyond the first 100 files
+        state, lines = self.land(view(self.head), wait=0)
         self.assertEqual(state, land.REVIEW)
         self.assertIn("@rev-b", lines[-1])
         self.assertFalse(self.own_merges())
-        state, _lines = self.land([risky, view(self.head, state="MERGED")],
-                                  reviews=[{"user": {"login": "rev-b"}, "state": "APPROVED"}])
+        state, _lines = self.land(view(self.head), reviews=[{"user": {"login": "rev-b"}, "state": "APPROVED"}])
         self.assertEqual(state, land.MERGED)
 
     def test_another_collaborator_does_not_approve_a_risky_change(self):
         """On GitHub Free nothing enforces CODEOWNERS: Akasha asks for a reviewer itself (audit F11)."""
-        state, _lines = self.land(view(self.head, files=("db/x.sql",)), wait=0,
-                                  reviews=[{"user": {"login": "someone"}, "state": "APPROVED"}])
+        self.files = ["db/x.sql"]
+        state, _lines = self.land(view(self.head), wait=0, reviews=[{"user": {"login": "someone"}, "state": "APPROVED"}])
         self.assertEqual(state, land.REVIEW)
         self.assertFalse(self.own_merges())
 
     def test_a_change_of_the_rules_waits_for_an_administrator(self):
-        state, lines = self.land(view(self.head, files=("akasha.toml",)), wait=0)
+        self.files = ["akasha.toml"]
+        state, lines = self.land(view(self.head), wait=0)
         self.assertEqual(state, land.REVIEW)
         self.assertIn("@admin-a", lines[-1])
+
+    def test_a_merge_that_github_refuses_is_named_or_tried_again(self):
+        self.merge_error = "GraphQL: Head branch was modified. Review and try the merge again."
+        state, _lines = self.land(view(self.head), wait=0)
+        self.assertEqual(state, land.WAITING)
+        self.merge_error = "GraphQL: Resource not accessible by integration"
+        state, lines = self.land(view(self.head), wait=0)
+        self.assertEqual(state, land.BLOCKED)
+        self.assertIn("not accessible", lines[-1])
+
+    def test_the_landing_goes_on_after_the_default_branch_moved(self):
+        """The hand-over merges the newer default branch: that commit is the landed work, not a change (review)."""
+        other = Path(self.repo.folder.name) / "other"
+        run(Path(self.repo.folder.name), "git", "clone", "-q", str(self.repo.origin), str(other))
+        (other / "news.txt").write_text("news\n", encoding="utf-8")
+        for args in (("add", "-A"), ("-c", "user.name=O", "-c", "user.email=o@x", "commit", "-q", "-m", "news"),
+                     ("push", "-q", "origin", "main")):
+            run(other, "git", *args)
+        self.land(view(self.head, status="QUEUED"), wait=0)
+        landed = load(self.root, self.task.id).checks["landed"]
+        self.assertNotEqual(landed, self.head)
+        state, _lines = self.land(view(landed), wait=0)
+        self.assertEqual(state, land.WAITING if self.protected else land.MERGED)    # the auto-merge of GitHub merges
+        if self.protected:
+            self.assertEqual(load(self.root, self.task.id).status, "landing")
+
+    def test_commits_that_github_lacks_are_pushed_first(self):
+        self.land(view(self.head, status="QUEUED"), wait=0)
+        with patch("akasha.work.contains", side_effect=[False, True, True]), patch("akasha.work.push") as push:
+            self.land([view("old"), view(self.head, state="MERGED")])
+        push.assert_called_once()
 
     def test_a_task_that_another_person_took_does_not_land_here(self):
         state, lines = self.land(view(self.head), assignees=("kim",))
@@ -228,22 +270,52 @@ class LandTests(Landing):
         state, lines = self.land(view(self.head, state="MERGED"), wait=0)
         self.assertEqual(state, land.MERGED)
         self.assertTrue(tree.is_dir())
-        self.assertIn("did not land", lines[-1])
+        self.assertIn("not on GitHub", lines[-1])
 
-    def test_the_deployment_decides_when_the_change_is_live(self):
+    def test_a_commit_that_did_not_land_stays(self):
+        """A commit that is only on this computer is work, as an edit is (review)."""
+        tree = Path(self.task.workcopy)
+        self.land(view(self.head, status="QUEUED"), wait=0)
+        (tree / "app.py").write_text("print('committed here')\n", encoding="utf-8")
+        run(tree, "git", "commit", "-q", "-am", "only here")
+        state, lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.MERGED)
+        self.assertTrue(tree.is_dir())
+        self.assertIn("not on GitHub", lines[-1])
+
+    def deploying(self):
         self.repo.close()
         self.repo = Repository(TEAM + f'\n[server]\nrules = "{self.rules}"\n[deploy]\nworkflow = "Deploy"\n')
         self.root = self.repo.root
         self.task = self.ready()
         self.head = self.task.checks["commit"]
-        state, _lines = self.land(view(self.head, state="MERGED"), wait=0, runs=[{"status": "in_progress"}])
+
+    def test_the_deployment_decides_when_the_change_is_live(self):
+        self.deploying()
+        self.runs = [{"status": "in_progress"}]
+        state, _lines = self.land(view(self.head, state="MERGED"), wait=0)
         self.assertEqual(state, land.DEPLOYING)
         self.assertIn("deployment", flow.next_step(load(self.root, self.task.id)))
-        state, _lines = self.land(view(self.head, state="MERGED"), wait=0,
-                                  runs=[{"status": "completed", "conclusion": "success", "url": "u"}])
-        self.assertEqual(state, land.DEPLOYED)
+        with patch("akasha.repo.gh_json", return_value={"state": "MERGED", "headRefOid": self.head}):
+            self.assertEqual(flow.tidy(self.root), [])               # a session start does not end the follow
+        self.runs = [{"status": "completed", "conclusion": "failure", "url": "u"}]
+        state, lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.DEPLOY_FAILED)
         with self.assertRaises(LookupError):
             load(self.root, self.task.id)
+
+    def test_a_deployment_that_never_shows_ends_the_follow(self):
+        self.deploying()
+        state, _lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.DEPLOYING)
+        task = load(self.root, self.task.id)
+        task.checks["merged_at"] = time.time() - land.DEPLOY_GRACE - 1
+        save(self.root, task)
+        state, lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.MERGED)
+        self.assertIn("could not find any workflows", lines[-1])
+        with self.assertRaises(LookupError):
+            load(self.root, self.task.id)                                                    # the task ended
 
 
 class OnlyReviewerTests(Landing):
@@ -254,7 +326,8 @@ class OnlyReviewerTests(Landing):
         patch("akasha.repo.me", return_value="rev-b").start()
 
     def test_a_risky_change_waits_for_a_reviewer(self):
-        state, lines = self.land(view(self.head, files=("db/x.sql",)), wait=0)
+        self.files = ["db/x.sql"]
+        state, lines = self.land(view(self.head), wait=0)
         self.assertEqual(state, land.REVIEW)
         self.assertIn("@admin-a", lines[-1])
 
@@ -270,13 +343,19 @@ class GitHubRulesTests(LandTests):
         self.assertFalse(self.own_merges())
 
     def test_a_risky_change_waits_for_a_reviewer(self):
-        state, _lines = self.land(view(self.head, review_state="REVIEW_REQUIRED", files=("db/x.sql",)), wait=0)
+        self.files = ["db/x.sql"]
+        state, _lines = self.land(view(self.head, review_state="REVIEW_REQUIRED"), wait=0)
         self.assertEqual(state, land.REVIEW)
 
     def test_another_collaborator_does_not_approve_a_risky_change(self):
-        state, _lines = self.land(view(self.head, review_state="REVIEW_REQUIRED", files=("db/x.sql",)), wait=0)
+        self.files = ["db/x.sql"]
+        state, _lines = self.land(view(self.head, review_state="REVIEW_REQUIRED"), wait=0)
         self.assertEqual(state, land.REVIEW)
 
+    def test_a_merge_that_github_refuses_is_named_or_tried_again(self):
+        """GitHub merges with its auto-merge here: Akasha never merges itself."""
+        self.land(view(self.head), wait=0)
+        self.assertFalse(self.own_merges())
 
 class UnprotectedTests(Landing):
     """[server] rules says github, but GitHub does not protect the branch: Akasha merges itself, after its examination,
@@ -287,6 +366,12 @@ class UnprotectedTests(Landing):
         state, _lines = self.land([view(self.head), view(self.head), view(self.head, state="MERGED")])
         self.assertEqual(state, land.MERGED)
         self.assertFalse([call for call in self.calls("merge") if "--auto" in call])
+        self.assertTrue(self.own_merges())
+
+    def test_no_answer_about_the_protection_is_no_protection(self):
+        self.protected = None
+        state, _lines = self.land([view(self.head), view(self.head)])
+        self.assertEqual(state, land.MERGED)
         self.assertTrue(self.own_merges())
 
 

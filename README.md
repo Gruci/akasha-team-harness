@@ -138,7 +138,7 @@ that a tool acts on, also from a session in another folder. [How it works](docs/
 | Private on GitHub Free | **Akasha** on each computer merges only after its examination: the checks, an up-to-date branch, and the review of the owners of a risky path or of the team rules. A watch workflow reports each change that went around the rules |
 
 The setup tries GitHub first and records which one applies, and Akasha asks GitHub again before each landing: a branch
-without protection is never left to an auto-merge. In both cases the merge comes from the account of the person, so
+whose protection does not require the checks of the team is never left to an auto-merge. In both cases the merge comes from the account of the person, so
 the workflows after a merge start, for example a deployment. With `[deploy] workflow`, Akasha also waits for the
 deployment and tells when the change is live.
 

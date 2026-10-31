@@ -167,6 +167,18 @@ class GitHubFileTests(unittest.TestCase):
                                                {"user": {"login": "c"}, "state": "CHANGES_REQUESTED"}]),
                          {"b": "APPROVED", "c": "CHANGES_REQUESTED"})
 
+    def test_only_a_protection_with_the_checks_of_the_team_counts(self):
+        """A protection that requires one approval and no checks let an auto-merge merge before the checks (review)."""
+        team = config.parse('[ci]\nrequired = ["checks"]\n')
+        def branch(protected, contexts):
+            return {"protected": protected, "protection": {"required_status_checks": {"contexts": contexts}}}
+        self.assertTrue(github.guards_checks(branch(True, ["checks", "lint"]), team))
+        self.assertFalse(github.guards_checks(branch(True, ["build"]), team))
+        self.assertFalse(github.guards_checks(branch(True, []), team))
+        self.assertFalse(github.guards_checks(branch(False, ["checks"]), team))
+        self.assertTrue(github.guards_checks({"protected": True, "protection": {"required_status_checks": {
+            "checks": [{"context": "checks"}]}}}, team))
+
     def test_codeowners_block(self):
         team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b", "c"]\n[risk]\npaths = ["db/**"]\n')
         owners = github.codeowners(team)

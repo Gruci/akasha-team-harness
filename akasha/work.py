@@ -94,11 +94,11 @@ def commit(tree: Path, message: str, allow_empty: bool = False) -> bool:
     return True
 
 
-def push(tree: Path, branch: str) -> None:
+def push(tree: Path, branch: str, adopt: bool = True) -> None:
     """Push the branch of the task, never with force. When the server has newer commits of the branch, for example
-    an update of the pull request, merge them first."""
+    an update of the pull request, merge them first (`adopt`). A new task adopts nothing: its branch is new."""
     done = git(tree, "push", "-q", "-u", "origin", f"HEAD:refs/heads/{branch}", timeout=PUSH_SECONDS)
-    if done.returncode and "rejected" in done.stderr + done.stdout:
+    if adopt and done.returncode and "rejected" in done.stderr + done.stdout:
         pull(tree, branch)
         done = git(tree, "push", "-q", "-u", "origin", f"HEAD:refs/heads/{branch}", timeout=PUSH_SECONDS)
     if done.returncode:

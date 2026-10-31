@@ -129,7 +129,7 @@ The files of the team that the AI reads in each step. The session start notice n
 
 | Key | Value |
 |:--|:--|
-| `rules` | `github` when GitHub protects the default branch, `akasha` where it does not. `akasha setup` writes `akasha` when the branch has no protection, and `akasha setup --apply` writes the rules of the plan. Do not change it by hand. Before each landing Akasha also asks GitHub: a branch without protection is always merged by Akasha, after its examination |
+| `rules` | `github` when GitHub protects the default branch, `akasha` where it does not. `akasha setup` writes `akasha` when the branch has no protection, and `akasha setup --apply` writes the rules of the plan. Do not change it by hand. Before each landing Akasha also asks GitHub: a branch whose protection does not require each check of the team is always merged by Akasha, after its examination |
 
 ## How Akasha examines this file
 

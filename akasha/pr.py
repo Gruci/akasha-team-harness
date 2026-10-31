@@ -77,4 +77,4 @@ def update(root: Path, task: Task) -> bool:
 def view(root: Path, task: Task) -> dict | None:
     return gh_json(root, "pr", "view", str(task.number), "--json",
                    "state,isDraft,mergeStateStatus,statusCheckRollup,reviewDecision,headRefOid,baseRefName,url,author,"
-                   "files,autoMergeRequest,mergeCommit")
+                   "autoMergeRequest,mergeCommit")

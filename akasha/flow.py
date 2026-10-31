@@ -89,7 +89,7 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = ()) -
         raise RuntimeError("gh cannot read the board. Log in to GitHub: gh auth login. Then do the step again")
     if _name_taken(root, task, branch, entries, online):
         raise ValueError(f"the name {task.id} is in use by another task, now or before. Give another name with --name")
-    task.owner = repo.me(root) if online else repo.person(root, kept=False)
+    task.owner = (repo.me(root) if online else "") or repo.person(root, kept=False)
     path = root / team.work_dir / task.id
     work.exclude(root, team.work_dir)
     task.base = work.create(root, path, task.branch, f"origin/{branch}" if online else "HEAD")
@@ -99,14 +99,21 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = ()) -
     notes = [f"overlap — {line}" for line in board.overlaps(task, [], entries)]
     notes += _prepare(team, path)
     if online:
+        pushed = ""
         try:
             work.commit(path, f"akasha: start {task.title}", allow_empty=True)
-            work.push(path, task.branch)
+            work.push(path, task.branch, adopt=False)         # rejected: another task took the name a moment ago
+            pushed = work.head(path)
             task.pr = pr.create(root, task, branch)
-        except RuntimeError:                          # undo the start, so that the same step can run again
-            repo.git(root, "push", "-q", "origin", "--delete", task.branch, timeout=60)     # new and empty: nobody else's
+        except RuntimeError as error:                 # undo the start, so that the same step can run again
+            if pushed:                                # only the commit of this start: never the branch of another task
+                repo.git(root, "push", "-q", f"--force-with-lease=refs/heads/{task.branch}:{pushed}", "origin",
+                         f":refs/heads/{task.branch}", timeout=60)
             work.remove(root, path, task.branch, force=True)
             forget(root, task.id)
+            if "rejected" in str(error):
+                raise ValueError(f"the name {task.id} is in use by another task. Give another name with --name") \
+                    from None
             raise
         task.number = pr.number(task.pr)
         save(root, task)
@@ -134,6 +141,9 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
     """Show the preview to the person and wait for the approval. A preview that changed after an approval needs a new
     approval. `text` makes a plain preview for a change without a screen, when the file is not there."""
     task = load(root, task_id)
+    holder = taken(root, task)
+    if holder:
+        raise ValueError(f"@{holder} holds task {task.id} now. Run `akasha tidy` to remove the copy on this computer")
     path = record(task, PREVIEW)
     if text and not path.is_file():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -221,29 +231,41 @@ def _assignees(found: dict | None) -> list[str]:
     return [str(person.get("login") or "").lower() for person in (found or {}).get("assignees") or []]
 
 
-def taken(root: Path, task: Task) -> str:
-    """The GitHub name of another person who holds the task now, or "". Then this computer changes nothing of the
-    task on GitHub: that person continues it."""
+def _pull(root: Path, task: Task, fields: str) -> dict:
+    """Fields of the pull request of the task, or {} without one or without an answer of GitHub."""
     if not (task.number and board.available(root)):
-        return ""
-    names = _assignees(repo.gh_json(root, "pr", "view", str(task.number), "--json", "assignees", timeout=20))
+        return {}
+    found = repo.gh_json(root, "pr", "view", str(task.number), "--json", fields, timeout=20)
+    return found if isinstance(found, dict) else {}
+
+
+def _holder(root: Path, found: dict) -> str:
+    names = _assignees(found)
     me = repo.me(root, kept=True)
     return names[0] if names and me and me not in names else ""
 
 
-def drop(root: Path, task: Task, force: bool = False, merged: str = "") -> str:
-    """Remove the work copy and the local branch of the task, then forget the task. `merged` is the head of the merged
-    pull request. Return a problem, or "". The work copy and the task stay when the copy has work that did not land,
-    when the session works in the copy, or when git cannot remove it: `akasha tidy` at the next session start, or
-    `akasha cancel <task> --force`, ends them."""
+def taken(root: Path, task: Task) -> str:
+    """The GitHub name of another person who holds the task now, or "". Then this computer changes nothing of the
+    task on GitHub: that person continues it."""
+    return _holder(root, _pull(root, task, "assignees"))
+
+
+def drop(root: Path, task: Task, force: bool = False, server: str = "") -> str:
+    """Remove the work copy and the local branch of the task, then forget the task. Return a problem, or "".
+
+    `server` is the head of the pull request on GitHub: the work copy stays when it has work that this head lacks,
+    so that nothing that did not reach GitHub is lost. The copy and the task also stay when the session works in the
+    copy, or when git cannot remove it: `akasha tidy` at the next session start, or `akasha cancel <task> --force`,
+    ends them."""
     tree = Path(task.workcopy)
     if task.workcopy and tree.is_dir():
         if repo.inside(Path.cwd(), tree):
             return f"the session works in {tree}: leave that folder, then run `akasha tidy`"
-        if merged and (work.dirty(tree) or not work.contains(tree, merged, task.number)):
-            return (f"the work copy {tree} has changes that did not land. They stay there: start a new task for them, "
-                    f"or drop them with `akasha cancel {task.id} --force`")
-    problem = work.remove(root, tree, task.branch, force=force or bool(merged)) if task.workcopy else ""
+        if server and (work.dirty(tree) or not work.contains(tree, server, task.number)):
+            return (f"the work copy {tree} has changes that are not on GitHub. They stay there: start a new task for "
+                    f"them, or drop them with `akasha cancel {task.id} --force`")
+    problem = work.remove(root, tree, task.branch, force=force or bool(server)) if task.workcopy else ""
     if not problem:
         forget(root, task.id)
     board.forget(root)
@@ -307,12 +329,12 @@ def handoff(root: Path, task_id: str) -> str:
     tree = Path(task.workcopy)
     work.commit(tree, f"akasha: handoff of {task.title}")
     work.push(tree, task.branch)
-    task.owner = ""
-    save(root, task)                                  # a task without an owner is free: tidy ends what is left of it
+    task.owner, task.checks["handoff"] = "", work.head(tree)
+    save(root, task)                                  # tidy ends what is left of a task that this computer handed off
     pr.update(root, task)
     if task.number:
         repo.gh(root, "pr", "edit", str(task.number), "--remove-assignee", "@me")
-    problem = drop(root, task)
+    problem = drop(root, task, server=task.checks["handoff"])
     return problem or f"handed off task {task.id}: `akasha resume {task.id}` continues it on any computer"
 
 
@@ -324,13 +346,15 @@ def cancel(root: Path, task_id: str, force: bool = False) -> str:
     tree = Path(task.workcopy)
     if tree.is_dir() and work.dirty(tree) and not force:
         raise ValueError(f"the work copy {tree} has changes that are not saved. Run with --force to drop them")
-    holder = taken(root, task)
-    if task.number and not holder:
-        repo.gh(root, "pr", "close", str(task.number), "--delete-branch", "--comment", "Akasha: the task is cancelled.")
-    problem = drop(root, task, force=True)
-    if holder:
-        return problem or f"@{holder} holds task {task.id}: removed only the copy on this computer"
-    return problem or f"cancelled task {task.id}"
+    found = _pull(root, task, "assignees,headRefOid")
+    holder = _holder(root, found)
+    if not holder:
+        if task.number:
+            repo.gh(root, "pr", "close", str(task.number), "--delete-branch", "--comment",
+                    "Akasha: the task is cancelled.")
+        return drop(root, task, force=True) or f"cancelled task {task.id}"
+    problem = drop(root, task, force=True) if force else drop(root, task, server=str(found.get("headRefOid") or "?"))
+    return problem or f"@{holder} holds task {task.id}: removed only the copy on this computer"
 
 
 def ask_help(root: Path, task_id: str, text: str) -> str:
@@ -354,21 +378,23 @@ def tidy(root: Path, timeout: float = 20) -> list[str]:
     person holds now."""
     lines = []
     for task in all_local(root):
-        if not task.owner:                            # handed off: the work is on the server
-            lines += [problem] if (problem := drop(root, task)) else []
+        if task.status == "merged" and task.checks.get("merge"):
+            continue                                  # the landing still follows its deployment
+        if task.checks.get("handoff"):                # handed off: the work is on the server
+            lines += [problem] if (problem := drop(root, task, server=task.checks["handoff"])) else []
             continue
         if not task.number:
             continue
         found = repo.gh_json(root, "pr", "view", str(task.number), "--json", "state,assignees,headRefOid",
                              timeout=timeout)
-        state = (found or {}).get("state")
+        found = found if isinstance(found, dict) else {}
+        state, head = found.get("state"), str(found.get("headRefOid") or "?")
         if state in ("MERGED", "CLOSED"):
             task.status = state.lower()
             save(root, task)
-            problem = drop(root, task, merged=str(found.get("headRefOid") or "?") if state == "MERGED" else "")
+            problem = drop(root, task, server=head)
             lines.append(problem or f"task {task.id} {state.lower()}: its work copy is removed")
-        elif state == "OPEN" and (names := _assignees(found)) and (me := repo.me(root, kept=True)) and \
-                me not in names:
-            problem = drop(root, task)
-            lines.append(problem or f"@{names[0]} holds task {task.id} now: the copy on this computer is removed")
+        elif state == "OPEN" and (holder := _holder(root, found)):
+            problem = drop(root, task, server=head)
+            lines.append(problem or f"@{holder} holds task {task.id} now: the copy on this computer is removed")
     return lines

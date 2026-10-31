@@ -131,10 +131,19 @@ def is_admin(root: Path) -> bool:
     return bool((repository(root).get("permissions") or {}).get("admin"))
 
 
-def protected(root: Path) -> bool | None:
-    """True when GitHub protects the default branch now, None when GitHub does not answer. Any collaborator can ask."""
+def guards_checks(branch: dict, team: Team) -> bool:
+    """True when the protection of a branch (as `repos/{slug}/branches/{name}` tells it) requires each check of the
+    team: only then GitHub stops a merge before the checks pass."""
+    required = ((branch.get("protection") or {}).get("required_status_checks") or {}) if branch.get("protected") else {}
+    names = set(required.get("contexts") or []) | {item.get("context") for item in required.get("checks") or []}
+    return bool(required) and set(team.status_checks) <= names
+
+
+def protected(root: Path, team: Team) -> bool | None:
+    """True when GitHub protects the default branch now with the checks of the team, None when GitHub does not
+    answer. Any collaborator can ask."""
     found = repo.gh_json(root, "api", f"repos/{repo.origin(root)}/branches/{repo.default_branch(root)}")
-    return bool(found.get("protected")) if isinstance(found, dict) else None
+    return guards_checks(found, team) if isinstance(found, dict) else None
 
 
 def _protection(root: Path, slug: str, branch: str) -> dict | None:

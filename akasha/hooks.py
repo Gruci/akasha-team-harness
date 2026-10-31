@@ -17,7 +17,7 @@ from pathlib import Path
 from akasha import approval, board, config, flow, repo, review, secrets, trace
 from akasha.checks import matches
 from akasha.guard import check_command, check_edit, folders
-from akasha.task import all_local, records
+from akasha.task import Task, all_local, records
 
 SHELL_TOOLS = ("Bash", "PowerShell", "shell", "exec_command", "local_shell")
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch")
@@ -107,7 +107,15 @@ def _board_lines(root: Path) -> list[str]:
         [f"[AKASHA]   {line}" for line in board.lines(others[:OTHERS_SHOWN], me)]
 
 
-def session_start(root: Path) -> int:
+def _step(task: Task, session: str) -> str:
+    """The next step of a task of this person, for this session: a preview that another session showed (for example
+    before /clear) is shown again here, because only the session that showed it takes the approval."""
+    if task.status == "preview" and task.shown_in and session and task.shown_in != session:
+        return f"Show the preview in this session: `akasha preview {task.id}`, then ask the person to approve it."
+    return flow.next_step(task)
+
+
+def session_start(root: Path, session: str = "") -> int:
     branch = repo.default_branch(root)
     notice = f"[AKASHA] Akasha command: {command()} <command>"
     if not _uses_akasha(root, branch):
@@ -124,8 +132,8 @@ def session_start(root: Path) -> int:
     lines += _in_time(lambda: [f"[AKASHA] {line}" for line in flow.tidy(root, timeout=TIDY_SECONDS)], TIDY_SECONDS,
                       "[AKASHA] GitHub was slow: Akasha did not look for merged tasks. `akasha tidy` does it.")
     for task in all_local(root):
-        if task.status not in ("merged", "closed"):
-            lines.append(f"[AKASHA] Your task {task.id} ({task.title}): {flow.next_step(task)}")
+        if task.status not in ("merged", "closed") or task.checks.get("merge"):
+            lines.append(f"[AKASHA] Your task {task.id} ({task.title}): {_step(task, session)}")
     lines += _in_time(lambda: _board_lines(root), SESSION_SECONDS,
                       "[AKASHA] GitHub was slow: the board of the team is not shown. `akasha board` shows it.")
     print("\n".join(lines))
@@ -256,7 +264,7 @@ def main(agent: str, event: str) -> int:
     if root is None:
         return 0
     if event == "SessionStart":
-        return session_start(root)
+        return session_start(root, str(payload.get("session_id") or ""))
     if not _uses_akasha(root, repo.default_branch(root)):
         return 0
     if event == "UserPromptSubmit":
