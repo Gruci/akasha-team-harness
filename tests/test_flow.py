@@ -1430,7 +1430,31 @@ class SharedTaskTests(unittest.TestCase):
             with person("dev-a", "pc-a", self.fake):
                 flow.handoff(self.first, task.id)
             self.assertEqual(json.loads(ports.read_text(encoding="utf-8")), {})       # the work copy went away
-        self.assertEqual(tasks.load(self.first, task.id).port, 0)
+        handed = tasks.load(self.first, task.id)
+        self.assertEqual((handed.port, handed.previewed), (0, True))               # the database stays here
+        self.assertNotIn('"previewed"', self.fake.issues[task.board]["body"])
+
+    def test_a_database_from_before_a_handoff_goes_when_this_computer_finishes(self):
+        helper = Path(tempfile.mkdtemp(prefix="akasha-database-"))
+        text, log = database_helper(helper)
+        self.team_rules(text)                                           # the rules come from the server
+        task = self.started()
+        safe = task.id.replace("-", "_")
+        with reservations() as ports, person("dev-a", "pc-a", self.fake):
+            flow.preview(self.first, task.id)
+            flow.handoff(self.first, task.id)
+            taken = flow.takeover(self.first, task.id)                  # the same copy takes the task over again
+            taken.stage, taken.pull_request = "handover", PULL_REQUEST
+            flow._publish(self.first, taken)
+            with patch("akasha.flow.github.merged", return_value=True):
+                self.assertEqual(flow.advance(self.first, task.id), [])
+            reserved = json.loads(ports.read_text(encoding="utf-8"))
+        self.assertEqual([line[:2] for line in logged(log)], [("seed", f"app_{safe}"), ("cleanup", f"app_{safe}")])
+        self.assertEqual(logged(log)[1][3], logged(log)[0][3])             # in the work copy of the task
+        self.assertTrue(resources.in_range(int(logged(log)[1][2])))      # the cleanup got a port again
+        cleared = tasks.load(self.first, task.id)
+        self.assertEqual((cleared.status, cleared.workcopy, cleared.port, cleared.previewed, reserved),
+                         ("done", "", 0, False, {}))
 
     def test_a_developer_takes_over_a_stopped_task(self):
         self.team_rules('[roles]\ndevelopers = ["dev-c"]\n')            # the rules come from the server

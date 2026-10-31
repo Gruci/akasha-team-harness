@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import time
 import unittest
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -126,9 +126,10 @@ class BoardTests(unittest.TestCase):
                     notes=["the setup command failed in the work copy"], base="a" * 40, branch="akasha/x",
                     holder="dev-a", holder_host="pc-a", revision=3, wip="b" * 40, spec_rev=2, stopped_comment=104,
                     resumed=107, workcopy="C:/work/date-filter-0a1b", synced=3, setup_output="C:/Users/dev-a/.env: KEY",
-                    port=4236, board="https://github.com/team/app/issues/1")
+                    port=4236, previewed=True, board="https://github.com/team/app/issues/1")
         text = board.body(mine)
-        self.assertEqual(board.parse(text), replace(mine, workcopy="", synced=0, setup_output="", port=0, board=""))
+        self.assertEqual(board.parse(text), replace(mine, workcopy="", synced=0, setup_output="", port=0,
+                                                    previewed=False, board=""))
         for name in tasks.LOCAL_FIELDS:                                      # the fields of one computer stay there
             self.assertNotIn(f'"{name}"', text)
         self.assertNotIn("C:/", text)
@@ -336,6 +337,22 @@ class ResourceTests(unittest.TestCase):
             Path(first.workcopy).rmdir()                  # the work copy went away: nothing needs the port now
             self.assertEqual(resources.port(self.root, second), 4236)
         self.assertEqual(len(self.reserved()), 2)
+
+    def test_a_damaged_task_file_in_another_clone_keeps_its_port(self):
+        other = Path(tempfile.mkdtemp(prefix="akasha-ports-"))                  # another clone on this computer
+        folder = other / ".akasha" / "state" / "tasks"
+        with patch("akasha.coordinator.resources.busy", return_value=False):
+            self.assertEqual(resources.port(other, self.held(other, "task-000c")), 4236)
+            self.assertEqual(resources.port(other, self.held(other, "task-0022")), 4237)
+            (folder / "task-000c.json").write_text("[]\n", encoding="utf-8")       # a person damaged the files
+            damaged = {**asdict(task("task-0022")), "workcopy": 5}
+            (folder / "task-0022.json").write_text(json.dumps(damaged), encoding="utf-8")
+            self.assertEqual(resources.port(self.root, self.held(self.root, "task-000c")), 4238)
+        kept = self.reserved()[os.path.normcase(str(other.resolve()))]            # Akasha cannot read them
+        self.assertEqual(kept, {"task-000c": 4236, "task-0022": 4237})
+        with self.assertRaises(ValueError):
+            tasks.load(other, "task-000c")
+        self.assertEqual([found.id for found in tasks.all_tasks(other)], ["task-0022"])
 
     def test_a_port_that_a_program_uses_on_ipv6_is_skipped(self):
         try:

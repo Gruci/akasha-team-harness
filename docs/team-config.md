@@ -152,7 +152,7 @@ The patterns of `only_when` and `run_all_when` use the pattern rules of `[risk]`
 
 Akasha replaces `{task}` with the task name and `{port}` with the preview port of the task on this computer. Thus each task gets its own values. Before the inspection, the agent engine runs `preview <task>`: Akasha reserves the port, runs `seed` in the work copy, and shows the filled values. `show` also shows them. Before the port is reserved, `show` shows a value with `{port}` as it is.
 
-When the pull request of a task merges, Akasha runs `cleanup` in the work copy, then removes the work copy and frees the port. `cleanup` runs only for a task that `preview` prepared on this computer. A cancelled task keeps its database, as it keeps its work copy. The server check never runs `seed` or `cleanup`. See [Preview resources](coordination.md#preview-resources).
+When the pull request of a task merges, Akasha runs `cleanup` in the work copy, then removes the work copy and frees the port. `cleanup` runs only for a task that `preview` prepared on this computer, also before a handoff. A cancelled task keeps its database, as it keeps its work copy. The server check never runs `seed` or `cleanup`. See [Preview resources](coordination.md#preview-resources).
 
 ```toml
 [preview]

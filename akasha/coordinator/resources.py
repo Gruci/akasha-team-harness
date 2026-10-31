@@ -123,11 +123,13 @@ def _needed(repository: str, task_id: str) -> bool:
     task file that Akasha cannot read keeps it."""
     try:
         task = tasks.load(Path(repository), task_id)
+        if not isinstance(task.workcopy, str):
+            raise TypeError(f"the work copy of {task_id} is not a folder name")
+        return bool(task.workcopy) and Path(task.workcopy).is_dir()
     except LookupError:
         return False
     except (OSError, ValueError, TypeError):
         return True
-    return bool(task.workcopy) and Path(task.workcopy).is_dir()
 
 
 def _prune(reserved: dict[str, dict[str, int]], key: str, task_id: str) -> None:

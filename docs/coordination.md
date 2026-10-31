@@ -31,7 +31,7 @@ The issue holds the state of the task, so that each computer can continue the ta
 
 The approvals and the inspection results in the body only show what Akasha counted. They are not proof of a decision: each time that Akasha reads a task, it counts them again from the decision comments on the issue. See [Roles](roles.md).
 
-Four fields stay on the computer and never go on the issue: the work copy folder, the revision of the issue that this computer saw last, the output of a setup command that failed, and the preview port of the task on this computer. The output of a setup command can show paths and secret values. The issue only tells that the setup command failed. `show <task>` on the computer of the work copy shows the output. Akasha 1.0.0 wrote this output in a note. Before such a task goes on its issue in the new format, the output moves from the note to this computer. A setup command that passes later removes the old output.
+Five fields stay on the computer and never go on the issue: the work copy folder, the revision of the issue that this computer saw last, the output of a setup command that failed, the preview port of the task on this computer, and a mark that `preview` prepared the preview of the task on this computer. The output of a setup command can show paths and secret values. The issue only tells that the setup command failed. `show <task>` on the computer of the work copy shows the output. Akasha 1.0.0 wrote this output in a note. Before such a task goes on its issue in the new format, the output moves from the note to this computer. A setup command that passes later removes the old output.
 
 | Event | What occurs to the issue |
 |:--|:--|
@@ -157,7 +157,7 @@ Each task builds in its own work copy: a git worktree in `.akasha/work/<task>`, 
 - Two tasks never write in the same folder.
 - When the pull request merges, Akasha removes the work copy. First the cleanup command of `[preview]` removes the preview database of the task, and then the preview port is free. See [Preview resources](#preview-resources).
 - When a task is cancelled, the work copy, the preview database, and the preview port stay. A person removes the work copy after a review of the changes.
-- After a handoff, the work copy and the local branch of the task go away, and the preview port is free. The preview database stays. A takeover makes a new work copy from the work on the server.
+- After a handoff, the work copy and the local branch of the task go away, and the preview port is free. The preview database stays. A takeover makes a new work copy from the work on the server. When this computer takes the task over again and finishes it, the cleanup command removes the database. When another computer finishes the task, the database stays on this computer: remove it yourself.
 - A folder that is not on the branch of the task is not its work copy, for example an empty folder after a failed removal. In such a folder, git works on the main checkout. Thus `check`, `handover`, and `handoff` stop there and do not save or push the changes of the main checkout.
 - The guard, the overlap notice after an edit, and the notice at the end of each turn look only at the work copies on this computer.
 
@@ -195,8 +195,8 @@ The port, the database, and the output of the seed command stay on this computer
 |:--|:--|:--|
 | The pull request merges, and Akasha removes the work copy | The cleanup command of `[preview]` removes it in the work copy first | Free |
 | The task is cancelled | Stays, as the work copy does | Stays until the work copy goes away |
-| A handoff | Stays | Free |
+| A handoff | Stays. When this computer takes the task over again and finishes it, the cleanup command removes it | Free |
 
-The cleanup command runs only for a task that `preview` prepared on this computer. When the cleanup command fails, the work copy, the database, and the port stay, and the next request runs the cleanup command again. `request` and `advance` tell this with a `note —` line. To stop it, remove the database yourself, then remove the work copy with `git worktree remove <work copy>`.
+The cleanup command runs only for a task that `preview` prepared on this computer, also before a handoff. When the cleanup command uses `{port}` and a handoff freed the port, Akasha reserves a port for the task again. When the cleanup command fails, the work copy, the database, and the port stay, and the next request runs the cleanup command again. `request` and `advance` tell this with a `note —` line. To stop it, remove the database yourself, then remove the work copy with `git worktree remove <work copy>`.
 
 > **NOTE:** The commands of `[preview]` run in the shell of the operating system, as the checks do: `cmd.exe` on Windows, and `/bin/sh` on macOS and Linux.

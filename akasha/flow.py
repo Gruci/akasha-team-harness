@@ -711,15 +711,16 @@ def _tidy(root: Path) -> None:
 
 def _clear(root: Path, team: Team, task: Task) -> None:
     """Remove the work copy of a finished task and free its preview port. When `preview` prepared the preview on this
-    computer, the cleanup command of the team first removes the database of the task, in the work copy.
+    computer (task.previewed), also before a handoff, the cleanup command of the team first removes the database of
+    the task, in the work copy.
 
     When the cleanup command fails, the work copy, the database, and the port stay, and `leftovers` tells it. A work
     copy with changes that are not saved stays too. The next request tries again. After a cleanup that passed, the
-    port is free, so the cleanup command does not run again."""
+    mark is gone, so the cleanup command does not run again."""
     tree = Path(task.workcopy) if task.workcopy else None
     cleanup = team.preview.get("cleanup", "")
-    if cleanup and resources.in_range(task.port) and tree is not None and tree.is_dir():
-        status, detail = runner.shell(resources.fill(cleanup, task.id, task.port), tree)
+    if cleanup and task.previewed and tree is not None and tree.is_dir():
+        status, detail = _cleanup(root, task, cleanup, tree)
         if status != "PASS":
             _leftovers.setdefault(root, {})[task.id] = (
                 f"the cleanup command of the preview failed for the finished task {task.id}: "
@@ -727,11 +728,23 @@ def _clear(root: Path, team: Team, task: Task) -> None:
                 "its port stay, and the next request runs the cleanup command again. To stop that, remove the "
                 f"database yourself, then remove the work copy: git worktree remove {tree}")
             return
+    task.previewed = False
     resources.release(root, task)
     try:
         workcopy.remove(root, task)
     except RuntimeError:
         pass                              # the work copy has changes that are not saved; the next request tries again
+
+
+def _cleanup(root: Path, task: Task, cleanup: str, tree: Path) -> tuple[str, str]:
+    """Run the cleanup command of the preview in the work copy: PASS or FAIL, and the end of the output. A handoff
+    frees the port of the task, so a cleanup command with {port} first reserves a port for the task again."""
+    if "{port}" in cleanup and not resources.in_range(task.port):
+        try:
+            resources.port(root, task)
+        except (OSError, RuntimeError) as error:
+            return "FAIL", str(error)
+    return runner.shell(resources.fill(cleanup, task.id, task.port), tree)
 
 
 def leftovers(root: Path) -> list[str]:
@@ -808,7 +821,10 @@ def _open_workcopy(root: Path, team: Team, task: Task, start: str = "") -> None:
 
     A task that continues from `start`, for example the work of another computer, keeps its base: its changes stay
     the changes since that base. Each task keeps its branch (workcopy.create). The output of a failed setup stays on
-    this computer, because it can show paths and secrets."""
+    this computer, because it can show paths and secrets.
+
+    The preview is not prepared here: `preview` reserves the port and runs the seed command at the inspection, so that
+    a task that never shows a preview gets no port and no database."""
     kept = task.base if start else ""
     workcopy.create(root, team, task, start or _start_ref(root, task))
     task.base = kept or task.base
@@ -1303,7 +1319,8 @@ def preview(root: Path, task_id: str) -> tuple[Task, dict[str, str], tuple[str, 
     team, task = rules(root), _examine_active(_held(root, task_id))
     tree = _tree(task)
     port = resources.port(root, task)
-    tasks.save(root, task)                            # only the port of this computer changed
+    task.previewed = True                             # the cleanup command runs when this computer finishes the task
+    tasks.save(root, task)                            # only the fields of this computer changed
     values = {name: resources.fill(template, task.id, port) for name, template in team.preview.items()}
     return task, values, runner.shell(values["seed"], tree) if "seed" in values else None
 
@@ -1583,7 +1600,9 @@ def handoff(root: Path, task_id: str) -> Task:
     over newer work. The issue gets the work and the free task before the work copy and the local branch go away,
     so that a later takeover on this computer starts from the server. On Windows, nobody can remove a folder that a
     program works in, so the handoff does not run from inside the work copy. Without the work copy, the preview port
-    of this computer is free. Only a finished task runs the cleanup command (_clear): the preview database stays."""
+    of this computer is free. Only a finished task runs the cleanup command (_clear): the preview database stays, and
+    the mark task.previewed stays with it. Thus when this computer takes the task over again and finishes it, the
+    cleanup command removes that database."""
     if not board.available(root):
         raise RuntimeError("the handoff needs the shared task board on GitHub")
     task = _held(root, task_id)
@@ -1622,7 +1641,7 @@ def handoff(root: Path, task_id: str) -> Task:
             raise RuntimeError(f"Akasha handed off the task {task.id}: its work is on the server, and nobody holds it. "
                                f"But {error}. Close each program that uses {tree}, then remove the folder") from error
         workcopy.git(root, "branch", "-D", task.branch)
-        resources.release(root, task)                 # the preview database of this computer stays
+        resources.release(root, task)                 # the preview database of this computer and its mark stay
         tasks.save(root, task)                        # only the work copy and the port of this computer changed
     return task
 
