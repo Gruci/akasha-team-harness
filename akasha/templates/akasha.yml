@@ -1,0 +1,44 @@
+# Akasha installs this file when the team has no CI of its own ([ci] required in akasha.toml is empty).
+# It runs the required checks of akasha.toml on each pull request that is ready for review. The rules come from the
+# default branch, so a pull request cannot make its own checks weaker. A draft does not run it.
+name: akasha
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+permissions:
+  contents: read
+concurrency:
+  group: akasha-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  akasha:
+    if: github.event_name == 'merge_group' || !github.event.pull_request.draft
+    runs-on: @@AKASHA_RUNS_ON@@
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "@@AKASHA_PYTHON@@"
+      - name: Install Akasha
+        env:
+          AKASHA_SOURCE: ${{ vars.AKASHA_SOURCE }}
+        run: pip install "${AKASHA_SOURCE:-@@AKASHA_SOURCE@@}"
+      - name: Find the base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}
+        run: echo "BASE=${BASE_REF#refs/heads/}" >> "$GITHUB_ENV"
+      - name: Take the team config from the base branch
+        run: |
+          if git cat-file -e "origin/$BASE:akasha.toml" 2>/dev/null; then
+            git show "origin/$BASE:akasha.toml" > "$RUNNER_TEMP/akasha.toml"
+          else
+            cp akasha.toml "$RUNNER_TEMP/akasha.toml"
+          fi
+      - name: Required checks
+        run: python -X utf8 -m akasha check --ci --config "$RUNNER_TEMP/akasha.toml" --base "origin/$BASE"

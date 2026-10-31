@@ -1,12 +1,13 @@
 {
   "name": "akasha",
   "version": "1.0.0",
-  "description": "Akasha: let any person on your team build one product with an AI agent. The AI makes the technical decisions; people decide what to make.",
+  "description": "Akasha: a light team harness. Each person asks for a change and approves a preview; the AI plans, gets the plan reviewed by another AI, builds, checks, and lands it.",
   "author": {"name": "Daehyun Kim", "url": "https://github.com/Gruci"},
   "homepage": "https://github.com/Gruci/akasha-team-harness",
   "repository": "https://github.com/Gruci/akasha-team-harness",
   "license": "MIT",
   "keywords": ["akasha", "team", "harness", "workflow", "claude-code", "codex"],
-  "skills": ["./skills/akasha-setup", "./skills/akasha-request", "./skills/akasha-inspect", "./skills/akasha-handover"],
+  "skills": ["./skills/akasha-build", "./skills/akasha-setup", "./skills/akasha-join", "./skills/akasha-retro"],
+  "agents": ["./agents/akasha-reviewer.md"],
   "hooks": "./.claude-plugin/hooks.json"
 }

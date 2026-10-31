@@ -1,4 +1,4 @@
-"""The Akasha command line. The agent engine runs these commands. People do not have to remember them."""
+"""The Akasha command line. The agent engine runs these commands; people do not have to remember them."""
 
 from __future__ import annotations
 
@@ -6,340 +6,191 @@ import argparse
 import sys
 from pathlib import Path
 
-from akasha import VERSION, config, flow, setup
-from akasha.coordinator import board, resources
-from akasha.core import task as tasks
-from akasha.infra import github
-from akasha.repo import main_root
-from akasha.validators import runner
+from akasha import VERSION, board, checks, config, flow, land, repo, retro, setup
+from akasha.task import all_local, load
 
-# Who merges a pull request after the handover, for each value of [server] rules. The handover turns on auto-merge
-# only where GitHub merges.
-MERGES = {"github": "auto-merge is on",
-          "akasha": "the merge helper of Akasha merges it when the check passes and the code owners approve"}
+EXIT = {land.MERGED: 0, land.CLOSED: 0, land.WAITING: 3}
 
 
 def _root() -> Path:
-    root = main_root(Path.cwd())
+    root = repo.main_root(Path.cwd())
     if root is None:
         raise SystemExit("Akasha needs a git repository. Run the command inside a repository.")
     return root
 
 
-def _show(task: tasks.Task) -> None:
-    print(f"{task.id} · {task.title}\n  workflow {task.workflow} · stage {task.stage} · status {task.status} · "
-          f"risk {task.risk}" + (f"\n  work copy {task.workcopy}" if task.workcopy else "")
-          + (f"\n  board {task.board}" if task.board else "")
-          + (f"\n  holder {task.holder} ({task.holder_host})" if task.holder else ""))
-
-
-def _uncounted(task_id: str) -> None:
-    """The decision comments on the issue that do not count, so that the person can write them again."""
-    for item in flow.ignored(task_id):
-        print(f"  not counted — {item}")
-
-
-def _news(root: Path, task: tasks.Task) -> None:
-    """The new comments of other people on the issue, apart from the blockers: they do not change the exit code. The
-    mark of the task moves only after they show."""
-    found = flow.news(root, task)
-    for line in flow.quoted(found):
-        print(f"  {line}")
-    flow.shown(root, task.id, found)
-
-
-def _overlaps(task_id: str) -> None:
-    """The overlaps of the new contracts that the last advance found."""
-    for item in flow.overlaps(task_id):
-        print(f"  overlap — {item.message()}")
-
-
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m akasha", description=f"Akasha {VERSION}")
+    parser = argparse.ArgumentParser(prog="akasha", description=f"Akasha {VERSION}")
     commands = parser.add_subparsers(dest="command", required=True)
-    made = commands.add_parser("setup", help="write akasha.toml and the files that Codex reads")
-    made.add_argument("--approve-infra", metavar="ADMINISTRATOR", help="also change GitHub settings, with this approval")
-    request = commands.add_parser("request", help="record a new task")
-    request.add_argument("title")
-    request.add_argument("--requester", default="", help="the GitHub name of the requester; default: you")
-    request.add_argument("--workflow", default="feature")
-    request.add_argument("--feature", default="", metavar="KEY",
-                         help="the feature key, for example billing or billing/invoice. It selects the map file")
-    request.add_argument("--scope", nargs="*", default=[])
-    request.add_argument("--contract", nargs="*", default=[])
-    request.add_argument("--builds-on", default="", metavar="TASK", help="build on an earlier task of the same feature")
-    specify = commands.add_parser("specify", help="add completion conditions, open questions, or scope patterns")
-    specify.add_argument("task")
-    specify.add_argument("--condition", nargs="*", default=[])
-    specify.add_argument("--question", nargs="*", default=[])
-    specify.add_argument("--clear-questions", action="store_true")
-    specify.add_argument("--scope", nargs="*", default=[])
-    specify.add_argument("--builds-on", metavar='""', help='stop building on the earlier task: --builds-on ""')
-    specify.add_argument("--requester", metavar="NAME",
-                         help="the GitHub name of the requester, when the requester is not a GitHub account")
-    specify.add_argument("--feature", metavar="KEY", help='change the feature key; --feature "" removes it')
-    impact = commands.add_parser("impact", help="record the impact analysis of the agent engine")
-    impact.add_argument("task")
-    for name in ("features", "data", "contracts", "tasks", "rollback"):
-        impact.add_argument(f"--{name}", default="")
-    impact.add_argument("--map-unchanged", default="", metavar="REASON",
-                        help="why the map file of the feature does not change")
-    impact.add_argument("--changes-task", nargs=2, metavar=("TASK", "WHAT"),
-                        help="tell the requester of an earlier task that this task changes behavior that they accepted")
-    brief = commands.add_parser("brief", help="examine and record the pull request briefing")
-    brief.add_argument("task")
-    brief.add_argument("--file", type=Path, required=True)
-    by = "the person who decides. With GitHub, it must be the GitHub account of this computer"
-    approve = commands.add_parser("approve", help="record an approval")
-    approve.add_argument("task")
-    approve.add_argument("--role", required=True, choices=config.ROLES)
-    approve.add_argument("--by", default="", help=by)
-    resume = commands.add_parser("resume", help="open a stopped task again after a developer examined it")
-    resume.add_argument("task")
-    resume.add_argument("--by", default="", help=by)
-    cancel = commands.add_parser("cancel", help="stop a task for good, for example a withdrawn request")
-    cancel.add_argument("task")
-    cancel.add_argument("--by", default="", help=by)
-    cancel.add_argument("--reason", default="")
-    for name, text in (("advance", "move the task to its next stage"), ("show", "show one task"),
-                       ("handover", "open the pull request: GitHub or the merge helper of Akasha merges it"),
-                       ("handoff", "save the work on the server and free the task for another person"),
-                       ("preview", "reserve the preview port of a task, run the seed command, and show the preview "
-                                   "values")):
-        commands.add_parser(name, help=text).add_argument("task")
-    takeover = commands.add_parser("takeover", help="hold a task that another person handed off, and continue it here")
-    takeover.add_argument("task")
-    takeover.add_argument("--force", action="store_true",
-                          help="take over an open task without its handoff, when the copy of its holder is gone: the "
-                               "same GitHub account, or a developer. The work that was not on the server is lost")
-    check = commands.add_parser("check", help="run the required checks")
+    made = commands.add_parser("setup", help="an administrator sets up the repository")
+    made.add_argument("--apply", action="store_true", help="also change the GitHub settings (an administrator)")
+    commands.add_parser("doctor", help="what this person needs to work here")
+    start = commands.add_parser("start", help="start a task: a work copy and a draft pull request")
+    start.add_argument("title")
+    start.add_argument("--name", default="", help="a short name of the task: a to z, 0 to 9, and -")
+    start.add_argument("--scope", nargs="*", default=[], help="the file patterns that the task plans to change")
+    preview = commands.add_parser("preview", help="show the preview to the person and wait for the approval")
+    preview.add_argument("task")
+    preview.add_argument("--text", default="", help="make a plain preview from this text when there is none")
+    preview.add_argument("--no-open", action="store_true", help="do not open the browser")
+    review = commands.add_parser("review", help="record a self-review where no reviewer agent exists")
+    review.add_argument("task")
+    review.add_argument("--verdict", choices=("pass", "changes"), required=True)
+    check = commands.add_parser("check", help="run the checks of the team in the work copy")
     check.add_argument("task", nargs="?")
-    check.add_argument("--ci", action="store_true")
+    check.add_argument("--only", nargs="*", default=[])
+    check.add_argument("--ci", action="store_true", help="the server check runs this")
     check.add_argument("--config", type=Path)
     check.add_argument("--base", default="origin/main")
-    accept = commands.add_parser("accept", help="record the inspection of the requester")
-    accept.add_argument("task")
-    accept.add_argument("--condition", help="the text or the number of the condition; default: all conditions")
-    accept.add_argument("--result", choices=("yes", "no"), required=True)
-    accept.add_argument("--reason", default="", help="why the result is not correct, with --result no")
-    commands.add_parser("board", help="show the tasks of all requesters on the shared task board")
-    infra = commands.add_parser("infra", help="show or correct the GitHub settings")
-    infra.add_argument("--apply", action="store_true")
-    infra.add_argument("--by", default="", help="the administrator who approves the change: the GitHub account of "
-                                               "this computer")
-    hook = commands.add_parser("hook", help="the entry point for agent hooks")
+    landing = commands.add_parser("land", help="make the pull request ready and merge it when the checks pass")
+    landing.add_argument("task")
+    landing.add_argument("--wait", type=float, default=0, help="seconds to wait for the merge")
+    status = commands.add_parser("status", help="the tasks on this computer and the next step of each")
+    status.add_argument("task", nargs="?")
+    commands.add_parser("board", help="the open tasks of the team")
+    resume = commands.add_parser("resume", help="continue a task of the board on this computer")
+    resume.add_argument("task", help="the task name or the number of its pull request")
+    resume.add_argument("--force", action="store_true", help="the person who holds it agrees or is gone")
+    handoff = commands.add_parser("handoff", help="save the work on the server and free the task")
+    handoff.add_argument("task")
+    cancel = commands.add_parser("cancel", help="stop a task for good")
+    cancel.add_argument("task")
+    cancel.add_argument("--force", action="store_true", help="drop the changes that are not saved")
+    helping = commands.add_parser("help", help="ask the administrators on the pull request of the task")
+    helping.add_argument("task")
+    helping.add_argument("text")
+    commands.add_parser("tidy", help="remove the work copies of the merged tasks")
+    commands.add_parser("retro", help="what stops the work again and again")
+    commands.add_parser("version")
+    hook = commands.add_parser("hook", help="the entry point of the hooks")
     hook.add_argument("--agent", choices=("claude", "codex"), default="claude")
     hook.add_argument("--event", required=True)
-    helper = commands.add_parser("server", help="the merge and watch workflows of Akasha run these on GitHub")
-    jobs = helper.add_subparsers(dest="job", required=True)
-    merge = jobs.add_parser("merge", help="merge a pull request with the label akasha-merge after its check passed")
-    merge.add_argument("--repository", required=True)
-    merge.add_argument("--head-sha", required=True)
-    merge.add_argument("--update-branch", metavar="true|false",
-                       help="bring a pull request that is behind up to date: only with a token that starts workflows. "
-                            "Only the workflow file of Akasha 1.0.0 leaves it out")
-    watch = jobs.add_parser("watch", help="undo a change on the default branch that went around the check")
+    server = commands.add_parser("server", help="the watch workflow runs this on GitHub")
+    jobs = server.add_subparsers(dest="job", required=True)
+    watch = jobs.add_parser("watch")
     watch.add_argument("--repository", required=True)
     for name in ("branch", "before", "after", "forced", "pusher"):
         watch.add_argument(f"--{name}", default="")
-    update = jobs.add_parser("update", help="bring each pull request with the label akasha-merge up to date")
-    update.add_argument("--repository", required=True)
-    update.add_argument("--branch", required=True)
-    failed = jobs.add_parser("failed", help="tell the holder of a task that the check failed on its pull request")
-    failed.add_argument("--repository", required=True)
-    failed.add_argument("--head-sha", required=True)
     return parser
+
+
+def _print_checks(result: checks.Result) -> None:
+    for name, status in result.status.items():
+        print(f"[{status}] {name}" + (f"\n{result.details[name]}" if status in ("FAIL", "SKIP") else ""))
+
+
+def _status(root: Path, task_id: str | None) -> int:
+    tasks = [load(root, task_id)] if task_id else all_local(root)
+    if not tasks:
+        print("No task on this computer. `akasha board` shows the open tasks of the team.")
+    for task in tasks:
+        plan = flow.review.plan_digest(task)
+        print(f"{task.id} · {task.title} · {task.status}" + (f" · {task.pr}" if task.pr else ""))
+        print(f"  work copy: {task.workcopy}" + (f" · plan digest: {plan}" if plan else ""))
+        print(f"  next: {flow.next_step(task)}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "version":
+        print(VERSION)
+        return 0
     if args.command == "hook":
-        from akasha.engine import hooks
+        from akasha import hooks
         try:
             return hooks.main(args.agent, args.event)
-        except Exception as error:     # noqa: BLE001 — a defect in Akasha must never stop the work of the agent
+        except Exception as error:     # noqa: BLE001 — a defect in Akasha must never stop the agent engine
             print(f"Akasha hook problem: {error}", file=sys.stderr)
             return 0
-    if args.command == "server":                      # GitHub Actions run this, in the checkout for merge and watch
-        from akasha.infra import server
-        if args.job == "merge":
-            print(server.merge(Path.cwd(), args.repository, args.head_sha, (args.update_branch or "").lower() == "true",
-                               legacy=args.update_branch is None))
-        elif args.job == "watch":
-            print(server.watch(Path.cwd(), args.repository, args.branch, args.before, args.after,
-                               args.forced.lower() == "true", args.pusher))
-        elif args.job == "update":
-            print(server.update(Path.cwd(), args.repository, args.branch))
-        elif args.job == "failed":
-            print(server.failed(Path.cwd(), args.repository, args.head_sha))
+    if args.command == "server":
+        from akasha import watch
+        print(watch.watch(Path.cwd(), args.repository, args.branch, args.before, args.after,
+                          args.forced.lower() == "true", args.pusher))
         return 0
     if args.command == "check" and args.ci:
-        result = flow.ci_check(Path.cwd(), args.config, args.base)
-        for name, status in result.status.items():
-            print(f"[{status}] {name}" + (f"\n{result.details[name]}" if status != "PASS" and result.details[name] else ""))
-        return 0 if runner.passed(result.status) else 1
+        team = config.load(Path.cwd(), args.config)
+        result = checks.ci(team, Path.cwd(), args.base)
+        _print_checks(result)
+        return 0 if checks.passed(result.status) else 1
     root = _root()
     if args.command == "setup":
-        for line in setup.run(root, args.approve_infra or ""):
-            print(line)
+        print("\n".join(setup.run(root, args.apply)))
         return 0
-    if args.command == "request":
-        task, found = flow.start(root, args.title, args.requester, args.workflow, args.feature, args.scope,
-                                 args.contract, args.builds_on)
-        _show(task)
-        for note in task.notes + flow.leftovers(root):
-            print(f"  note — {note}")
-        if flow.behind(root):                         # the main checkout is old: read the latest files on the server
-            print(f"  note — {flow.behind(root)}")
-        for item in found:
-            print(f"  overlap — {item.message()}")
-        return 0
-    if args.command == "impact":
-        values = {name: getattr(args, name) for name in ("features", "data", "contracts", "tasks", "rollback")}
-        task, told = flow.impact(root, args.task, values, args.map_unchanged,
-                                 tuple(args.changes_task) if args.changes_task else None)
-        _show(task)
-        if told:
-            print(f"  {told}")
-        return 0
-    if args.command == "brief":
-        problems = flow.brief(root, args.task, args.file.read_text(encoding="utf-8"))
-        print("\n".join(f"- {item}" for item in problems) or "Akasha recorded the briefing.")
-        return 1 if problems else 0
-    if args.command == "specify":
-        task, found = flow.specify(root, args.task, args.condition, args.question, args.clear_questions, args.scope,
-                                   args.builds_on, args.requester, args.feature)
-        _show(task)
-        for item in found:
-            print(f"  overlap — {item.message()}")
-        return 0
-    if args.command == "approve":
-        _show(flow.approve(root, args.task, args.role, args.by))
-        return 0
-    if args.command == "resume":
-        _show(flow.resume(root, args.task, args.by))
-        return 0
-    if args.command == "cancel":
-        _show(flow.cancel(root, args.task, args.by, args.reason))
-        return 0
-    if args.command == "handoff":
-        _show(flow.handoff(root, args.task))
-        return 0
-    if args.command == "takeover":
-        _show(flow.takeover(root, args.task, args.force))
+    if args.command == "doctor":
+        found = setup.doctor(root)
+        for good, text in found:
+            print(f"{'OK ' if good else 'FIX'} {text}")
+        return 0 if all(good for good, _text in found) else 1
+    if args.command == "start":
+        task, notes = flow.start(root, args.title, args.name, tuple(args.scope))
+        print(f"Task {task.id}: {task.title}\n  work copy: {task.workcopy}" + (f"\n  board: {task.pr}" if task.pr else ""))
+        print("\n".join(f"  {line}" for line in notes))
+        print(f"  next: {flow.next_step(task)}")
         return 0
     if args.command == "preview":
-        task, values, seeded = flow.preview(root, args.task)
-        _show(task)
-        print(f"  preview port: {task.port}")
-        for name, value in values.items():
-            print(f"  preview {name}: {value}")
-        if seeded is not None:
-            status, detail = seeded
-            print(f"[{status}] seed" + (f"\n{detail}" if status != "PASS" and detail else ""))
-        return 0 if seeded is None or seeded[0] == "PASS" else 1
-    if args.command == "advance":
-        blocked = flow.advance(root, args.task)
-        task = flow.load(root, args.task, write=False)
-        _show(task)
-        for reason in blocked:
-            print(f"  blocked — {reason}")
-        for note in flow.leftovers(root):
-            print(f"  note — {note}")
-        _overlaps(args.task)
-        _uncounted(args.task)
-        _news(root, task)
-        return 1 if blocked else 0
-    if args.command == "show":
-        task = flow.load(root, args.task, write=False)
-        _show(task)
-        team = flow.rules(root)
-        if resources.in_range(task.port):
-            print(f"  preview port: {task.port}")
-        for name, template in team.preview.items():
-            if resources.in_range(task.port) or "{port}" not in template:
-                print(f"  preview {name}: {resources.fill(template, task.id, task.port)}")
-            else:
-                print(f"  preview {name}: {template} — akasha preview {task.id} reserves the port")
-        if task.feature:
-            print(f"  feature: {task.feature}")
-        print(f"  map file: {flow.map_file(team, task.feature) or f'any file in {team.map_dir}/'}")
-        if task.builds_on:
-            print(f"  builds on: {task.builds_on}")
-        print(f"  specification: r{task.spec_rev}")
-        for number, condition in enumerate(task.conditions, 1):
-            print(f"  condition {number}: {condition}")
-        for name in ("scope", "risk_reasons", "open_questions", "notes"):
-            for item in getattr(task, name):
-                print(f"  {name.replace('_', ' ').rstrip('s')}: {item}")
-        for key, text in task.impact.items():
-            print(f"  impact {key}: {text}")
-        if task.map_note:
-            print(f"  product map unchanged: {task.map_note}")
-        print(f"  briefing: {'recorded' if task.briefing else 'not recorded'}")
-        for role, person in task.approvals.items():
-            print(f"  approval: {role} {person}")
-        for condition, result in task.accepted.items():
-            print(f"  inspection: {'yes' if result else 'no'} — {condition}")
-        for name, status in task.checks.items():
-            print(f"  check {name}: {status}")
-        if task.setup_output:
-            print(f"  setup command output on this computer:\n{task.setup_output}")
-        _uncounted(task.id)
-        _news(root, task)
+        _task, message = flow.preview(root, args.task, args.text, not args.no_open)
+        print(message)
+        return 0
+    if args.command == "review":
+        task = flow.self_review(root, args.task, args.verdict)
+        print(f"Recorded a self-review: {task.review['verdict']}. next: {flow.next_step(task)}")
         return 0
     if args.command == "check":
-        result = flow.check(root, args.task)
-        task = flow.load(root, args.task, write=False)
-        for name, status in result.status.items():
-            print(f"[{status}] {name}" + (f"\n{result.details[name]}" if status != "PASS" and result.details[name] else ""))
-        for note in result.notes:
-            print(note)
-        if task.status == "stopped":
-            print(task.notes[-1])
-        return 0 if runner.passed(result.status) else 1
-    if args.command == "accept":
-        _show(flow.accept(root, args.task, args.condition, args.result == "yes", args.reason))
-        return 0
-    if args.command == "handover":
-        address, blocked = flow.handover(root, args.task)
-        print(f"Pull request: {address} — {MERGES[flow.rules(root).server_rules]}")     # the rules of the handover
-        for reason in blocked:
-            print(f"  blocked — {reason}")
-        _overlaps(args.task)
-        _news(root, tasks.load(root, args.task))      # the handover saved the task on this computer last
-        return 1 if blocked else 0
+        if not args.task:
+            raise ValueError("name the task: akasha check <task>")
+        result, notes = flow.check(root, args.task, tuple(args.only))
+        _print_checks(result)
+        print("\n".join(notes))
+        return 0 if checks.passed(result.status) else 1
+    if args.command == "land":
+        state, lines = land.land(root, args.task, args.wait)
+        print(state)
+        print("\n".join(f"  {line}" for line in lines))
+        return EXIT.get(state, 1)
+    if args.command == "status":
+        return _status(root, args.task)
     if args.command == "board":
-        listed, source = board.read(root)
-        print(f"Shared task board ({source}): {len(listed)} task(s)")
-        for task in listed:
-            held = f" · holder {task.holder or 'nobody'}" if source == "github" else ""
-            print(f"- {task.id} · {task.status} · {task.stage} · risk {task.risk} · {task.requester or 'unknown'}"
-                  f"{held} · feature {task.feature or 'none'} · {task.title}")
+        entries = board.read(root)
+        if entries is None:
+            raise RuntimeError("gh cannot read the board. Log in to GitHub: gh auth login")
+        print("\n".join(board.lines(entries, repo.me(root))) or "No open task.")
         return 0
-    if args.command == "infra":
-        if args.apply:                                # the warnings are for the team config in this checkout
-            problems, warned = github.apply(root, args.by)
-        else:
-            problems, warned = github.status(root), github.warnings(root)
-        print("\n".join(f"- {item}" for item in problems) or "The GitHub settings agree with akasha.toml.")
-        for item in warned:                           # a warning does not stop a handover
-            print(f"Warning: {item}")
-        print(setup.RULES_TEXT[config.load(root).server_rules])
-        return 1 if problems else 0
+    if args.command == "resume":
+        task = flow.resume(root, args.task, args.force)
+        print(f"Task {task.id} continues here: {task.workcopy}\n  next: {flow.next_step(task)}")
+        return 0
+    if args.command == "handoff":
+        print(flow.handoff(root, args.task))
+        return 0
+    if args.command == "cancel":
+        print(flow.cancel(root, args.task, args.force))
+        return 0
+    if args.command == "help":
+        print(flow.ask_help(root, args.task, args.text))
+        return 0
+    if args.command == "tidy":
+        print("\n".join(flow.tidy(root)) or "Nothing to remove.")
+        return 0
+    if args.command == "retro":
+        print("\n".join(retro.report(root)))
+        return 0
     return 2
 
 
 def run(argv: list[str] | None = None) -> int:
-    """Run a command. Tell an expected problem in one line, without a traceback. One command reads the rules from
-    the server once, also when it shows the task after the change."""
+    """Run a command. Tell an expected problem in one line, without a traceback."""
     try:
-        with flow.one_command():
-            return main(argv)
+        return main(argv)
     except (ValueError, LookupError, RuntimeError, PermissionError) as error:
         print(f"Akasha: {error}", file=sys.stderr)
         return 2
 
 
-if __name__ == "__main__":
+def entry() -> None:
+    """The `akasha` command that pip installs."""
     sys.exit(run())
+
+
+if __name__ == "__main__":
+    entry()

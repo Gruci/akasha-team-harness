@@ -1,204 +1,167 @@
-"""Set up Akasha in a repository: the team config, the files that Codex reads, and the GitHub settings."""
+"""The setup of a repository by an administrator, and the readiness of each person (doctor)."""
 
 from __future__ import annotations
 
+import shlex
+import shutil
+import sys
 from pathlib import Path
 
-from akasha import config
-from akasha.core.workcopy import examine_folder, fetch, git
-from akasha.engine import codex
-from akasha.infra import github
-from akasha.validators import langs
+from akasha import claude, codex, config, github, langs, repo
+from akasha.config import CONFIG_FILE, STATE_DIR
 
-HISTORY = 100           # the setup reads this many earlier versions of each file of Codex on the default branch
-COMMIT_CODEX = ("Make a branch, commit them, and open a pull request, so that each Codex session gets the current "
-                "rules and hooks.")
-READY = "Akasha is ready in this repository: the team rules and the server rules are on."
-RULES_TEXT = {
-    "github": "Server rules: GitHub branch protection and auto-merge.",
-    "akasha": "Server rules: GitHub has no branch protection on this plan, so the merge and watch workflows of Akasha "
-              "enforce the rules. When the plan changes, set up Akasha again to use the GitHub rules.",
-}
-MAP_GUIDE = """# Product map
-
-This folder has one map file for each feature key: `<feature key>.md`. A part of a large feature has the key
-`<feature>/<part>` and the file `<feature>/<part>.md`. Thus the tasks of different features do not change the same
-file. The agent engine reads the file of its feature before each impact analysis and updates it before each
-handover. Write in Simplified Technical English.
-
-<!-- The map file of one feature:
-# <Feature name>
-- Purpose: what the feature does for the user
-- Screens: the screens or commands that show the feature
-- Data: the tables, columns, or files that the feature reads or writes
-- APIs: the endpoints or functions that other features use
-- Depends on: the feature keys of the features that this feature uses
--->
-"""
+NEXT_STEPS = ("Next: commit these files on a new branch, open a pull request, and merge it. Then, on the computer of "
+              "an administrator of the GitHub repository, run `akasha setup --apply`.")
 
 
-def _team_config(root: Path) -> str:
+def first_config(root: Path) -> str:
+    """The first akasha.toml: the person who sets up Akasha is the administrator, and the usual commands of the main
+    language of the repository are the checks. The administrator corrects them before the merge."""
+    me = repo.me(root) if repo.origin(root) else ""
     packs = langs.detect(root)
-    lines = ["# The team rules of Akasha. Change them with the approval of an administrator.",
-             "[roles]", 'developers = []', 'administrators = []', "",
-             "[risk]", 'high = ["**/migrations/**", "**/auth/**", "**/payments/**"]', 'medium = ["**/api/**"]', "",
-             "# The agent engine makes the technical decisions. To add a person gate for a risk level, remove the #.",
-             "[approval]", '# high = ["developer"]', "",
+    pack = packs[0] if packs else None
+    admins = f'"{me}"' if me else ""
+    lines = ["# The team rules of Akasha. An administrator changes them with a pull request.", "",
+             "[team]", f"admins = [{admins}]          # GitHub names: they set up GitHub and help when the AI is "
+             "stuck",
+             "reviewers = []          # GitHub names that review a change of a risky path", "",
+             "[risk]", 'paths = []              # for example ["db/**", "**/migrations/**"]: a change waits for a '
+             "reviewer", "",
              "[checks]"]
-    required = ["secrets"] + (["tests"] if packs and packs[0].tests else [])
+    required = ["secrets"] + (["tests"] if pack and pack.tests else [])
     lines.append("required = [" + ", ".join(f'"{name}"' for name in required) + "]")
-    if packs and packs[0].setup:
-        lines.append(f'# setup = "{packs[0].setup}"    # installs the dependencies in a work copy and in CI')
-    if packs and packs[0].tests:
-        lines.append(f'tests = "{packs[0].tests}"')
-    if packs and packs[0].lint:
-        lines.append(f'lint = "{packs[0].lint}"')
-    lines += ["", "[preview]", '# command = "npm run dev -- --port {port}"', 'database = "app_{task}"',
-              '# seed = "npm run db:seed -- app_{task}"     # makes the database of the task with sample data',
-              '# cleanup = "npm run db:drop -- app_{task}"  # removes the database of a finished task']
-    return "\n".join(lines) + "\n"
+    if pack and pack.setup:
+        lines.append(f'# setup = "{pack.setup}"    # prepares each new work copy, and runs in the check of Akasha')
+    if pack and pack.tests:
+        lines += ["", "[checks.tests]", f'command = "{pack.tests}"']
+    lines += ["", "[ci]", '# required = ["build"]   # the checks of your own CI that GitHub must see pass. Without it, '
+              "Akasha adds its own check", "", "[guides]",
+              '# preview = ["docs/design.md"]       # team files that the AI reads before the preview',
+              '# plan = ["docs/architecture.md"]    # ... before the plan, and the reviewer reads them too', ""]
+    return "\n".join(lines)
 
 
-def _on_server(root: Path) -> str:
-    """The default branch when it has akasha.toml on the server, but this checkout has none, else "". Then the setup
-    pull request merged, and this checkout is old: a new akasha.toml would make a second setup pull request."""
-    if (root / config.CONFIG_FILE).is_file() or git(root, "remote", "get-url", "origin").returncode:
-        return ""
-    branch = github.default_branch(root)
-    if branch:
-        fetch(root, branch)
-    return branch if branch and config.on_server(root, f"origin/{branch}") else ""
-
-
-def _server_text(root: Path, ref: str, name: str) -> str | None:
-    """The file at a commit, or None when the commit has no such file. A byte order mark stays, as in codex.read."""
-    shown = git(root, "show", f"{ref}:{name}")
-    return shown.stdout.replace("\r\n", "\n") if shown.returncode == 0 else None
-
-
-def _older(root: Path, branch: str, name: str) -> bool:
-    """True when the default branch has other rules or hooks of Akasha in the file than the Akasha on this computer
-    makes, but had them in an earlier version: an Akasha that is newer than this Akasha wrote the file. A fix of
-    Akasha keeps the version 1.0.0, so the history of the file tells the order. Only the part of Akasha counts
-    (codex.agrees): a change of the team, for example its own hooks, is not the work of another Akasha."""
-    if codex.agrees(name, _server_text(root, f"origin/{branch}", name)):
-        return False
-    listed = git(root, "log", "--format=%H", "-n", str(HISTORY), f"origin/{branch}", "--", name)
-    return any(codex.agrees(name, _server_text(root, commit, name)) for commit in listed.stdout.split())
-
-
-def _codex_files(root: Path) -> list[str]:
-    """Bring the files that Codex reads up to date in a ready repository: an update of Akasha can change them.
-    Return the lines of the report, or none when nothing changes. A hooks file that Akasha cannot read stays as it
-    is, and the report tells it.
-
-    The default branch on the server decides, as the examination of the server rules fetched it. A checkout that is
-    only old needs a pull, and an Akasha that is older than the Akasha that wrote the files does not write its older
-    rules back. Without a copy of the default branch, the checkout decides."""
-    broken = codex.unreadable(root)
-    told = [codex.NOT_JSON.format(name=name) for name in broken]
-    names = tuple(name for name in codex.FILES if name not in broken)
-    branch = github.known_branch(root)
-    if not branch or git(root, "rev-parse", "-q", "--verify", f"refs/remotes/origin/{branch}").returncode:
-        changed = codex.write(root, names)
-        return told + ([f"Akasha updated {' and '.join(changed)} for this Akasha. {COMMIT_CODEX}"] if changed else [])
-    stale = tuple(name for name in names if not codex.current(name, _server_text(root, f"origin/{branch}", name)))
-    if not stale:                    # a change of the team in this checkout only is not old (codex.agrees)
-        old = [name for name in names if not codex.agrees(name, codex.read(root / name))]
-        return told + ([f"The default branch {branch} has the current {' and '.join(old)}, but this checkout is old. "
-                        f"Pull the default branch: git pull origin {branch}"] if old else [])
-    files = " and ".join(stale)
-    if any(_older(root, branch, name) for name in stale):
-        return told + [f"An Akasha that is newer than the Akasha on this computer wrote {files} on {branch}. Akasha "
-                       f"does not write the older rules back. Update Akasha ({github.UPDATE}), then run the setup "
-                       "again."]
-    if codex.write(root, stale):
-        return told + [f"Akasha updated {files} for this Akasha. {COMMIT_CODEX}"]
-    return told + [f"This checkout has the current {files}, but {branch} does not. {COMMIT_CODEX} When a pull request "
-                   "with the files is open, wait for its merge."]
-
-
-def _top(folder: str) -> str:
-    """The .gitignore line of a folder of Akasha. A line with a / before its end matches only at its place in the
-    repository. A name alone, for example tmp/, matches at each depth, so it gets a leading /."""
-    return f"{folder}/" if "/" in folder else f"/{folder}/"
-
-
-def _forms(line: str) -> set[str]:
-    """The .gitignore lines that ignore the files of the line, or more. A line with a / before its end matches only at
-    its place, with or without a leading /. A name with a leading / is also in the name without it, which matches at
-    each depth."""
-    bare = line.lstrip("/")
-    return {line, bare, f"/{bare}"} if "/" in bare.rstrip("/") or line.startswith("/") else {line}
-
-
-def _ignore(root: Path, lines: tuple[str, ...]) -> list[str]:
-    """Add the lines to .gitignore when it does not have them (_forms), and git does not ignore their files with
-    another line yet, for example .akasha/ for .akasha/state/. Return the lines that Akasha added. Akasha only adds
-    lines at the end, so the other lines keep their bytes, also in another encoding than UTF-8."""
-    ignore = root / ".gitignore"
-    present = ignore.read_bytes() if ignore.is_file() else b""
-    known = set(present.decode("utf-8-sig", errors="replace").splitlines())
-    missing = [line for line in dict.fromkeys(lines) if not _forms(line) & known
-               and git(root, "check-ignore", "-q", line.lstrip("/")).returncode]
+def _ignore(root: Path, team: config.Team) -> bool:
+    path = root / ".gitignore"
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    made = [line for pack in langs.detect(root) for line in pack.ignore]     # the files that tests and builds make
+    wanted = list(dict.fromkeys([f"{STATE_DIR.as_posix()}/", f"{team.work_dir}/", *made]))
+    missing = [line for line in wanted if line not in text.splitlines()]
     if missing:
-        end = b"\r\n" if b"\r\n" in present else b"\n"
-        ignore.write_bytes(present.rstrip(b"\r\n") + (end if present.strip() else b"")
-                           + end.join(line.encode("utf-8") for line in missing) + end)
-    return missing
+        path.write_text(text.rstrip("\n") + ("\n" if text.strip() else "") + "\n".join(missing) + "\n",
+                        encoding="utf-8")
+    return bool(missing)
 
 
-def run(root: Path, approved_by: str) -> list[str]:
-    """Examine the repository first. A repository with the team rules and the server rules on needs only the files
-    that Codex reads from this Akasha, and the folders of Akasha in .gitignore: an update of Akasha and [work] can
-    change them. A checkout that only lacks the latest default branch needs a pull, not a second setup.
+def _codeowners(root: Path, team: config.Team) -> str:
+    if not (team.admins or team.reviewers):
+        return ""
+    path = next((root / name for name in github.CODEOWNERS_FILES if (root / name).is_file()),
+                root / github.CODEOWNERS_FILES[0])
+    old = path.read_text(encoding="utf-8") if path.is_file() else ""
+    new = github.merge_block(old, github.codeowners(team))
+    if new == old:
+        return ""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new, encoding="utf-8")
+    return path.relative_to(root).as_posix()
 
-    The files that the tests and the builds make go into .gitignore only at the first setup: later, the team owns
-    these lines."""
-    path = root / config.CONFIG_FILE
-    pull = _on_server(root)
-    if pull:
-        return [f"The default branch {pull} on the server already has {config.CONFIG_FILE}, but this checkout does not. "
-                f"Akasha does not write a second team config. Pull the default branch first: git pull origin {pull}. "
-                "Then run the setup again: it examines the server rules."]
-    problems = [] if approved_by else github.status(root)
-    warned = [] if approved_by else [f"GitHub warning: {item}" for item in github.warnings(root)]
-    ready = path.is_file() and not approved_by and not problems
-    report = []
+
+def write_files(root: Path) -> list[str]:
+    """Write the files of Akasha into the checkout. Return the files that changed, and the problems."""
+    changed = []
+    path = root / CONFIG_FILE
     if not path.is_file():
-        path.write_text(_team_config(root), encoding="utf-8")
-        report.append(f"Akasha wrote {config.CONFIG_FILE}. Ask the team for the roles and the high-risk areas.")
-    elif not ready:
-        report.append(f"{config.CONFIG_FILE} is present. Akasha keeps it.")
-    team = config.load(root)                             # stop here if the team config is not correct
-    examine_folder(root, team.work_dir)
-    made = () if ready else tuple(line for pack in langs.detect(root) for line in pack.ignore)
-    added = _ignore(root, (_top(config.STATE_DIR.as_posix()), _top(team.work_dir), *made))     # also when ready
-    if ready:
-        told = _codex_files(root) + ([f"Akasha added {', '.join(added)} to .gitignore: git does not track the "
-                                      "folders of Akasha on each computer. Commit .gitignore in a pull request."]
-                                     if added else [])
-        return ([READY] + told if told else [f"{READY} Nothing to set up."]) + warned
-    guide = root / team.map_dir / config.MAP_README      # the product map of Akasha 1.0.0 stays where it is
-    if not guide.is_file():
-        guide.parent.mkdir(parents=True, exist_ok=True)
-        guide.write_text(MAP_GUIDE, encoding="utf-8")
-        report.append(f"Akasha wrote {team.map_dir}/{config.MAP_README}. The agent engine writes one map file for each "
-                      "feature during the tasks.")
-    written = codex.write(root)
-    if written:
-        report.append("Akasha wrote " + ", ".join(written) + ". Codex needs Akasha installed with pip.")
-    report += [codex.NOT_JSON.format(name=name) for name in codex.unreadable(root)]
-    if approved_by:
-        refused, risks = github.apply(root, approved_by)
-        report += [f"GitHub: {item}" for item in refused] or ["GitHub settings agree with akasha.toml."]
-        report += [f"GitHub warning: {item}" for item in risks]
-        report.append(RULES_TEXT[config.load(root).server_rules])
-    else:
-        report += [f"GitHub: {item}" for item in problems] + warned
-        if github.readiness(root).get("admin"):
-            report.append("You administer this repository. Approve the change, then run setup again with "
-                          "--approve-infra <your GitHub name>.")
-        else:
-            report.append("An administrator of the repository must turn on the server rules. Ask an administrator.")
+        path.write_text(first_config(root), encoding="utf-8")
+        changed.append(CONFIG_FILE)
+    team = config.load(root)
+    if _ignore(root, team):
+        changed.append(".gitignore")
+    template = root / github.TEMPLATE_FILE
+    if not template.is_file():
+        template.parent.mkdir(parents=True, exist_ok=True)
+        template.write_text((github.TEMPLATES / "pull_request_template.md").read_text(encoding="utf-8"),
+                            encoding="utf-8")
+        changed.append(github.TEMPLATE_FILE)
+    owners = _codeowners(root, team)
+    changed += [owners] if owners else []
+    for name, text in github.workflows(team).items():
+        target = root / name
+        if not target.is_file() or target.read_text(encoding="utf-8") != text:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+            changed.append(name)
+    for name in github.leftovers(team):
+        target = root / name
+        if target.is_file() and target.read_text(encoding="utf-8").startswith("# Akasha installs"):
+            target.unlink()
+            changed.append(f"{name} (removed: the team does not need it now)")
+    return changed + codex.write(root) + claude.write(root)
+
+
+def run(root: Path, apply: bool = False) -> list[str]:
+    branch = repo.default_branch(root)
+    if repo.origin(root) and not (root / CONFIG_FILE).is_file():
+        repo.fetch(root, branch)
+        if config.on_server(root, branch):
+            return [f"{branch} on the server already uses Akasha. Do not set it up again: pull it, git pull origin "
+                    f"{branch}"]
+    report = []
+    if apply:
+        rules, problems = github.apply(root)
+        report.append(f"GitHub: server rules {rules}. " + ("GitHub stops a merge before the checks pass."
+                      if rules == "github" else "GitHub cannot protect the default branch on this plan: Akasha "
+                      "merges after the checks on each computer, and the watch reports a change that went around "
+                      "them. For protection before each merge, move to GitHub Pro or Team, or make the repository "
+                      "public, then run `akasha setup --apply` again."))
+        report += [f"GitHub: {item}" for item in problems]
+    changed = write_files(root)
+    report += [f"wrote {name}" for name in changed] or ["the files of Akasha are up to date"]
+    if changed:
+        report.append(NEXT_STEPS if not apply else "Next: commit these files on a new branch, open a pull request, "
+                      "and merge it.")
     return report
+
+
+def _tool(command: str) -> str:
+    """The program of a command line, for example npm in `npm ci && npm run build`."""
+    try:
+        words = shlex.split(command.split("&&")[0])
+    except ValueError:
+        words = command.split()
+    return words[0] if words else ""
+
+
+def doctor(root: Path) -> list[tuple[bool, str]]:
+    """What this person needs to work with Akasha in this repository, with the fix of each problem."""
+    found: list[tuple[bool, str]] = []
+    found.append((sys.version_info >= (3, 11), f"Python {sys.version.split()[0]} (Akasha needs 3.11 or higher)"))
+    found.append((bool(shutil.which("git")), "git (install Git)"))
+    has_gh = bool(shutil.which("gh"))
+    found.append((has_gh, "GitHub CLI gh (install it: https://cli.github.com)"))
+    slug = repo.origin(root)
+    found.append((bool(slug), f"origin on GitHub ({slug or 'not GitHub'})"))
+    if has_gh and slug:
+        me = repo.me(root)
+        found.append((bool(me), f"GitHub login ({me or 'run: gh auth login'})"))
+        push = bool((github.repository(root).get("permissions") or {}).get("push"))
+        found.append((push, "write access to the repository (else an administrator adds you as a collaborator)"))
+    branch = repo.default_branch(root)
+    if slug:
+        repo.fetch(root, branch)
+    if not config.on_server(root, branch) and not (root / CONFIG_FILE).is_file():
+        found.append((False, f"{CONFIG_FILE} (an administrator sets up Akasha first)"))
+        return found
+    try:
+        team = config.shared(root, branch)
+    except config.ConfigError as error:
+        return found + [(False, f"{CONFIG_FILE}: {error}")]
+    for name in team.required_checks:
+        check = team.checks.get(name)
+        program = _tool(check.command) if check else ""
+        if program and program not in (".", "./") and not program.startswith(("./", ".\\")):
+            found.append((bool(shutil.which(program)), f"the program {program} of the check {name}"))
+    if slug and github.is_admin(root):
+        problems = github.status(root)
+        found += [(False, f"server: {item}") for item in problems] or [(True, "server rules of the team")]
+    return found
