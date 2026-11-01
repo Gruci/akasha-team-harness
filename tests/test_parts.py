@@ -248,6 +248,23 @@ class WatchTests(unittest.TestCase):
             with self.subTest(runs=runs):
                 self.assertIn("before checks passed", self.reason(pull, runs))
 
+    def test_the_watch_reports_a_core_change_without_an_approval(self):
+        """A teammate's change of existing lines of core code needs an administrator: the watch tells when it had
+        none."""
+        good = [{"name": "checks", "conclusion": "success"}]
+        core = {"lib/fmt.py": "used by 2 other areas"}
+
+        def pull(checks_of_task, login="me"):
+            body = block(Task(id="t", title="T", approval={"by": login}, review={"verdict": "PASS"},
+                              checks=checks_of_task))
+            return [{"number": 5, "merged_at": "x", "head": {"sha": "h"}, "user": {"login": login}, "body": body}]
+
+        self.assertIn("lib/fmt.py, which other areas use, without an approval",
+                      self.reason(pull({"core": core}), good, changed=["lib/fmt.py"]))
+        self.assertEqual(self.reason(pull({"core": core, "core_approved_by": "a"}), good, changed=["lib/fmt.py"]), "")
+        self.assertEqual(self.reason(pull({"core": core}, login="b"), good, changed=["lib/fmt.py"]), "")
+        self.assertEqual(self.reason(pull({}), good, changed=["lib/fmt.py"]), "")
+
 
 if __name__ == "__main__":
     unittest.main()

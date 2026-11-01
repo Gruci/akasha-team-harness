@@ -14,6 +14,11 @@ admins = ["lead", "dba"]           # GitHub names: they set up and maintain Akas
 [risk]
 paths = ["db/**", "**/migrations/**", "deploy/**"]     # only an administrator changes them
 
+[core]
+areas = ["domains/*", "src/features/*"]   # folders of one feature each
+paths = ["schema/**"]                     # an administrator approves a change of their existing lines
+used_by = 2                               # a file that 2 or more other areas import is core
+
 [checks]
 required = ["secrets", "tests", "front"]
 setup = "python -m pip install -r requirements.txt"
@@ -44,6 +49,7 @@ records = "docs/tasks/akasha"      # a folder that the own checkers of the team 
 
 [deploy]
 workflow = "Deploy"                # the workflow that deploys each merge
+verify = "python scripts/smoke.py" # it passes when the change works live
 
 [server]
 rules = "akasha"                   # setup writes it
@@ -52,8 +58,9 @@ rules = "akasha"                   # setup writes it
 ## `[team]`
 
 A team has two roles: the administrators, named here, and the teammates, who are each other person with write access.
-Nobody reviews a task. The administrators set up and maintain Akasha and the risky parts; a teammate approves the
-preview of their own request.
+Nobody reviews a task, except a change of existing lines of the core (`[core]`): an administrator approves it on
+GitHub. The administrators set up and maintain Akasha and the risky parts; a teammate approves the preview of their
+own request.
 
 | Key | Value |
 |:--|:--|
@@ -65,6 +72,22 @@ preview of their own request.
 | Key | Value |
 |:--|:--|
 | `paths` | File patterns of the parts that only an administrator changes, for example the database and the deployment. In a teammate's task, Akasha stops an edit of a matching file, and the check `admin_only` fails; the AI asks an administrator with `akasha help`. On GitHub Free the watch reports a merge that changed one. Keep the list short: each path sends work to an administrator |
+
+## `[core]`
+
+The core is the code that other areas use. A teammate's task adds anything freely, also new lines in a core file. Only
+a change or a delete of existing lines of a core file waits: the landing stops with BLOCKED until an administrator
+approves the pull request on GitHub. Akasha never stops the edit. The administrators and the people of
+`[team] own_procedure` are free of it.
+
+| Key | Value |
+|:--|:--|
+| `areas` | Folder patterns of one feature each, for example `"domains/*"` or `"src/features/*"`. A file belongs to the folder of the first pattern that holds it. Without a match, the area is the first two folders of the path |
+| `used_by` | A file that so many other areas import is core. A whole number of 1 or more. The default is `2`. Imports by tests do not count |
+| `paths` | File patterns of files that are core in any case, for example the definitions of the database. A teammate can still edit them; only a change of their existing lines waits for the approval |
+
+Akasha finds the imports of Python, JavaScript, and TypeScript. It does not see a call of an API by its address, a
+table name in the text of SQL, or another language: put such files into `paths`.
 
 ## `[checks]`
 
@@ -122,7 +145,8 @@ The files of the team that the AI reads in each step. The session start notice n
 
 | Key | Value |
 |:--|:--|
-| `workflow` | The name of the workflow that deploys each merge to the default branch, as GitHub shows it. After the merge, `akasha land` waits for its run on the merge commit and says DEPLOYED, DEPLOY_FAILED, or DEPLOYING. When the workflow does not start for a change (for example a filter of paths), the result stays MERGED |
+| `workflow` | The name of the workflow that deploys each merge to the default branch, as GitHub shows it. After the merge, `akasha land` waits for its run on the merge commit and says DEPLOYED, DEPLOY_FAILED, or DEPLOYING, or VERIFY_FAILED with `verify`. When the workflow does not start for a change (for example a filter of paths), the result stays MERGED |
+| `verify` | A command that passes when the change works live, for example a script that opens the main pages. After a deployment that passed, `akasha land` runs it at the top of the main checkout. It fails: VERIFY_FAILED, and the AI asks an administrator and offers to undo the change. Without it, a passed deployment is DEPLOYED |
 
 ## `[server]`
 

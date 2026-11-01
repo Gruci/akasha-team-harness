@@ -70,6 +70,21 @@ workflow = "Deploy to server"
         self.assertEqual(team.unknown, ("[nope]", "[team] owners", "[deploy] name", "[checks] timeout",
                                         "[checks.t] later"))
 
+    def test_core_and_verify_are_read_and_examined(self):
+        team = config.parse('[core]\npaths = ["db/"]\nareas = ["domains/*", "src/features/*/"]\nused_by = 3\n'
+                            '[deploy]\nverify = "python check_live.py"\n')
+        self.assertEqual((team.core_paths, team.core_areas, team.core_used_by),
+                         (("db/**",), ("domains/*", "src/features/*"), 3))
+        self.assertEqual(team.deploy_verify, "python check_live.py")
+        self.assertEqual(team.unknown, ())
+        empty = config.parse("")
+        self.assertEqual((empty.core_paths, empty.core_areas, empty.core_used_by, empty.deploy_verify),
+                         ((), (), 2, ""))
+        for text in ("[core]\nused_by = 0", '[core]\nused_by = "2"', "[core]\nused_by = true",
+                     '[core]\nareas = "domains/*"', '[core]\npaths = [""]', '[deploy]\nverify = ""'):
+            with self.subTest(text=text), self.assertRaises(ConfigError):
+                config.parse(text)
+
     def test_the_rules_can_live_in_the_github_folder(self):
         """A repository can allow only listed files at the top, as MIS does with its gate of root files."""
         with tempfile.TemporaryDirectory() as folder:

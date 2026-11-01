@@ -9,11 +9,12 @@ import time
 import webbrowser
 from pathlib import Path
 
-from akasha import approval, board, checks, config, pr, repo, review, trace, work
+from akasha import approval, board, checks, config, core, pr, repo, review, trace, work
 from akasha.config import Team
 from akasha.task import PLAN, PREVIEW, SUMMARY, Task, all_local, digest, forget, load, new_id, record, records, save
 
 STUCK = 3                      # failed checks in a row before Akasha suggests to ask an administrator
+DECISIONS = 'id="akasha-decisions"'       # the box of the questions and the answers of the person, in the preview
 
 
 def rules(root: Path) -> Team:
@@ -105,6 +106,10 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = ()) -
     if locked:
         notes.append(f"admin only — the task plans {', '.join(locked[:3])}, which only an administrator changes. "
                      f"Plan without it, or ask an administrator: `akasha help {task.id} \"<what the task needs>\"`")
+    planned = {} if core.exempt(team, task.owner) else core.planned(team, path, task.scope)
+    if planned:
+        notes.append(f"core — {', '.join(f'{name} ({why})' for name, why in planned.items())}. Add new code beside "
+                     f"these files; a change of their existing lines waits for an approval of an administrator")
     if online:
         pushed = ""
         try:
@@ -142,7 +147,7 @@ def _simple_preview(title: str, text: str) -> str:
     lines = "".join(f"<p>{html.escape(line)}</p>" for line in text.splitlines() if line.strip())
     return (f'<!doctype html><html lang="ko"><meta charset="utf-8"><title>{html.escape(title)}</title>'
             f'<body style="font-family:sans-serif;max-width:720px;margin:40px auto;line-height:1.6">'
-            f"<h1>{html.escape(title)}</h1>{lines}</body></html>\n")
+            f'<h1>{html.escape(title)}</h1><section id="akasha-decisions">{lines}</section></body></html>\n')
 
 
 def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tuple[Task, str]:
@@ -158,6 +163,9 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
         path.write_text(_simple_preview(task.title, text), encoding="utf-8")
     if not path.is_file():
         raise ValueError(f"write the preview first: {path}")
+    if DECISIONS not in path.read_text(encoding="utf-8", errors="replace"):
+        raise ValueError(f'the preview has no box of the decisions. At the top of {path}, add <section '
+                         f'id="akasha-decisions"> with each question that you asked and the answer of the person')
     sha = digest(path)
     changed = bool(task.approval) and task.approval.get("preview_sha") != sha
     if changed:
@@ -221,7 +229,8 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
     base = repo.git(tree, "merge-base", "HEAD", f"origin/{repo.default_branch(root)}").stdout.strip() or task.base
     changed = checks.changed_files(tree, base)
     result = checks.run(team, tree, changed, only)
-    locked = checks.touches(changed, checks.locked(team, repo.me(root, kept=True)))
+    me = repo.me(root, kept=True)
+    locked = checks.touches(changed, checks.locked(team, me))
     if locked:
         result.status[checks.ADMIN_ONLY] = "FAIL"
         result.details[checks.ADMIN_ONLY] = (
@@ -246,7 +255,13 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
     elif checks.passed(result.status) and not only:
         work.commit(tree, task.title)
         task.failures = 0
-        task.checks = {"status": result.status, "commit": work.head(tree), "at": time.strftime("%Y-%m-%d %H:%M")}
+        found = {} if core.exempt(team, me) else core.changed(team, tree, base)
+        task.checks = {"status": result.status, "commit": work.head(tree), "at": time.strftime("%Y-%m-%d %H:%M"),
+                       **({"core": found} if found else {})}
+        if found:
+            notes.append(f"core — the task changes existing lines of {', '.join(found)}, which other areas use. Keep "
+                         f"those lines and add new code beside them if the request allows it. Else the landing waits "
+                         f"for an approval of an administrator, and Akasha asks for it")
         holder = taken(root, task)
         if holder:
             notes.append(f"note — @{holder} holds task {task.id} now, so Akasha did not push. Run `akasha tidy`")

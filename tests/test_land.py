@@ -5,6 +5,7 @@ import json
 import subprocess
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -93,7 +94,8 @@ class Landing(unittest.TestCase):
         with patch("akasha.board.available", return_value=False):
             task, _notes = flow.start(self.root, "Date filter", name="date-filter")
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<html>p</html>", encoding="utf-8")
+        (records / "preview.html").write_text('<html><section id="akasha-decisions">p</section></html>',
+                                              encoding="utf-8")
         flow.preview(self.root, task.id, show=False)
         approval.on_prompt(self.root, self.root, "approve")
         flow.approve(self.root, task.id)
@@ -259,9 +261,41 @@ class LandTests(Landing):
         self.assertTrue(tree.is_dir())
         self.assertIn("not on GitHub", lines[-1])
 
-    def deploying(self):
+    def test_a_core_change_waits_for_an_administrator(self):
+        """A change of existing lines that other areas use lands only after an administrator approves it on GitHub."""
+        task = load(self.root, self.task.id)
+        task.checks["core"] = {"app.py": "used by 2 other areas"}
+        save(self.root, task)
+        with patch("akasha.land.ask_help") as ask, patch("akasha.core.approver", return_value="") as approver:
+            for _ in range(2):
+                state, lines = self.land(view(self.head), wait=0)
+                self.assertEqual(state, land.BLOCKED)
+                self.assertIn("an administrator approves the pull request first", lines[0])
+        ask.assert_called_once()                                  # once for each version of the work
+        root, tree, number, _team, files = approver.call_args.args
+        self.assertEqual((root, tree, number, files), (self.root, Path(self.task.workcopy), 7, ["app.py"]))
+        self.assertFalse(self.calls("ready"))
+        with patch("akasha.land.ask_help") as ask, patch("akasha.core.approver", return_value="admin-a"):
+            state, _lines = self.land([view(self.head), view(self.head), view(self.head, state="MERGED")])
+        self.assertEqual(state, land.MERGED)
+        ask.assert_not_called()
+        self.assertTrue(any("Core changes: `app.py` — approved by @admin-a" in " ".join(call[1:])
+                            for call in self.calls("merge")))
+
+    def test_the_check_after_the_deployment_decides(self):
+        self.deploying('verify = "python -c \\"import sys; sys.exit(3)\\""\n')
+        self.runs = [{"status": "completed", "conclusion": "success", "url": "u"}]
+        state, lines = self.land(view(self.head, state="MERGED"), wait=0)
+        self.assertEqual(state, land.VERIFY_FAILED)
+        self.assertIn("the check after the deployment failed", lines[-1])
+        team = replace(flow.rules(self.root), deploy_verify='python -c "pass"')
+        self.assertEqual(land._verify(self.root, team, self.task, {"url": "u"}),
+                         (land.DEPLOYED, ["the deployment put the change live: u",
+                                          "the check after the deployment passed"]))
+
+    def deploying(self, more: str = ""):
         self.repo.close()
-        self.repo = Repository(TEAM + f'\n[server]\nrules = "{self.rules}"\n[deploy]\nworkflow = "Deploy"\n')
+        self.repo = Repository(TEAM + f'\n[server]\nrules = "{self.rules}"\n[deploy]\nworkflow = "Deploy"\n{more}')
         self.root = self.repo.root
         self.task = self.ready()
         self.head = self.task.checks["commit"]

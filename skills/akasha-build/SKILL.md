@@ -15,8 +15,15 @@ a task of yours, do its next step first.
 
 ## 1. Understand the request
 
-1. Ask what the person wants to see and do, and which result they expect, until it is clear. Ask one question at a
-   time. Do not ask how to build it.
+1. Ask until the request is clear. Ask one question at a time, in simple words, and only what the person did not
+   say yet. Never ask how to build it. These questions apply to each request:
+   - Who uses it? Must some people not see it?
+   - Where do they open it (which screen or menu)?
+   - What must they see or do? Ask for an example.
+   - For data: where does it come from, and how new must it be?
+   - What changes in what exists now, and what stays the same?
+   - What shows when there is no data, or when an entry is wrong?
+   - When is it done? What will the person check?
 2. Run `akasha board`. If another open task changes the same screen or feature, tell the person who holds it.
 3. Read the files of `[guides] build`: they can name shared files that many tasks change, for example a list of
    routes or menus. Find the files that the change will probably touch, without those shared files. Run
@@ -35,6 +42,9 @@ a task of yours, do its next step first.
    - For a change without a screen (data, a batch job, an API, a rule): a diagram of the flow, and a table of the
      result before and after with sample values.
    - At the top, three short lines: what changes, what the person will see, and what stays the same.
+   - At the very top, a box `<section id="akasha-decisions">` titled in the language of the person (for example
+     "정한 것"): each question that you asked and the answer of the person, in their words. Akasha refuses a preview
+     without it. The approval of the preview is the record of these answers.
 3. Run `akasha preview <task>`. It opens the preview in the browser. Tell the person what they see in a few short
    lines, then ask in plain chat, in the language of the person: "Shall I build it like this, or what should change?"
    Never ask with AskUserQuestion or another choice tool: only a message that the person types counts.
@@ -60,6 +70,10 @@ a task of yours, do its next step first.
    approval from the person (step 2.3). Else do not ask the person anything.
 5. Only an agent app without the akasha-reviewer agent (for example Codex) reviews the plan itself, as strictly as
    the agent would, then runs `akasha review <task> --verdict pass`. Akasha refuses it in Claude Code.
+6. Core files: when `akasha start` or `akasha check` names a core file (code that other areas use, or a path of
+   `[core]`), keep its existing lines and add the new code beside them. Change or delete those lines only when the
+   request cannot work without it, and write why in `plan.md`. Then tell the person in one simple sentence that an
+   administrator checks that part before it goes live.
 
 ## 4. Build and check
 
@@ -91,10 +105,15 @@ a task of yours, do its next step first.
    - CONFLICT: Akasha names the files. Merge the default branch in the work copy as it tells, and keep the changes of
      both sides when they add different things (for example two new rows of a list). If `[guides] build` tells how to
      merge a shared file, do as it tells. Check, and land again.
-   - BLOCKED: do what the message says, then land again.
+   - BLOCKED: do what the message says, then land again. When it says that an administrator approves a core change
+     first, Akasha already asked the administrators: tell the person in one simple sentence that an administrator
+     checks one part, and land again later. Do not ask again with `akasha help`.
    - MERGED: tell the person in simple words what changed and where to see it. If the team deploys each merge,
      Akasha follows the deployment: DEPLOYING (exit code 3) means run the same command again, DEPLOYED means the
-     change is live, and DEPLOY_FAILED means tell the person and run `akasha help <task>`. If the plan or the summary
+     change is live, and DEPLOY_FAILED means tell the person and run `akasha help <task>`. VERIFY_FAILED means the
+     change is live, but the check of the team after the deployment failed: tell the person in simple words,
+     run `akasha help <task> "<the check after the deployment failed>"`, and offer to undo the change with a new
+     task. If the plan or the summary
      names steps that only an administrator can do (for example a secret value on the server, or a first run of a job),
      run `akasha help <task> "<the steps>"` and tell the person that the result shows after them. If Akasha says that
      the work copy has changes that are not on GitHub, tell the person, and start a new task for them.

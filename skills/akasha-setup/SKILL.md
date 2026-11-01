@@ -38,11 +38,18 @@ their language and in simple words.
 5. Ask the person these questions, one at a time, and write each answer into `akasha.toml`:
    - Who are the administrators? (GitHub names) → `[team] admins`. A team has only two roles: the administrators,
      who set up and maintain Akasha, and the teammates (each other person with write access), who approve the
-     previews of their own requests. Nobody reviews a task. Only the administrators change `akasha.toml`, `.github/`,
-     CODEOWNERS, and the risky parts.
+     previews of their own requests. Nobody reviews a task, except a change of existing lines of the core: an
+     administrator approves it on GitHub. Only the administrators change `akasha.toml`, `.github/`, CODEOWNERS, and
+     the risky parts.
    - Which parts are risky, for example the database and the deployment? → `[risk] paths`. Only an administrator
      changes them: a teammate's task stops there, and its AI asks an administrator with `akasha help`. Keep screens,
      features, and the own agent settings of each person out of the list, so that teammates rarely wait.
+   - Which folders hold one feature each? Look at the folders of the repository and propose them, for example
+     `domains/*` or `src/features/*` → `[core] areas`. A file that two or more other areas import is core: a change
+     of its existing lines waits for the approval of an administrator. New code is always free.
+   - Which files must an administrator approve before a change of their existing lines, though a teammate can edit
+     them, for example the definitions of the database? → `[core] paths`. Use it also for code that Akasha cannot
+     follow: Akasha sees the imports of Python, JavaScript, and TypeScript only.
    - Does the repository have its own CI on GitHub? What are the names of its required checks, as GitHub shows the
      jobs (for example `checks`, not the name of the workflow)? → `[ci] required`. Without a CI, Akasha adds its own
      check, which runs `[checks]` on GitHub.
@@ -62,6 +69,8 @@ their language and in simple words.
      for example `docs/tasks/akasha`.
    - Does a workflow deploy each merge to the default branch? → `[deploy] workflow`: its name or its file name.
      Then Akasha tells the person when the change is live, not only merged.
+   - Which command shows that the live service works after a deployment, for example a script that opens the main
+     pages? → `[deploy] verify`. When it fails, Akasha tells the person and an administrator.
    - Does the repository already use the folder of `[work] folder` or branches that start with `akasha/`? →
      `[work]`.
 6. Run `akasha setup` again. It writes the workflow files from the answers.

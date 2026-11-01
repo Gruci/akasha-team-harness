@@ -49,7 +49,8 @@ _KEYS: dict[str, set[str] | None] = {
     "work": {"folder", "branch_prefix", "records"},
     "guides": set(GUIDE_STEPS),
     "server": {"rules"},
-    "deploy": {"workflow"},
+    "core": {"paths", "areas", "used_by"},
+    "deploy": {"workflow", "verify"},
 }
 
 
@@ -85,6 +86,10 @@ class Team:
     guides: dict[str, tuple[str, ...]] = field(default_factory=dict)    # step -> team files to read in that step
     server_rules: str = "github"
     deploy_workflow: str = ""                # the workflow that puts a merged change live, for example "Deploy"
+    deploy_verify: str = ""                  # the command after a deployment: it passes when the change works live
+    core_paths: tuple[str, ...] = ()         # an administrator approves a change of existing lines of these files
+    core_areas: tuple[str, ...] = ()         # folder patterns of one feature each, for example "domains/*"
+    core_used_by: int = 2                    # a file that so many other areas import is core
     unknown: tuple[str, ...] = ()            # settings of a newer Akasha that this one does not know
 
     @property
@@ -121,6 +126,12 @@ def pattern(text: str) -> str:
 
 def _patterns(value: object, where: str) -> tuple[str, ...]:
     return tuple(pattern(item) for item in _strings(value, where))
+
+
+def _count(value: object, where: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ConfigError(f"{CONFIG_FILE}: {where} must be a whole number of 1 or more")
+    return value
 
 
 def _relative(value: object, where: str, example: str, top: bool = True) -> str:
@@ -230,7 +241,7 @@ def team_from(data: dict) -> Team:
             continue
         named[name] = _check(name, value, unknown)
     work_dir = _folder(work.get("folder", WORK_DIR), "folder", WORK_DIR, ())
-    deploy = data.get("deploy", {})
+    deploy, core = data.get("deploy", {}), data.get("core", {})
     return Team(
         admins=_names(team.get("admins", []), "[team] admins"),
         own_procedure=_names(team.get("own_procedure", []), "[team] own_procedure"),
@@ -249,6 +260,10 @@ def team_from(data: dict) -> Team:
         guides=_guides(data.get("guides", {})),
         server_rules=rules,
         deploy_workflow=_text(deploy["workflow"], "[deploy] workflow") if "workflow" in deploy else "",
+        deploy_verify=_text(deploy["verify"], "[deploy] verify") if "verify" in deploy else "",
+        core_paths=_patterns(core.get("paths", []), "[core] paths"),
+        core_areas=tuple(pattern(item.rstrip("/\\")) for item in _strings(core.get("areas", []), "[core] areas")),
+        core_used_by=_count(core.get("used_by", 2), "[core] used_by"),
         unknown=tuple(unknown),
     )
 
