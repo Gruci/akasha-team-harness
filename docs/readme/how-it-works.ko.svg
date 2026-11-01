@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="612" viewBox="0 0 1000 612" role="img" aria-label="여러 팀이 동시에 요청합니다. 각 사람은 시안만 승인합니다. 과업마다 AI 가 계획하고, 두 번째 AI 가 계획을 검사하고, 구현과 테스트를 합니다. 모든 팀의 과업이 하나씩 하나의 제품으로 합쳐지고, 뒤 과업은 먼저 최신으로 맞춥니다.">
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;fill:#e6edf3}
+.title{font-size:22px;font-weight:700}
+.sub{font-size:14px;fill:#8b949e}
+.label{font-size:12px;font-weight:600;letter-spacing:.06em;fill:#8b949e}
+.akasha{font-size:12px;font-weight:700;letter-spacing:.06em;fill:#c4b5fd}
+.name{font-size:15px;font-weight:700}
+.small{font-size:12.5px;fill:#8b949e}
+.msg{font-size:13px;paint-order:stroke;stroke:#0d1117;stroke-width:5px;stroke-linejoin:round}
+.row{font-size:13px;font-weight:600}
+.how{font-size:12.5px;fill:#8b949e}
+.gate{font-size:12.5px;fill:#c4b5fd}
+.who{font-size:12px;fill:#f0b072}
+.gh{font-size:12px;fill:#7ee787}
+.ai{font-size:13px;fill:#79c0ff}
+.foot{font-size:14px;fill:#8b949e}
+.code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+.bar{font-size:13px}
+.commit{font-size:13px;font-weight:700;fill:#7ee787}
+.gatehead{font-size:13px;font-weight:600;fill:#c4b5fd}
+@media (prefers-reduced-motion:reduce){.dot{display:none}}
+</style>
+<defs>
+<marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3d444d"/></marker>
+<marker id="time" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#30363d"/></marker>
+<marker id="stack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+</defs>
+<rect width="1000" height="612" rx="14" fill="#0d1117"/>
+<text x="26" y="42" class="title">여러 팀이 하나의 제품을, 동시에</text>
+<text x="26" y="66" class="sub">각 사람은 시안만 승인합니다. 과업마다 AI 가 자기 레인에서 일하고, 두 번째 AI 가 계획을 검사합니다.</text>
+<text x="200" y="100" class="label">같은 레포 · 같은 시간</text>
+<path d="M360,96 L960,96" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5" marker-end="url(#time)"/>
+<rect x="200" y="112" width="776" height="296" rx="14" fill="#a78bfa" fill-opacity=".04" stroke="#a78bfa" stroke-width="1.5"/>
+<text x="216" y="138" class="akasha">AKASHA 하네스</text>
+<text x="332" y="138" class="small">작업 보드 · 관문 · 과업마다 작업 사본</text>
+<path d="M200,452 L968,452" stroke="#3fb950" stroke-width="2"/>
+<path d="M184,183 L432,183" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M826,183 L860,183 L860,444" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-0.0s" repeatCount="indefinite" path="M184,183 L860,183 L860,452"/></circle>
+<path d="M184,269 L332,269" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M726,269 L760,269 L760,444" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-1.3s" repeatCount="indefinite" path="M184,269 L760,269 L760,452"/></circle>
+<path d="M184,355 L232,355" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M626,355 L660,355 L660,444" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-2.6s" repeatCount="indefinite" path="M184,355 L660,355 L660,452"/></circle>
+<rect x="24" y="148" width="160" height="70" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<circle cx="44" cy="168" r="5" fill="#f0883e"/>
+<text x="56" y="173" class="name">영업팀</text>
+<text x="38" y="193" class="small">“CSV 내려받기 넣어 줘”</text>
+<text x="38" y="210" class="who">✓ 시안 승인</text>
+<rect x="432" y="166" width="394" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="442" y="172" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="474.0" y="187" class="bar" text-anchor="middle">계획</text>
+<path d="M511,183 L527,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="532" y="172" width="104" height="22" rx="6" fill="#211a3a" stroke="#6d5bd0"/>
+<text x="584.0" y="187" class="gatehead" text-anchor="middle">계획 검사</text>
+<path d="M641,183 L657,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="662" y="172" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="694.0" y="187" class="bar" text-anchor="middle">구현</text>
+<path d="M731,183 L747,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="752" y="172" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="784.0" y="187" class="bar" text-anchor="middle">테스트</text>
+<circle cx="860" cy="452" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="860" y="478" class="commit" text-anchor="middle">#43</text>
+<text x="860" y="496" class="how" text-anchor="middle">CSV 내려받기</text>
+<rect x="24" y="234" width="160" height="70" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<circle cx="44" cy="254" r="5" fill="#f0883e"/>
+<text x="56" y="259" class="name">운영팀</text>
+<text x="38" y="279" class="small">“배치 상태 보여 줘”</text>
+<text x="38" y="296" class="who">✓ 시안 승인</text>
+<rect x="332" y="252" width="394" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="342" y="258" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="374.0" y="273" class="bar" text-anchor="middle">계획</text>
+<path d="M411,269 L427,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="432" y="258" width="104" height="22" rx="6" fill="#211a3a" stroke="#6d5bd0"/>
+<text x="484.0" y="273" class="gatehead" text-anchor="middle">계획 검사</text>
+<path d="M541,269 L557,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="562" y="258" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="594.0" y="273" class="bar" text-anchor="middle">구현</text>
+<path d="M631,269 L647,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="652" y="258" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="684.0" y="273" class="bar" text-anchor="middle">테스트</text>
+<circle cx="760" cy="452" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="760" y="478" class="commit" text-anchor="middle">#42</text>
+<text x="760" y="496" class="how" text-anchor="middle">배치 상태</text>
+<rect x="24" y="320" width="160" height="70" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<circle cx="44" cy="340" r="5" fill="#f0883e"/>
+<text x="56" y="345" class="name">재무팀</text>
+<text x="38" y="365" class="small">“월 합계 넣어 줘”</text>
+<text x="38" y="382" class="who">✓ 시안 승인</text>
+<rect x="232" y="338" width="394" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="242" y="344" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="274.0" y="359" class="bar" text-anchor="middle">계획</text>
+<path d="M311,355 L327,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="332" y="344" width="104" height="22" rx="6" fill="#211a3a" stroke="#6d5bd0"/>
+<text x="384.0" y="359" class="gatehead" text-anchor="middle">계획 검사</text>
+<path d="M441,355 L457,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="462" y="344" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="494.0" y="359" class="bar" text-anchor="middle">구현</text>
+<path d="M531,355 L547,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="552" y="344" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="584.0" y="359" class="bar" text-anchor="middle">테스트</text>
+<circle cx="660" cy="452" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="660" y="478" class="commit" text-anchor="middle">#41</text>
+<text x="660" y="496" class="how" text-anchor="middle">월 합계</text>
+<text x="860" y="514" class="gh" text-anchor="middle">먼저 최신으로</text>
+<rect x="24" y="424" width="160" height="56" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<circle cx="44" cy="446" r="5" fill="#3fb950"/>
+<text x="56" y="451" class="name">GitHub</text>
+<text x="38" y="472" class="small">main</text>
+<rect x="24" y="548" width="952" height="44" rx="8" fill="#161b22" stroke="#30363d"/>
+<text x="500" y="575" class="foot" text-anchor="middle">각 사람은 원하는 것을 말하고 본 것을 승인할 뿐입니다. 나머지는 AI 가 합니다.</text>
+</svg>
