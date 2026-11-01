@@ -84,26 +84,25 @@ The AI does the rest, and tells you when the change is merged and when it is liv
 
 ## How It Works
 
-<img src="docs/readme/how-it-works.svg" width="900" alt="Several teams ask at the same time. Each person only approves a preview. For each task an AI plans, a second AI checks the plan, the AI builds and tests. The tasks of all teams merge into one product one by one.">
+<p align="center"><img src="docs/readme/stages.en.svg" width="1000" alt="Six steps with an Akasha gate between each: request, preview, plan, build, check, and land. The AI does the work of every step. The person asks and approves the preview; a second AI checks the plan; an administrator helps when the AI is stuck; the tasks merge one by one."></p>
 
-Each task goes through six steps, and many tasks go through them at once:
-
-| Step | Who | Gate |
+| Step | Gate | Who besides the AI |
 |:--|:--|:--|
-| 1.&nbsp;Request | The person says what they want | — |
-| 2.&nbsp;Preview | The AI makes a preview, the person looks | The person approves it in the chat |
-| 3.&nbsp;Plan | The AI writes research and a plan | A second AI checks it until it passes |
-| 4.&nbsp;Build | The AI changes the code in its own copy | No code before steps 2 and 3 |
-| 5.&nbsp;Check | The checks of the team run | Each required check passes |
-| 6.&nbsp;Land | The pull request comes up to date and merges | The checks pass on GitHub |
+| Before the first task | The setup of Akasha merged:<br>`akasha.toml` and the GitHub settings | The administrator, once |
+| 1. Request | The AI knows what the person wants | The person says it in their own words |
+| 2. Preview | The person approved the preview in the chat | The person approves |
+| 3. Plan | A second AI passed the research and the plan | A second AI checks it |
+| 4. Build | No code before steps 2 and 3.<br>The code changes in the own copy of the task | — |
+| 5. Check | Each required check passes | An administrator, when the AI is stuck |
+| 6. Land | The pull request is up to date, and the checks pass on GitHub.<br>One squash commit merges with the summary | GitHub, or Akasha on GitHub Free |
 
-The hooks hold the AI on these steps.
+The person approves only in the chat, in their own words. A hook keeps the message, so the AI cannot make up an approval. When the preview changes, it needs a new approval.
 
-- They keep the message of the person for the approval, and record the verdict of the second AI.
-- They stop a change of the code before the gates.
-- They stop a change in the main checkout, or in a work copy outside Akasha.
-- They stop a force push, a push to the default branch, and a merge by hand.
-- The same rules hold for a session in another folder that changes this repository or uses `git -C`.
+| Layer | Enforced by |
+|:--|:--|
+| While working | Hooks check every command and saved file.<br>They stop a change of the code before the gates, and a change outside the copy of the task.<br>They stop a force push, a push to the default branch, and a merge by hand |
+| Before landing | The approval, the passed plan, passed checks, and the summary |
+| On GitHub | The checks of the team, with the rules of the default branch.<br>A pull request cannot loosen its own rules |
 
 [How it works](docs/how-it-works.md) tells each detail.
 
