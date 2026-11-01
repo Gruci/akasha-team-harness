@@ -26,7 +26,7 @@ or `akasha <command>`.
 | `version` | The version of Akasha |
 
 The results of `land`: MERGED, DEPLOYED, and CLOSED end the task (exit code 0). WAITING and DEPLOYING ask for the same
-command again (exit code 3). FAILED, CONFLICT, REVIEW, BLOCKED, and DEPLOY_FAILED tell what to do (exit code 1).
+command again (exit code 3). FAILED, CONFLICT, BLOCKED, and DEPLOY_FAILED tell what to do (exit code 1).
 
 The workflows run `check --ci` (the check of Akasha) and `server watch` (the watch). The hooks run `hook --event`
 through `hook.sh`, which finds Python 3.11 or higher. A shell line that is exactly one of these commands with the

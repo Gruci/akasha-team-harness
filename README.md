@@ -57,7 +57,7 @@ Akasha puts the person there, and puts machines everywhere else.
 
 Install the plugin, open the repository, and say **"Set up Akasha"**. Then the AI
 
-- asks for the administrators, the risky paths, the check commands, what each computer needs, and the team documents
+- asks for the administrators, the risky parts, the check commands, what each computer needs, and the team documents
 - lines up the own agent rules of the repository with Akasha
 - sets up GitHub, and opens a pull request with the files. Merge it after its checks pass.
 
@@ -130,8 +130,11 @@ A team has two roles: the administrators, and the teammates.
 
 | Who | Does | Does not have to |
 |:--|:--|:--|
-| **Administrator** | Sets up the repository once, and looks at risky changes | Watch each task |
+| **Administrator** | Sets up and maintains Akasha, the database, and the deployment | Review any task |
 | **Teammate** | Says what to make, and approves the preview | Read code or review plans |
+
+Each person keeps their own agent settings (`.claude/settings.local.json`, `CLAUDE.local.md`) out of git, so each
+person can tune the harness freely.
 
 * * *
 
@@ -139,8 +142,8 @@ A team has two roles: the administrators, and the teammates.
 
 | Repository | What stops a bad merge |
 |:--|:--|
-| Public, or private on a paid GitHub plan | **GitHub**: branch protection, required checks, code owners |
-| Private on GitHub Free | **Akasha**: merges only after the checks and the reviews pass |
+| Public, or private on a paid GitHub plan | **GitHub**: branch protection and the required checks |
+| Private on GitHub Free | **Akasha**: merges only after the checks pass |
 
 - On GitHub Free, a watch workflow also reports each change that went around the rules.
 - The setup tries GitHub first, and records which one applies.
@@ -157,7 +160,7 @@ A team has two roles: the administrators, and the teammates.
 | An approval comes from the person | Only words typed in the session that showed the preview |
 | The code waits for the approval and the plan check | The guard stops each edit of the code before both |
 | A change that failed the checks does not merge | The required checks must really run and pass on GitHub |
-| A risky change merges as the administrator saw it | A later change of a risky file needs a new look |
+| Only an administrator changes the risky parts | A teammate's task stops at the database or the deployment |
 | Each change can be found and undone | One squash commit with its summary and records |
 
 | Does not guarantee | Know this |
@@ -165,7 +168,6 @@ A team has two roles: the administrators, and the teammates.
 | A sandbox | The hooks keep a cooperative AI on the steps |
 | The meaning of an approval | The AI judges it. The pull request shows the exact words |
 | Protection before a merge on GitHub Free | A person can merge by hand. The watch reports it |
-| A merge on GitHub Free while nobody lands | A reviewed change merges when its AI lands it again |
 | The business logic | The preview, the plan check, and the checks examine it |
 | The data | Undoing code does not undo data. Mark the database risky |
 

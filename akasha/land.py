@@ -4,7 +4,8 @@ when the checks of the team pass on GitHub.
 Where GitHub protects the default branch, GitHub merges with its auto-merge, as the person who turned it on, so the
 workflows after a merge start, for example a deployment. Where it does not, for example a private repository on
 GitHub Free, Akasha merges on this computer with the account of the person, after the same examination: the required
-checks passed on the current head, the branch is up to date, and an administrator approved a change of a risky path or of the rules of the team. Akasha asks GitHub before each landing whether it protects the branch, so a
+checks passed on the current head, and the branch is up to date. No person reviews a task: the preview approval, the
+plan check, and the checks guard it. Akasha asks GitHub before each landing whether it protects the branch, so a
 missing or old [server] rules never sends a merge to an auto-merge that nothing stops. In both cases Akasha brings a
 pull request that is behind up to date, because GitHub does not do it. With [deploy] workflow, the landing then
 waits for that deployment, because the change is live only after it."""
@@ -28,8 +29,8 @@ PASSED = {"SUCCESS", "NEUTRAL"}
 QUEUED = ("QUEUED", "PENDING", "WAITING", "REQUESTED")
 _RUN = re.compile(r"/actions/runs/(\d+)")
 # The results of a landing. WAITING and DEPLOYING ask for one more `akasha land <task> --wait`.
-MERGED, CLOSED, WAITING, FAILED_CHECK, CONFLICT, REVIEW, BLOCKED = (
-    "MERGED", "CLOSED", "WAITING", "FAILED", "CONFLICT", "REVIEW", "BLOCKED")
+MERGED, CLOSED, WAITING, FAILED_CHECK, CONFLICT, BLOCKED = (
+    "MERGED", "CLOSED", "WAITING", "FAILED", "CONFLICT", "BLOCKED")
 DEPLOYED, DEPLOY_FAILED, DEPLOYING = "DEPLOYED", "DEPLOY_FAILED", "DEPLOYING"
 AGAIN = "Run `akasha land {task} --wait 540` again (shell timeout 600000 ms)"
 
@@ -74,14 +75,14 @@ def land(root: Path, task_id: str, wait: float = 0) -> tuple[str, list[str]]:
         problem = _ready(task)
         if problem:
             return BLOCKED, [problem]
-        state, told = _hand_over(root, team, task, akasha_merges)
+        state, told = _hand_over(root, task, akasha_merges)
         if state:
             return state, told
     state, lines = follow(root, team, load(root, task_id), deadline, akasha_merges)
     return state, told + lines
 
 
-def _hand_over(root: Path, team: Team, task: Task, akasha_merges: bool) -> tuple[str, list[str]]:
+def _hand_over(root: Path, task: Task, akasha_merges: bool) -> tuple[str, list[str]]:
     view = pr.view(root, task)
     if view is None:
         return WAITING, ["gh did not answer. " + AGAIN.format(task=task.id)]
@@ -103,14 +104,7 @@ def _hand_over(root: Path, team: Team, task: Task, akasha_merges: bool) -> tuple
     task.checks["landed"] = work.head(tree)
     save(root, task)
     pr.update(root, task)
-    lines = []
-    files = repo.names(tree, "diff", "--name-only", "--no-renames", f"origin/{branch}...HEAD")
-    authors = {repo.me(root), str(task.owner), str((view.get("author") or {}).get("login") or "").lower()}
-    for path, people, _patterns in github.reviews_needed(team, files, authors):
-        repo.gh(root, "pr", "edit", str(task.number), "--add-reviewer", ",".join(sorted(people)))
-        lines.append(f"the task changes {path}: it waits for the review of {_names(people)}")
-    if not akasha_merges:
-        lines += _auto_merge(root, task)
+    lines = [] if akasha_merges else _auto_merge(root, task)
     board.forget(root)
     return "", lines
 
@@ -122,10 +116,6 @@ def _auto_merge(root: Path, task: Task) -> list[str]:
         return [f"GitHub did not turn on auto-merge: {done.stderr.strip()[:200]}. An administrator runs "
                 "`akasha setup --apply`"]
     return []
-
-
-def _names(people: set[str]) -> str:
-    return ", ".join(f"@{name}" for name in sorted(people))
 
 
 def _result(item: dict) -> str:
@@ -201,34 +191,6 @@ def _failed(root: Path, task: Task, view: dict, failed: list[str], cancelled: bo
                           f"the work copy, run `akasha check {task.id}`, then land again"]
 
 
-def _files(root: Path, number: int) -> list[str] | None:
-    """Each file that the pull request changes, also beyond the first 100, or None when GitHub does not answer."""
-    done = repo.gh(root, "api", "--paginate", f"repos/{repo.origin(root)}/pulls/{number}/files?per_page=100",
-                   "--jq", ".[].filename")
-    return None if done.returncode else [line for line in done.stdout.splitlines() if line.strip()]
-
-
-def _waiting_review(root: Path, team: Team, task: Task, view: dict) -> tuple[str, set[str]]:
-    """Who must still approve the pull request, or nobody. "CHANGES" when one of them asked for changes, "WAIT" also
-    when GitHub did not list the files."""
-    files = _files(root, task.number)
-    if files is None:
-        return "WAIT", set()
-    authors = {str((view.get("author") or {}).get("login") or "").lower(), repo.me(root), str(task.owner)}
-    needs = github.reviews_needed(team, files, authors)
-    if not needs:
-        return "", set()
-    states = github.review_states(repo.gh_json(root, "api", f"repos/{repo.origin(root)}/pulls/{task.number}/"
-                                               "reviews?per_page=100"))
-    head = str(view.get("headRefOid") or "")
-    for _path, people, patterns in needs:
-        if any(states.get(name, ("", ""))[0] == "CHANGES_REQUESTED" for name in people):
-            return "CHANGES", people
-        if not github.approved(root, states, people, patterns, head, files):
-            return "WAIT", people
-    return "", set()
-
-
 def _merge(root: Path, task: Task, view: dict) -> str:
     """Merge the pull request at its current head. "" when it merged, "later" when GitHub asks to try again (the head
     moved, or GitHub still computes whether it can merge), else the error."""
@@ -249,7 +211,7 @@ def follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: b
         view = pr.view(root, task)
         if view is None:
             return WAITING, ["gh did not answer. " + AGAIN.format(task=task.id)]
-        state, head, waiting_for = view.get("state"), str(view.get("headRefOid") or ""), set()
+        state, head = view.get("state"), str(view.get("headRefOid") or "")
         if state in (MERGED, CLOSED):
             return _finish(root, team, task, state, view, deadline)
         if _moved(task):                              # for example an edit while the landing waits in the background
@@ -284,13 +246,7 @@ def follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: b
                 task.checks["updates"] = int(task.checks.get("updates") or 0) + 1
                 save(root, task)
             elif behind == 0 and all(value == "PASS" for value in states.values()):
-                review, waiting_for = _waiting_review(root, team, task, view)
-                if review == "CHANGES" or view.get("reviewDecision") == "CHANGES_REQUESTED":
-                    task.status = "approved"
-                    save(root, task)
-                    return REVIEW, [f"an administrator asked for changes: {view.get('url')}. Read the review, repair "
-                                    f"the work, run `akasha check {task.id}`, then land again"]
-                if akasha_merges and not review and view.get("mergeStateStatus") != "UNKNOWN":
+                if akasha_merges and view.get("mergeStateStatus") != "UNKNOWN":
                     error = _merge(root, task, view)
                     if not error:
                         return _finish(root, team, task, MERGED, {**view, "state": MERGED}, deadline)
@@ -299,17 +255,16 @@ def follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: b
                 elif not akasha_merges and not view.get("autoMergeRequest"):
                     _auto_merge(root, task)
         if time.monotonic() >= deadline:
-            return _late(task, view, states, waiting_for)
+            return _late(task, view, states)
         time.sleep(POLL_SECONDS)
 
 
-def _late(task: Task, view: dict, states: dict[str, str], waiting_for: set[str]) -> tuple[str, list[str]]:
+def _late(task: Task, view: dict, states: dict[str, str]) -> tuple[str, list[str]]:
     """The result when the deadline passed: what the landing waits for."""
     again = AGAIN.format(task=task.id)
-    if waiting_for or view.get("reviewDecision") == "REVIEW_REQUIRED":
-        who = _names(waiting_for) if waiting_for else "a code owner"
-        return REVIEW, [f"the pull request waits for the review of {who}: {view.get('url')}. After the review, "
-                        f"{again[0].lower()}{again[1:]}"]
+    if view.get("reviewDecision") == "REVIEW_REQUIRED":
+        return BLOCKED, [f"a rule of the repository on GitHub, not of Akasha, asks for a review: {view.get('url')}. "
+                         f"Ask an administrator to remove it: `akasha help {task.id} \"<GitHub asks for a review>\"`"]
     rollup = view.get("statusCheckRollup") or []
     missing = [name for name, value in states.items() if value == "MISSING"]
     if missing:

@@ -2,13 +2,12 @@
 the GitHub files, and the watch."""
 
 import json
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from akasha import board, claude, codex, config, github, review, watch
+from akasha import board, checks, claude, codex, config, github, review, watch
 from akasha.task import Task, block, parse_block
 
 
@@ -150,43 +149,21 @@ class GitHubFileTests(unittest.TestCase):
             self.assertNotIn("@@", text)
         self.assertEqual(github.protection(own_ci)["required_status_checks"]["contexts"], ["checks"])
 
-    def test_who_must_review(self):
-        team = config.parse('[team]\nadmins = ["a", "b"]\n[risk]\npaths = ["db/**"]\n'
+    def test_only_an_administrator_changes_the_rules_and_the_risky_paths(self):
+        """Nobody reviews a task: the administrators maintain these files, and a teammate's task leaves them alone."""
+        team = config.parse('[team]\nadmins = ["a"]\nown_procedure = ["o"]\n[risk]\npaths = ["db/**", "deploy/**"]\n'
                             '[guides]\npreview = ["design/UX.md"]\n')
-
-        def who(files, authors):
-            return [(path, people) for path, people, _patterns in github.reviews_needed(team, files, authors)]
-        self.assertEqual(who(["app.py"], {"me"}), [])
-        self.assertEqual(who(["db/x.sql"], {"me"}), [("db/x.sql", {"a", "b"})])
-        self.assertEqual(who(["db/x.sql"], {"b"}), [("db/x.sql", {"a"})])       # the author does not review
-        self.assertEqual(who([".github/workflows/ci.yml"], {"me"}), [(".github/workflows/ci.yml", {"a", "b"})])
-        self.assertEqual(who(["design/UX.md"], {"a"}), [("design/UX.md", {"b"})])    # a guide of each AI is a rule
-        self.assertEqual(who(["akasha.toml"], {"a", "b"}), [])
-        self.assertEqual(github.review_states([{"user": {"login": "B"}, "state": "APPROVED", "commit_id": "c1"},
-                                               {"user": {"login": "b"}, "state": "COMMENTED"},
-                                               {"user": {"login": "c"}, "state": "APPROVED"},
-                                               {"user": {"login": "c"}, "state": "CHANGES_REQUESTED"}]),
-                         {"b": ("APPROVED", "c1"), "c": ("CHANGES_REQUESTED", "")})
-
-    def test_an_approval_covers_only_the_version_that_the_reviewer_saw(self):
-        """A risky file changed after the approval merged without a new review on GitHub Free (critic)."""
-        states = {"b": ("APPROVED", "old")}
-        later = subprocess.CompletedProcess([], 0, "app.py\ndb/x.sql\ndb/main.sql\n", "")
-        with patch("akasha.repo.gh", return_value=later), patch("akasha.repo.origin", return_value="o/r"):
-            self.assertFalse(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "new", ["db/x.sql"]))
-            self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("web/**",), "new", ["db/x.sql"]))
-            # db/main.sql came in from the default branch: the change of the task did not touch it
-            self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "new", ["db/other.sql"]))
-        many = subprocess.CompletedProcess([], 0, "\n".join(f"f{n}" for n in range(300)), "")
-        with patch("akasha.repo.gh", return_value=many), patch("akasha.repo.origin", return_value="o/r"):
-            self.assertFalse(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "new", ["db/x.sql"]))
-        self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "old", ["db/x.sql"]))
-        self.assertFalse(github.approved(Path.cwd(), states, {"c"}, ("db/**",), "old", ["db/x.sql"]))
+        files = ["app.py", "db/x.sql", "deploy/run.sh", ".github/workflows/ci.yml", "akasha.toml", "design/UX.md"]
+        self.assertEqual(checks.touches(files, checks.locked(team, "me")),
+                         ["db/x.sql", "deploy/run.sh", ".github/workflows/ci.yml", "akasha.toml"])
+        self.assertEqual((checks.locked(team, "a"), checks.locked(team, "o")), ((), ()))
+        self.assertNotEqual(checks.locked(team, ""), ())                # an unknown person is a teammate
+        self.assertFalse(github.protection(team)["required_pull_request_reviews"].get("require_code_owner_reviews"))
 
     def test_the_team_has_only_administrators_and_teammates(self):
         """A reviewer role of an older akasha.toml is a setting that this Akasha does not know, not a role."""
-        team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b"]\n[risk]\npaths = ["db/**"]\n')
-        self.assertEqual([need[:2] for need in github.reviews_needed(team, ["db/x.sql"], {"me"})], [("db/x.sql", {"a"})])
+        team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b"]\n')
+        self.assertEqual(team.admins, ("a",))
         self.assertIn("[team] reviewers", team.unknown)
 
     def test_a_long_output_keeps_its_start_and_its_end(self):
@@ -207,35 +184,22 @@ class GitHubFileTests(unittest.TestCase):
         self.assertTrue(github.guards_checks({"protected": True, "protection": {"required_status_checks": {
             "checks": [{"context": "checks"}]}}}, team))
 
-    def test_codeowners_block(self):
-        team = config.parse('[team]\nadmins = ["a", "b"]\n[risk]\npaths = ["db/**"]\n'
-                            '[guides]\nplan = ["dev/RULES.md"]\n')
-        owners = github.codeowners(team)
-        self.assertIn("db/** @a @b", owners)
-        self.assertIn("/akasha.toml @a @b", owners)
-        self.assertIn("/dev/RULES.md @a @b", owners)             # a guide that each AI follows is a rule
-        merged = github.merge_block("* @team\n", owners)
-        self.assertTrue(merged.startswith("* @team") and merged.endswith("# akasha:end\n"))
-        self.assertEqual(github.merge_block(merged, owners), merged)
-
 
 class WatchTests(unittest.TestCase):
     team = config.parse('[team]\nadmins = ["a", "b"]\nown_procedure = ["a"]\n[risk]\npaths = ["db/**"]\n'
                         '[ci]\nrequired = ["checks"]\n')
 
-    def answers(self, pulls, runs, reviews=()):
+    def answers(self, pulls, runs):
         def api(_root, path):
             if path.endswith("/pulls"):
                 return pulls
             if "check-runs" in path:
                 return {"check_runs": runs}
-            if path.endswith("/status"):
-                return {"statuses": []}
-            return list(reviews)
+            return {"statuses": []}
         return api
 
-    def reason(self, pulls, runs, reviews=(), changed=("app.py",), setup=False):
-        with patch("akasha.watch._api", self.answers(pulls, runs, reviews)), \
+    def reason(self, pulls, runs, changed=("app.py",), setup=False):
+        with patch("akasha.watch._api", self.answers(pulls, runs)), \
                 patch("akasha.repo.names", return_value=list(changed)), \
                 patch("akasha.config.shown", return_value=None if setup else "[team]\n"):
             return watch._reason(Path.cwd(), "o/r", self.team, "s")
@@ -256,10 +220,11 @@ class WatchTests(unittest.TestCase):
         good = [{"name": "checks", "conclusion": "success"}]
         self.assertIn("did not come", self.reason([], good))
         self.assertIn("before checks passed", self.reason(merged, []))
-        self.assertIn("without the review", self.reason(merged, good, changed=["db/x.sql"]))
-        self.assertEqual(self.reason(merged, good, [{"user": {"login": "B"}, "state": "APPROVED"}], ["db/x.sql"]), "")
-        self.assertIn("without the review", self.reason(merged, good, changed=[".github/workflows/ci.yml"]))
+        self.assertIn("only an administrator changes", self.reason(merged, good, changed=["db/x.sql"]))
+        self.assertIn("only an administrator changes", self.reason(merged, good, changed=[".github/workflows/ci.yml"]))
         self.assertEqual(self.reason(merged, good), "")
+        merged[0]["user"] = {"login": "B"}                              # an administrator maintains them
+        self.assertEqual(self.reason(merged, good, changed=["db/x.sql"]), "")
 
     def test_a_merge_around_the_steps_of_akasha_is_reported(self):
         """A pull request merged by hand on GitHub, without an approval or a review (audit F09)."""

@@ -6,8 +6,9 @@ The person who asks for a change decides what to make. They decide it once, at t
 see: a mockup of the screen, or a diagram of the flow and the data. The AI does everything after that, and another AI
 checks its plan in place of a person. Machines check the result. GitHub merges it.
 
-A team has two roles. A teammate asks for changes and approves their previews. An administrator sets up the team,
-reviews a change of the few risky parts, and helps when an AI is stuck.
+A team has two roles. A teammate asks for changes and approves their previews, and never reads code. An
+administrator sets up and maintains Akasha and the few risky parts (the database, the deployment), and helps when an
+AI is stuck. Nobody reviews a task.
 
 | Step | Who | What happens |
 |:--|:--|:--|
@@ -16,7 +17,7 @@ reviews a change of the few risky parts, and helps when an AI is stuck.
 | 3. Plan | The AI | The AI writes the research and the plan. A second AI (the akasha-reviewer agent) checks the plan until it passes |
 | 4. Build | The AI | Changes the code in its own work copy, with a test for each behavior of the preview |
 | 5. Check | The AI and the checks | Runs the checks of the team until they pass |
-| 6. Land | The AI and GitHub | Opens the pull request for review, brings it up to date, and merges it when the checks pass on GitHub |
+| 6. Land | The AI and GitHub | Makes the pull request ready, brings it up to date, and merges it when the checks pass on GitHub |
 
 ## One task
 
@@ -73,9 +74,10 @@ Another AI reviews the plan, in place of a person who reads it.
 | An edit | A change of the repository in the main checkout, or in a git worktree that is not a task, after the setup merged | Each change is a task, in its own work copy |
 | An edit | A change of the code of a task before the approval and the passed review | The person decides first, and the plan is right first |
 | An edit | A change of `.env` and of `.akasha/state` | Secret values, and the records of Akasha |
+| An edit | In a teammate's task, a change of `akasha.toml`, `.github/`, CODEOWNERS, or a path of `[risk]` | The administrators maintain them. The AI asks with `akasha help`, and the check `admin_only` also fails on such a change |
 | A command | A force push, a push to the default branch (also a plain `git push` on it), a delete of the default branch | They go around the pull request, or cannot be undone |
 | A command | `git worktree add` | Akasha makes the work copy of each task |
-| A command | `gh pr merge` and an approval of a pull request by the agent engine | Akasha lands each task, and an administrator approves in person |
+| A command | `gh pr merge` and an approval of a pull request by the agent engine | Akasha lands each task, and needs no approval of a pull request |
 | A command | A recursive delete outside the project | It deletes what Akasha cannot restore |
 | After an edit | A secret key in the file | It must not go into git |
 
@@ -109,8 +111,8 @@ the default branch, or the CI of the team runs its own checks (`[ci] required`).
 ## The landing
 
 `akasha land <task> --wait 540` needs the approval, the passed review, passed checks on the current work, and
-`summary.md`. Then it merges the latest default branch into the task, makes the pull request ready, pushes it, asks
-for the reviews that the change needs, and follows the pull request:
+`summary.md`. Then it merges the latest default branch into the task, makes the pull request ready, pushes it, and
+follows the pull request:
 
 | What Akasha sees | What it does |
 |:--|:--|
@@ -121,15 +123,13 @@ for the reviews that the change needs, and follows the pull request:
 | The branch is behind the default branch | Asks GitHub to bring it up to date. The checks run again. When GitHub does not answer, it does not merge |
 | A conflict | Stops with CONFLICT. The next landing brings the latest default branch into the work copy and names the files |
 | The work copy changed during the landing | Stops with BLOCKED: the change needs its checks first |
-| A change that needs a review, without it | Waits until the end of the wait, then stops with REVIEW. A review that asks for changes stops at once |
+| A rule of the repository on GitHub asks for a review | Stops with BLOCKED at the end of the wait: Akasha asks for no review, so an administrator removes the rule |
 | Everything passed | Merges the pull request as one squash commit, with the summary as its body |
 | `[deploy] workflow` is set | After the merge, waits for the deployment and says DEPLOYED, DEPLOY_FAILED, or DEPLOYING |
 
-A change of a risky path, or of the rules of the team (`akasha.toml`, `.github/`, CODEOWNERS, and the files of
-`[guides]`, which each AI follows), needs the approval of an administrator. The person who made the change does not
-count. An approval covers the version that the administrator saw: when a file of that kind changes after it, the
-change needs a new review. Akasha asks the administrators at the first check that touches such a file, so that they
-review while the work goes on.
+No person reviews the pull request. The preview approval of the person, the plan check of the second AI, and the checks
+of the team guard each task. The parts that only an administrator changes never reach the landing from a teammate's
+task: the guard stops the edit, and the check `admin_only` fails.
 
 Who merges depends on GitHub. Before each landing, Akasha asks GitHub whether its protection of the default branch
 requires each check of the team:
@@ -140,9 +140,9 @@ requires each check of the team:
 | No protection, or one without these checks (a private repository on GitHub Free, or before `--apply`) | Akasha, on the computer of the person, after the same examination. A watch workflow reports each change that went around the rules |
 
 In both cases the merge comes from the account of the person, so the workflows after a merge start, for example a
-deployment. Where Akasha merges, a merge happens only while `akasha land` runs: a change that waits for a review
-merges when the AI of the person who holds it lands it again after the review, in the same session or when the person
-asks it to continue in a later one.
+deployment. Where Akasha merges, a merge happens only while `akasha land` runs: a change that waits for its checks
+merges when the AI of the person who holds it lands it again, in the same session or when the person asks it to
+continue in a later one.
 
 Akasha never removes work that did not reach GitHub: when a pull request merged or closed, or another person took the
 task, while the work copy has an edit or a commit that GitHub lacks, Akasha keeps the work copy and says so. A work

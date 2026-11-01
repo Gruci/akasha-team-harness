@@ -1,15 +1,15 @@
 """The watch: where GitHub cannot protect the default branch, a workflow examines each new commit after a push and
 reports each problem to the administrators: a commit that no merged pull request brought, a merge before the required
 checks passed, a pull request that was not an Akasha task or had no approved preview or no passed plan review, and a
-change of a risky path or of the rules of the team without the review of its owners. It changes no code: a revert
-would start a deployment that nobody asked for, and the administrators decide."""
+change by a teammate of a file that only an administrator changes. It changes no code: a revert would start a
+deployment that nobody asked for, and the administrators decide."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from akasha import config, github, repo
+from akasha import checks, config, github, repo
 from akasha.config import HELP_LABEL, Team
 from akasha.task import parse_block
 
@@ -66,13 +66,9 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
     if task.review.get("verdict") != "PASS":
         return f"pull request #{pull['number']} merged without a passed plan review"
     changed = repo.names(root, "diff", "--name-only", "--no-renames", f"{sha}^1", sha)
-    needs = github.reviews_needed(team, changed, {author})
-    if not needs:
-        return ""
-    states = github.review_states(_api(root, f"repos/{slug}/pulls/{pull['number']}/reviews?per_page=100"))
-    for path, people, patterns in needs:
-        if not github.approved(root, states, people, patterns, str(pull["head"]["sha"]), changed):
-            return f"pull request #{pull['number']} changed {path} without the review of one of {sorted(people)}"
+    locked = checks.touches(changed, checks.locked(team, author))
+    if locked:
+        return f"pull request #{pull['number']} of @{author} changed {locked[0]}, which only an administrator changes"
     return ""
 
 

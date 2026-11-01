@@ -2,9 +2,9 @@
 
 Commands: a force push, a push to the default branch (also of the current branch), a delete of the default branch, a
 merge or an approval of a pull request by hand (Akasha lands each task), a work copy outside Akasha, a recursive
-delete outside the project, and a change of the state of Akasha. Edits: a change of the repository in the main
-checkout or in a git worktree that is not a task (each change is a task), and a change of the code of a task before
-its preview is approved and its plan passed the review."""
+delete outside the project, and a change of the state of Akasha. Edits: a change of the repository in the main checkout or in a git
+worktree that is not a task (each change is a task), a change of the code of a task before its preview is approved and
+its plan passed the review, and a change by a teammate of a file that only an administrator changes."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import shlex
 from collections.abc import Callable
 from pathlib import Path
 
+from akasha.checks import matches
 from akasha.config import STATE_DIR
 from akasha.repo import default_branch, git, inside
 from akasha.task import Task, records
@@ -113,7 +114,7 @@ def _gh_reason(args: list[str], line: str, own: bool) -> str | None:
     if (words == ["pr", "merge"] or (words[:1] == ["api"] and _MERGE_API.search(line))) and not own:
         return f"it merges a pull request by hand. {LAND}"
     if words == ["pr", "review"] and any(arg == "--approve" or _short_flag(arg, "a") for arg in args):
-        return "it approves a pull request. An administrator approves on GitHub, in person"
+        return f"it approves a pull request by hand. Akasha needs no approval of a pull request. {LAND}"
     return None
 
 
@@ -200,12 +201,13 @@ def _other_worktree(path: Path, root: Path, tasks: list[Task]) -> Path | None:
 
 
 def check_edit(path: Path, root: Path, tasks: list[Task], set_up: bool, gate: Callable[[Task], str],
-               own: bool = False) -> str | None:
+               own: bool = False, locked: tuple[str, ...] = ()) -> str | None:
     """The reason to stop an edit of the file, or None.
 
     `gate(task)` tells what the task still needs before its code can change, or "" when it is ready. `set_up` is True
     when the default branch has akasha.toml: before that, the administrator sets up Akasha in the main checkout. A
-    person who keeps the own procedure of the repository (`own`) edits outside the work copies of tasks freely."""
+    person who keeps the own procedure of the repository (`own`) edits outside the work copies of tasks freely.
+    `locked`: the file patterns that only an administrator changes, empty for an administrator."""
     if _ENV_FILE.match(path.name):
         return (f"Akasha stopped this edit: {path.name} holds secret values. Ask a person to change it, and read the "
                 "values from the environment in the code.")
@@ -216,6 +218,11 @@ def check_edit(path: Path, root: Path, tasks: list[Task], set_up: bool, gate: Ca
             continue
         if inside(path, Path(task.workcopy) / records(task)):
             return None                                       # the preview, the research, the plan, the summary
+        relative = path.resolve().relative_to(Path(task.workcopy).resolve()).as_posix()
+        if any(matches(relative, item) for item in locked):
+            return (f"Akasha stopped this edit: only an administrator changes {relative} (the rules of Akasha, the "
+                    f"GitHub files, or a risky part such as the database or the deployment). Leave it out of task "
+                    f"{task.id}, or ask an administrator: `akasha help {task.id} \"<what the task needs there>\"`.")
         missing = gate(task)
         return (f"Akasha stopped this edit: task {task.id} is not ready to build. {missing}") if missing else None
     if own:
