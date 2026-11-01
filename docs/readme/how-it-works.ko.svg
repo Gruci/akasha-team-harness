@@ -1,79 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" role="img" aria-labelledby="title desc">
-  <title id="title">여러 팀이 동시에 하나의 제품을 만든다</title>
-  <desc id="desc">세 팀이 동시에 변경을 요청합니다. 각 사람은 시안만 승인합니다. 과업마다 AI 가 자기 작업 폴더에서 계획하고, 두 번째 AI 가 계획을 검사하고, 구현하고, 테스트합니다. 공유 보드가 누가 무엇을 만드는지 보여 줍니다. 과업들은 하나씩 하나의 제품으로 합쳐지고, 뒤 과업은 최신으로 맞춘 뒤 다시 검사합니다.</desc>
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 Z" fill="#7c3aed"/>
-    </marker>
-    <marker id="merge" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 Z" fill="#16a34a"/>
-    </marker>
-  </defs>
-  <rect width="900" height="420" rx="20" fill="#ffffff" stroke="#e5e7eb"/>
-  <g font-family="'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', sans-serif">
-    <g font-size="13" font-weight="700" text-anchor="middle">
-      <text x="110" y="40" fill="#92400e">각 팀의 사람</text>
-      <text x="400" y="40" fill="#5b21b6">과업마다 AI 하나, 동시에</text>
-      <text x="770" y="40" fill="#166534">하나의 제품</text>
-    </g>
-    <g font-size="11" fill="#6b7280" text-anchor="middle">
-      <text x="110" y="56">요청하고, 시안을 승인</text>
-      <text x="400" y="56">계획 · 두 번째 AI 가 계획 검사 · 구현 · 테스트</text>
-      <text x="770" y="56">하나씩 병합</text>
-    </g>
-
-    <rect x="215" y="70" width="370" height="26" rx="13" fill="#f3f4f6" stroke="#d1d5db"/>
-    <text x="400" y="88" font-size="12" fill="#374151" text-anchor="middle">보드: 누가 무엇을 만드는지, 어디서 겹치는지</text>
-
-    <g>
-      <rect x="30" y="112" width="160" height="64" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
-      <text x="110" y="137" font-size="15" font-weight="700" fill="#111827" text-anchor="middle">영업팀</text>
-      <text x="110" y="157" font-size="11" fill="#374151" text-anchor="middle">"CSV 내려받기 넣어 줘"</text>
-      <text x="110" y="170" font-size="11" fill="#92400e" text-anchor="middle">✓ 시안 승인</text>
-      <rect x="215" y="112" width="370" height="64" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
-
-      <rect x="30" y="192" width="160" height="64" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
-      <text x="110" y="217" font-size="15" font-weight="700" fill="#111827" text-anchor="middle">운영팀</text>
-      <text x="110" y="237" font-size="11" fill="#374151" text-anchor="middle">"배치 상태를 보여 줘"</text>
-      <text x="110" y="250" font-size="11" fill="#92400e" text-anchor="middle">✓ 시안 승인</text>
-      <rect x="215" y="192" width="370" height="64" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
-
-      <rect x="30" y="272" width="160" height="64" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
-      <text x="110" y="297" font-size="15" font-weight="700" fill="#111827" text-anchor="middle">재무팀</text>
-      <text x="110" y="317" font-size="11" fill="#374151" text-anchor="middle">"월 합계를 넣어 줘"</text>
-      <text x="110" y="330" font-size="11" fill="#92400e" text-anchor="middle">✓ 시안 승인</text>
-      <rect x="215" y="272" width="370" height="64" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
-    </g>
-
-    <g font-size="12" font-weight="600" fill="#4c1d95" text-anchor="middle">
-      <text x="262" y="149">계획</text><text x="352" y="149">계획 검사</text><text x="447" y="149">구현</text><text x="535" y="149">테스트</text>
-      <text x="262" y="229">계획</text><text x="352" y="229">계획 검사</text><text x="447" y="229">구현</text><text x="535" y="229">테스트</text>
-      <text x="262" y="309">계획</text><text x="352" y="309">계획 검사</text><text x="447" y="309">구현</text><text x="535" y="309">테스트</text>
-    </g>
-    <g stroke="#a78bfa" stroke-width="2" fill="none" marker-end="url(#arrow)">
-      <line x1="285" y1="144" x2="312" y2="144"/><line x1="393" y1="144" x2="424" y2="144"/><line x1="470" y1="144" x2="504" y2="144"/>
-      <line x1="285" y1="224" x2="312" y2="224"/><line x1="393" y1="224" x2="424" y2="224"/><line x1="470" y1="224" x2="504" y2="224"/>
-      <line x1="285" y1="304" x2="312" y2="304"/><line x1="393" y1="304" x2="424" y2="304"/><line x1="470" y1="304" x2="504" y2="304"/>
-    </g>
-
-    <g stroke="#7c3aed" stroke-width="2.5" fill="none" marker-end="url(#arrow)">
-      <line x1="192" y1="144" x2="212" y2="144"/>
-      <line x1="192" y1="224" x2="212" y2="224"/>
-      <line x1="192" y1="304" x2="212" y2="304"/>
-    </g>
-
-    <g stroke="#16a34a" stroke-width="2.5" fill="none" marker-end="url(#merge)">
-      <path d="M587 144 C 640 144, 640 210, 683 214"/>
-      <line x1="587" y1="224" x2="683" y2="224"/>
-      <path d="M587 304 C 640 304, 640 238, 683 234"/>
-    </g>
-    <rect x="686" y="172" width="170" height="104" rx="14" fill="#f0fdf4" stroke="#22c55e" stroke-width="2.5"/>
-    <text x="771" y="206" font-size="17" font-weight="700" fill="#111827" text-anchor="middle">메인 브랜치</text>
-    <text x="771" y="228" font-size="11" fill="#374151" text-anchor="middle">검사가 통과하면 병합,</text>
-    <text x="771" y="243" font-size="11" fill="#374151" text-anchor="middle">뒤 과업은 최신으로</text>
-    <text x="771" y="258" font-size="11" fill="#374151" text-anchor="middle">맞춘 뒤 다시 검사</text>
-
-    <text x="450" y="378" font-size="15" fill="#374151" text-anchor="middle">사람은 원하는 것을 말하고, 눈으로 본 시안만 승인합니다.</text>
-    <text x="450" y="400" font-size="15" fill="#374151" text-anchor="middle">나머지는 AI 가 하고, 모든 팀의 과업이 하나의 제품으로 합쳐집니다.</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="388" viewBox="0 0 900 388" role="img" aria-label="여러 팀이 동시에 변경을 요청하고, 각 사람은 자기 변경의 시안을 승인합니다. 과업마다 Akasha 가 시안을 보여 주고, 두 번째 AI 가 계획을 검사하게 하고, 자기 작업 폴더에서 구현하고 테스트하고, 검사가 통과하면 병합합니다. 과업들은 하나씩 하나의 제품으로 합쳐집니다.">
+<style>
+.label{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;letter-spacing:.06em;fill:#8b949e}
+.name{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;fill:#e6edf3}
+.sub{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:13px;fill:#8b949e}
+.ok{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:12.5px;fill:#58a6ff}
+.row{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:13.5px;font-weight:600;fill:#e6edf3}
+.how{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:12.5px;fill:#8b949e}
+.edge{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:12px;fill:#8b949e}
+.main{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;fill:#3fb950}
+.tag{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;fill:#e6edf3}
+@media (prefers-reduced-motion:reduce){.dot{display:none}}
+</style>
+<defs>
+<marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3d444d"/></marker>
+<marker id="time" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#30363d"/></marker>
+</defs>
+<rect width="900" height="388" rx="12" fill="#0d1117"/>
+<text x="24" y="36" class="label">여러 팀 · 동시에</text>
+<path d="M150,32 L662,32" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5" marker-end="url(#time)"/>
+<text x="676" y="36" class="label">하나의 제품</text>
+<rect x="24" y="52" width="200" height="80" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="75" r="5" fill="#2f81f7"/><text x="56" y="80" class="name">영업팀</text><text x="38" y="102" class="sub">“CSV 내려받기 넣어 줘”</text><text x="38" y="121" class="ok">✓ 시안 승인</text>
+<rect x="24" y="140" width="200" height="80" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="163" r="5" fill="#2f81f7"/><text x="56" y="168" class="name">운영팀</text><text x="38" y="190" class="sub">“배치 상태를 보여 줘”</text><text x="38" y="209" class="ok">✓ 시안 승인</text>
+<rect x="24" y="228" width="200" height="80" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="251" r="5" fill="#2f81f7"/><text x="56" y="256" class="name">재무팀</text><text x="38" y="278" class="sub">“월 합계를 넣어 줘”</text><text x="38" y="297" class="ok">✓ 시안 승인</text>
+<rect x="278" y="52" width="344" height="256" rx="12" fill="#161b22" stroke="#2f81f7" stroke-width="1.5"/>
+<text x="298" y="84" class="name">Akasha</text><text x="298" y="104" class="how">과업마다 AI 하나, 모두 동시에</text>
+<path d="M298,122 L602,122 M450,134 L450,294 M298,214 L602,214" stroke="#30363d" stroke-width="1"/>
+<text x="298" y="158" class="row">1 · 시안</text><text x="298" y="178" class="how">사람이 보고 승인</text>
+<text x="466" y="158" class="row">2 · 계획</text><text x="466" y="178" class="how">두 번째 AI 가 검사</text>
+<text x="298" y="248" class="row">3 · 구현</text><text x="298" y="268" class="how">따로 만들고 테스트</text>
+<text x="466" y="248" class="row">4 · 병합</text><text x="466" y="268" class="how">검사를 통과한 뒤</text>
+<rect x="676" y="132" width="200" height="96" rx="10" fill="#0f1a13" stroke="#238636" stroke-width="1.5"/><circle cx="696" cy="156" r="5" fill="#3fb950"/><text x="708" y="161" class="main">main</text><text x="690" y="186" class="sub">과업을 하나씩 병합,</text><text x="690" y="208" class="sub">뒤 과업은 최신으로 맞춘 뒤</text>
+<path d="M228,92 L272,92" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2s" begin="0s" repeatCount="indefinite" path="M228,92 L272,92"/></circle>
+<path d="M228,180 L272,180" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2s" begin="-0.7s" repeatCount="indefinite" path="M228,180 L272,180"/></circle>
+<path d="M228,268 L272,268" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2s" begin="-1.4s" repeatCount="indefinite" path="M228,268 L272,268"/></circle>
+<path d="M626,180 L670,180" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#3fb950" class="dot"><animateMotion dur="2s" begin="-1s" repeatCount="indefinite" path="M626,180 L670,180"/></circle>
+<text x="250" y="80" text-anchor="middle" class="edge">요청</text>
+<text x="648" y="168" text-anchor="middle" class="edge">병합</text>
+<text x="450" y="352" text-anchor="middle" class="tag">사람은 눈으로 본 것만 승인합니다. 나머지는 AI 가 합니다.</text>
 </svg>
