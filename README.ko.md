@@ -15,7 +15,7 @@
 사람은 평소 말로 변경을 요청하고, 그 결과를 미리 보여 주는 시안을 승인합니다. 사람이 하는 일은 그것뿐입니다.<br>
 계획은 AI 가 쓰고, 다른 AI 가 그 계획을 검토하고, AI 가 만들고 검사해서 병합까지 합니다.
 
-<img src="https://img.shields.io/badge/version-1.0.1-7c3aed" alt="버전 1.0.1">
+<img src="https://img.shields.io/badge/version-1.0.0-7c3aed" alt="버전 1.0.0">
 <a href="#라이선스"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT 라이선스"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 이상">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="엔진: Claude Code, Codex">
@@ -72,25 +72,15 @@ AI 가 분명해질 때까지 묻고, 브라우저에 시안을 띄웁니다. �
 알려 줍니다.
 
 > **참고:** Python 3.11 이상(훅이 `py -3`, `python3`, `python` 순서로 찾습니다), git, GitHub, GitHub 명령줄 `gh` 가
-> 필요합니다. Codex 는 그 Python 에 `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.1"` 도 필요합니다
+> 필요합니다. Codex 는 그 Python 에 `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"` 도 필요합니다
 > (Windows 에서는 `py -3 -m pip install …`).
 
 * * *
 
 ## 동작 방식
 
-```mermaid
-flowchart LR
-    A([요청]) --> B[시안]
-    B -->|사람이 승인| C[조사와 계획]
-    C --> D{검토 AI}
-    D -->|CHANGES| C
-    D -->|PASS| E[구현]
-    E --> F[검사]
-    F -->|FAIL| E
-    F -->|PASS| G[랜딩]
-    G --> H([병합])
-```
+<img src="docs/readme/how-it-works.ko.svg" width="900" alt="여섯 단계: 사람은 요청하고 시안을 승인합니다. AI 는 계획(검토 AI 가 검토)·구현·검사를 하고, GitHub 이 병합합니다.">
+
 
 | 단계 | 누가 | 관문 |
 |:--|:--|:--|
@@ -187,7 +177,6 @@ flowchart LR
 
 | 버전 | 변경 내용 |
 |:--|:--|
-| **v1.0.1** | 자기 하네스를 가진 레포 하나를 여러 팀이 함께 쓰도록 다듬음: 시안을 띄운 대화에서 사람이 쓴 메시지로, 어느 언어로든 승인; 리뷰 승인은 리뷰어가 본 커밋에만 유효; 병합 방식은 그때그때의 브랜치 보호를 따름; `[team] own_procedure` 사람은 레포 고유 절차 유지; 규칙 파일을 `.github/akasha.toml` 에 둘 수 있음; 아카샤 명령은 권한 확인 없이 실행; 배포 확인; 코드 변경이 아닌 질문은 `akasha ask`; 새 버전 설정은 멈춤이 아닌 안내. |
 | **v1.0.0** | 첫 공개 릴리스. |
 
 * * *

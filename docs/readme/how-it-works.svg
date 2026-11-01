@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="330" viewBox="0 0 900 330" role="img" aria-labelledby="title desc">
+  <title id="title">How Akasha works</title>
+  <desc id="desc">Six steps. The person makes a request and approves a preview. The AI writes the plan, which a reviewer AI reviews until it passes, builds the change, and runs the checks until they pass. GitHub merges it.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#7c3aed"/>
+    </marker>
+    <marker id="back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#b45309"/>
+    </marker>
+  </defs>
+  <rect width="900" height="330" rx="20" fill="#ffffff" stroke="#e5e7eb"/>
+  <g font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+    <!-- who does each part -->
+    <rect x="30" y="26" width="270" height="30" rx="15" fill="#fef3c7"/>
+    <text x="165" y="46" font-size="14" font-weight="700" fill="#92400e" text-anchor="middle">THE PERSON · decides once</text>
+    <rect x="310" y="26" width="420" height="30" rx="15" fill="#ede9fe"/>
+    <text x="520" y="46" font-size="14" font-weight="700" fill="#5b21b6" text-anchor="middle">THE AI · does the rest, checked by machines</text>
+    <rect x="740" y="26" width="130" height="30" rx="15" fill="#dcfce7"/>
+    <text x="805" y="46" font-size="14" font-weight="700" fill="#166534" text-anchor="middle">GITHUB</text>
+
+    <!-- steps -->
+    <g stroke-width="2">
+      <rect x="30" y="90" width="125" height="86" rx="14" fill="#fffbeb" stroke="#f59e0b"/>
+      <rect x="175" y="90" width="125" height="86" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+      <rect x="320" y="90" width="125" height="86" rx="14" fill="#f5f3ff" stroke="#8b5cf6"/>
+      <rect x="465" y="90" width="125" height="86" rx="14" fill="#f5f3ff" stroke="#8b5cf6"/>
+      <rect x="610" y="90" width="125" height="86" rx="14" fill="#f5f3ff" stroke="#8b5cf6"/>
+      <rect x="755" y="90" width="115" height="86" rx="14" fill="#f0fdf4" stroke="#22c55e"/>
+    </g>
+    <g font-size="12" font-weight="600" fill="#6b7280" text-anchor="middle">
+      <text x="92.5" y="112">1</text><text x="237.5" y="112">2</text><text x="382.5" y="112">3</text>
+      <text x="527.5" y="112">4</text><text x="672.5" y="112">5</text><text x="812.5" y="112">6</text>
+    </g>
+    <g font-size="18" font-weight="700" fill="#111827" text-anchor="middle">
+      <text x="92.5" y="136">Request</text><text x="237.5" y="136">Preview</text><text x="382.5" y="136">Plan</text>
+      <text x="527.5" y="136">Build</text><text x="672.5" y="136">Check</text><text x="812.5" y="136">Land</text>
+    </g>
+    <g font-size="12" fill="#374151" text-anchor="middle">
+      <text x="92.5" y="156">says what they</text><text x="92.5" y="170">want, in any words</text>
+      <text x="237.5" y="156">sees a mockup and</text><text x="237.5" y="170">approves it in chat</text>
+      <text x="382.5" y="156">research and plan,</text><text x="382.5" y="170">reviewed by an AI</text>
+      <text x="527.5" y="156">in its own copy,</text><text x="527.5" y="170">with tests</text>
+      <text x="672.5" y="156">the checks of</text><text x="672.5" y="170">the team</text>
+      <text x="812.5" y="156">merges when the</text><text x="812.5" y="170">checks pass</text>
+    </g>
+
+    <!-- forward arrows -->
+    <g stroke="#7c3aed" stroke-width="2.5" fill="none" marker-end="url(#arrow)">
+      <line x1="157" y1="133" x2="171" y2="133"/>
+      <line x1="302" y1="133" x2="316" y2="133"/>
+      <line x1="447" y1="133" x2="461" y2="133"/>
+      <line x1="592" y1="133" x2="606" y2="133"/>
+      <line x1="737" y1="133" x2="751" y2="133"/>
+    </g>
+
+    <!-- loops back -->
+    <g stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#back)">
+      <path d="M415 178 C 415 222, 350 222, 350 181"/>
+      <path d="M672 178 C 672 226, 527 226, 527 181"/>
+    </g>
+    <g font-size="12" font-weight="600" fill="#b45309" text-anchor="middle">
+      <text x="382.5" y="236">reviewer: CHANGES</text>
+      <text x="599.5" y="240">a check fails: repair</text>
+    </g>
+
+    <!-- one line -->
+    <text x="450" y="290" font-size="15" fill="#374151" text-anchor="middle">The person checks only what they can see. The plan, the code, and the merge are checked by machines.</text>
+  </g>
+</svg>

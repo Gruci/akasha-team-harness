@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="330" viewBox="0 0 900 330" role="img" aria-labelledby="title desc">
+  <title id="title">Akasha 동작 방식</title>
+  <desc id="desc">여섯 단계. 사람은 요청하고 시안을 승인합니다. AI 는 계획을 쓰고 검토 AI 가 통과시킬 때까지 고치며, 구현하고 검사가 통과할 때까지 고칩니다. GitHub 이 병합합니다.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#7c3aed"/>
+    </marker>
+    <marker id="back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#b45309"/>
+    </marker>
+  </defs>
+  <rect width="900" height="330" rx="20" fill="#ffffff" stroke="#e5e7eb"/>
+  <g font-family="'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', sans-serif">
+    <!-- 누가 하나 -->
+    <rect x="30" y="26" width="270" height="30" rx="15" fill="#fef3c7"/>
+    <text x="165" y="46" font-size="14" font-weight="700" fill="#92400e" text-anchor="middle">사람 · 한 번만 정합니다</text>
+    <rect x="310" y="26" width="420" height="30" rx="15" fill="#ede9fe"/>
+    <text x="520" y="46" font-size="14" font-weight="700" fill="#5b21b6" text-anchor="middle">AI · 나머지 전부, 기계가 확인합니다</text>
+    <rect x="740" y="26" width="130" height="30" rx="15" fill="#dcfce7"/>
+    <text x="805" y="46" font-size="14" font-weight="700" fill="#166534" text-anchor="middle">GITHUB</text>
+
+    <!-- 단계 -->
+    <g stroke-width="2">
+      <rect x="30" y="90" width="125" height="86" rx="14" fill="#fffbeb" stroke="#f59e0b"/>
+      <rect x="175" y="90" width="125" height="86" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+      <rect x="320" y="90" width="125" height="86" rx="14" fill="#f5f3ff" stroke="#8b5cf6"/>
+      <rect x="465" y="90" width="125" height="86" rx="14" fill="#f5f3ff" stroke="#8b5cf6"/>
+      <rect x="610" y="90" width="125" height="86" rx="14" fill="#f5f3ff" stroke="#8b5cf6"/>
+      <rect x="755" y="90" width="115" height="86" rx="14" fill="#f0fdf4" stroke="#22c55e"/>
+    </g>
+    <g font-size="12" font-weight="600" fill="#6b7280" text-anchor="middle">
+      <text x="92.5" y="112">1</text><text x="237.5" y="112">2</text><text x="382.5" y="112">3</text>
+      <text x="527.5" y="112">4</text><text x="672.5" y="112">5</text><text x="812.5" y="112">6</text>
+    </g>
+    <g font-size="18" font-weight="700" fill="#111827" text-anchor="middle">
+      <text x="92.5" y="136">요청</text><text x="237.5" y="136">시안</text><text x="382.5" y="136">계획</text>
+      <text x="527.5" y="136">구현</text><text x="672.5" y="136">검사</text><text x="812.5" y="136">병합</text>
+    </g>
+    <g font-size="12" fill="#374151" text-anchor="middle">
+      <text x="92.5" y="156">원하는 것을</text><text x="92.5" y="170">평소 말로</text>
+      <text x="237.5" y="156">화면 목업을 보고</text><text x="237.5" y="170">대화로 승인</text>
+      <text x="382.5" y="156">조사와 계획,</text><text x="382.5" y="170">AI 가 검토</text>
+      <text x="527.5" y="156">자기 작업 폴더에서,</text><text x="527.5" y="170">테스트와 함께</text>
+      <text x="672.5" y="156">팀이 정한</text><text x="672.5" y="170">검사</text>
+      <text x="812.5" y="156">검사가 통과하면</text><text x="812.5" y="170">병합</text>
+    </g>
+
+    <!-- 다음 단계 -->
+    <g stroke="#7c3aed" stroke-width="2.5" fill="none" marker-end="url(#arrow)">
+      <line x1="157" y1="133" x2="171" y2="133"/>
+      <line x1="302" y1="133" x2="316" y2="133"/>
+      <line x1="447" y1="133" x2="461" y2="133"/>
+      <line x1="592" y1="133" x2="606" y2="133"/>
+      <line x1="737" y1="133" x2="751" y2="133"/>
+    </g>
+
+    <!-- 되돌아가기 -->
+    <g stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#back)">
+      <path d="M415 178 C 415 222, 350 222, 350 181"/>
+      <path d="M672 178 C 672 226, 527 226, 527 181"/>
+    </g>
+    <g font-size="12" font-weight="600" fill="#b45309" text-anchor="middle">
+      <text x="382.5" y="236">검토 AI: 수정 요청</text>
+      <text x="599.5" y="240">검사 실패: 고쳐서 다시</text>
+    </g>
+
+    <text x="450" y="290" font-size="15" fill="#374151" text-anchor="middle">사람은 눈으로 볼 수 있는 것만 확인합니다. 계획·코드·병합은 기계가 확인합니다.</text>
+  </g>
+</svg>

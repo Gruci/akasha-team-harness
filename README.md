@@ -15,7 +15,7 @@
 Each person asks for a change in plain words and approves a preview of it. That is their only step.<br>
 The AI plans, another AI reviews the plan, and the AI builds, checks, and lands the change.
 
-<img src="https://img.shields.io/badge/version-1.0.1-7c3aed" alt="Version 1.0.1">
+<img src="https://img.shields.io/badge/version-1.0.0-7c3aed" alt="Version 1.0.0">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -72,25 +72,15 @@ tell what to change. The AI does the rest and tells you when the change is merge
 live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.1"` in that Python
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"` in that Python
 > (on Windows `py -3 -m pip install …`).
 
 * * *
 
 ## How It Works
 
-```mermaid
-flowchart LR
-    A([Request]) --> B[Preview]
-    B -->|the person approves| C[Research and plan]
-    C --> D{Reviewer AI}
-    D -->|CHANGES| C
-    D -->|PASS| E[Build]
-    E --> F[Checks]
-    F -->|FAIL| E
-    F -->|PASS| G[Land]
-    G --> H([Merged])
-```
+<img src="docs/readme/how-it-works.svg" width="900" alt="Six steps: the person makes a request and approves a preview; the AI plans (a reviewer AI reviews the plan), builds, and checks; GitHub merges.">
+
 
 | Step | Who | Gate |
 |:--|:--|:--|
@@ -184,7 +174,6 @@ deployment and tells when the change is live.
 
 | Version | Changes |
 |:--|:--|
-| **v1.0.1** | Ready for several teams on one repository that keeps its own harness: approval in any language from a message that the person typed in the session of the preview; reviews bound to the commit that the reviewer saw; the merge path follows the live branch protection; people of `[team] own_procedure` keep the repository's own procedure; rules can live in `.github/akasha.toml`; exact Akasha commands run without a permission prompt; deploy follow-up; `akasha ask` for questions that are not a change; unknown settings of a newer Akasha are a notice, not a stop. |
 | **v1.0.0** | First release. |
 
 * * *
