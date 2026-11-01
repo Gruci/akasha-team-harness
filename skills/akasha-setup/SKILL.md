@@ -36,14 +36,14 @@ their language and in simple words.
    - a folder that the repository already ignores for work copies, for example `worktrees`: `akasha setup` proposes it
      as `[work] folder`.
 5. Ask the person these questions, one at a time, and write each answer into `akasha.toml`:
-   - Who are the administrators? (GitHub names) → `[team] admins`. They review each change of `akasha.toml` and
-     `.github/`.
+   - Who are the administrators? (GitHub names) → `[team] admins`. A team has only two roles: the administrators,
+     and the teammates (each other person with write access). The administrators review each change of
+     `akasha.toml`, `.github/`, the guides, and the risky paths. Name two or more, so that the change of an
+     administrator also gets a review.
    - Which folders are risky, for example the database, the data writes, the deployment, the own gates and rules of
-     the repository? Who must review a change there? → `[risk] paths` and `[team] reviewers` (without reviewers, the
-     administrators review). A change of these paths waits for a reviewer before the merge, and Akasha asks the
-     reviewer at the first check that touches them. Keep screens and small features out of the list, so that most
-     tasks wait for nobody. Name two or more reviewers, so that a reviewer who makes a change can get a review from
-     another one.
+     the repository? → `[risk] paths`. A change of these paths waits for an administrator before the merge, and
+     Akasha asks the administrators at the first check that touches them. Keep screens and small features out of the
+     list, so that most tasks wait for nobody.
    - Does the repository have its own CI on GitHub? What are the names of its required checks, as GitHub shows the
      jobs (for example `checks`, not the name of the workflow)? → `[ci] required`. Without a CI, Akasha adds its own
      check, which runs `[checks]` on GitHub.
@@ -55,7 +55,7 @@ their language and in simple words.
      `[checks] setup` empty when it installs much: put that into the join document instead. Leave a check that a
      teammate's computer cannot run to the CI (`[ci] required`).
    - Which team documents must the AI read before the preview (design, words on the screen), before the plan
-     (architecture, rules), and for the review? → `[guides] preview`, `plan`, and `review`.
+     (architecture, rules), and for the AI that checks the plan? → `[guides] preview`, `plan`, and `review`.
    - Which files do many new features change, for example the list of routes, the menu, or a generated index? →
      a short document for `[guides] build` that names them and tells how to merge each one when two tasks change it.
    - Does a checker of the repository examine Markdown or other files that it finds by their folder? The records of
@@ -94,6 +94,6 @@ their language and in simple words.
 After the setup merged, a change of the rules is a task (akasha-build): the preview is a short page that tells what
 changes in the rules and why. In the work copy of the task, change `akasha.toml`, run `akasha setup` there, then check
 and land. An administrator reviews it before the merge. Run `akasha setup --apply` again after the merge when the
-change touches the GitHub settings, for example `[ci] required` or the reviewers.
+change touches the GitHub settings, for example `[ci] required` or the administrators.
 
 > **CAUTION:** Do not change the GitHub settings without the approval of an administrator.

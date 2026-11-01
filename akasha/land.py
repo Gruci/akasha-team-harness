@@ -4,8 +4,7 @@ when the checks of the team pass on GitHub.
 Where GitHub protects the default branch, GitHub merges with its auto-merge, as the person who turned it on, so the
 workflows after a merge start, for example a deployment. Where it does not, for example a private repository on
 GitHub Free, Akasha merges on this computer with the account of the person, after the same examination: the required
-checks passed on the current head, the branch is up to date, and a reviewer or an administrator approved a change of
-a risky path or of the rules of the team. Akasha asks GitHub before each landing whether it protects the branch, so a
+checks passed on the current head, the branch is up to date, and an administrator approved a change of a risky path or of the rules of the team. Akasha asks GitHub before each landing whether it protects the branch, so a
 missing or old [server] rules never sends a merge to an auto-merge that nothing stops. In both cases Akasha brings a
 pull request that is behind up to date, because GitHub does not do it. With [deploy] workflow, the landing then
 waits for that deployment, because the change is live only after it."""
@@ -289,8 +288,8 @@ def follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: b
                 if review == "CHANGES" or view.get("reviewDecision") == "CHANGES_REQUESTED":
                     task.status = "approved"
                     save(root, task)
-                    return REVIEW, [f"a reviewer asked for changes: {view.get('url')}. Read the review, repair the "
-                                    f"work, run `akasha check {task.id}`, then land again"]
+                    return REVIEW, [f"an administrator asked for changes: {view.get('url')}. Read the review, repair "
+                                    f"the work, run `akasha check {task.id}`, then land again"]
                 if akasha_merges and not review and view.get("mergeStateStatus") != "UNKNOWN":
                     error = _merge(root, task, view)
                     if not error:

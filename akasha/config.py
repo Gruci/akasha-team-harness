@@ -42,7 +42,7 @@ PYTHON_VERSION = re.compile(r"(\d+)\.(\d+)(?:\.\d+)?")
 AKASHA_CHECK = "akasha"                      # the name of the check of .github/workflows/akasha.yml
 
 _KEYS: dict[str, set[str] | None] = {
-    "team": {"admins", "reviewers", "own_procedure"},
+    "team": {"admins", "own_procedure"},
     "risk": {"paths"},
     "checks": None,                          # the team names its checks
     "ci": {"required", "runs-on", "python"},
@@ -70,9 +70,8 @@ class Check:
 @dataclass(frozen=True)
 class Team:
     admins: tuple[str, ...] = ()             # GitHub names, in lower case, without @
-    reviewers: tuple[str, ...] = ()          # GitHub names that review a change of a risky path
     own_procedure: tuple[str, ...] = ()      # GitHub names that keep the own procedure of the repository
-    risk_paths: tuple[str, ...] = ()         # a change of these files waits for the review of a reviewer
+    risk_paths: tuple[str, ...] = ()         # a change of these files waits for the review of an administrator
     required_checks: tuple[str, ...] = ("secrets",)
     checks: dict[str, Check] = field(default_factory=dict)
     setup: str = ""                          # the command that prepares a new work copy, for example npm ci
@@ -234,7 +233,6 @@ def team_from(data: dict) -> Team:
     deploy = data.get("deploy", {})
     return Team(
         admins=_names(team.get("admins", []), "[team] admins"),
-        reviewers=_names(team.get("reviewers", []), "[team] reviewers"),
         own_procedure=_names(team.get("own_procedure", []), "[team] own_procedure"),
         risk_paths=_patterns(risk.get("paths", []), "[risk] paths"),
         required_checks=_strings(checks.get("required", ["secrets"]), "[checks] required") or ("secrets",),

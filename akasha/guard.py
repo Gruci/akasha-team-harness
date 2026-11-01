@@ -113,7 +113,7 @@ def _gh_reason(args: list[str], line: str, own: bool) -> str | None:
     if (words == ["pr", "merge"] or (words[:1] == ["api"] and _MERGE_API.search(line))) and not own:
         return f"it merges a pull request by hand. {LAND}"
     if words == ["pr", "review"] and any(arg == "--approve" or _short_flag(arg, "a") for arg in args):
-        return "it approves a pull request. A reviewer approves on GitHub, in person"
+        return "it approves a pull request. An administrator approves on GitHub, in person"
     return None
 
 

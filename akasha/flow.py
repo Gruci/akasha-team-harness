@@ -103,7 +103,7 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = ()) -
     notes = [f"overlap — {line}" for line in board.overlaps(task, [], entries)]
     risky = [item for item in task.scope if github.reviews_needed(team, [item], {task.owner})]
     if risky:
-        notes.append(f"review — the task plans {', '.join(risky[:3])}: a reviewer or an administrator approves it "
+        notes.append(f"review — the task plans {', '.join(risky[:3])}: an administrator approves it "
                      "before the merge. Tell the person now")
     if online:
         pushed = ""
@@ -256,7 +256,7 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
 
 
 def _ask_reviews(root: Path, team: Team, task: Task, changed: list[str]) -> list[str]:
-    """Ask the reviewers of a risky change now, not only at the landing, so that they review while the work goes on."""
+    """Ask the administrators to review a risky change now, not only at the landing, so that they review while the work goes on."""
     asked, notes = set(task.stats.get("reviews_asked") or []), []
     for path, people, _patterns in github.reviews_needed(team, changed, {repo.me(root, kept=True), task.owner}):
         new = sorted(people - asked)

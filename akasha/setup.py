@@ -31,10 +31,9 @@ def first_config(root: Path) -> str:
     lines = ["# The team rules of Akasha. An administrator changes them with a pull request.", "",
              "[team]", f"admins = [{admins}]          # GitHub names: they set up GitHub and help when the AI is "
              "stuck",
-             "reviewers = []          # GitHub names that review a change of a risky path",
              "own_procedure = []      # GitHub names that keep the own procedure of the repository outside Akasha", "",
-             "[risk]", 'paths = []              # for example ["db/**", "**/migrations/**"]: a change waits for a '
-             "reviewer", "",
+             "[risk]", 'paths = []              # for example ["db/**", "**/migrations/**"]: a change waits for an '
+             "administrator", "",
              "[checks]"]
     required = ["secrets"] + (["tests"] if pack and pack.tests else [])
     lines.append("required = [" + ", ".join(f'"{name}"' for name in required) + "]")
@@ -45,7 +44,8 @@ def first_config(root: Path) -> str:
     lines += ["", "[ci]", '# required = ["build"]   # the checks of your own CI that GitHub must see pass. Without it, '
               "Akasha adds its own check", "", "[guides]",
               '# preview = ["docs/design.md"]       # team files that the AI reads before the preview',
-              '# plan = ["docs/architecture.md"]    # ... before the plan, and the reviewer reads them too', "",
+              '# plan = ["docs/architecture.md"]    # ... before the plan, and the AI that checks the plan reads them '
+              "too", "",
               "[work]", f'folder = "{folder}"' + " " * max(1, 22 - len(folder)) + "# the work copies of the tasks: a "
               "folder that git ignores",
               f'branch_prefix = "{config.BRANCH_PREFIX}"',
@@ -72,7 +72,7 @@ def _ignore(root: Path, team: config.Team) -> bool:
 
 
 def _codeowners(root: Path, team: config.Team) -> str:
-    if not (team.admins or team.reviewers):
+    if not team.admins:
         return ""
     path = next((root / name for name in github.CODEOWNERS_FILES if (root / name).is_file()),
                 root / github.CODEOWNERS_FILES[0])

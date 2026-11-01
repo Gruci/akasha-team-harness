@@ -8,8 +8,7 @@ import tempfile
 from pathlib import Path
 
 TEAM = """[team]
-admins = ["admin-a"]
-reviewers = ["rev-b"]
+admins = ["admin-a", "admin-b"]
 
 [risk]
 paths = ["db/**"]

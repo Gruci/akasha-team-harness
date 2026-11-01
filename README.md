@@ -116,11 +116,12 @@ Each person, from any team, works on their own task at the same time as the othe
 
 ## Who Does What
 
+A team has two roles: the administrators, and the teammates.
+
 | Who | Does | Does not have to |
 |:--|:--|:--|
 | **Administrator** | Sets up the repository once: the rules in `akasha.toml`, the GitHub settings. If the team wants, also looks at changes of the few risky parts, for example the database | Watch each task |
-| **Each person** | Says what to make, approves the preview | Read code, judge technical risk, review plans |
-| **The AI** | Plans, has a second AI check the plan, builds, tests, lands, and tells the result | Ask technical questions |
+| **Teammate** | Says what to make, approves the preview | Read code, judge technical risk, review plans |
 
 * * *
 
@@ -129,7 +130,7 @@ Each person, from any team, works on their own task at the same time as the othe
 | Repository | What stops a bad merge |
 |:--|:--|
 | Public, or private on GitHub Pro, Team, or Enterprise | **GitHub**: branch protection, required checks, code owners, auto-merge |
-| Private on GitHub Free | **Akasha** on each computer merges only after its examination: the checks, an up-to-date branch, and the review of the owners of a risky path or of the team rules. A watch workflow reports each change that went around the rules |
+| Private on GitHub Free | **Akasha** on each computer merges only after its examination: the checks, an up-to-date branch, and the review of an administrator for a risky path or the team rules. A watch workflow reports each change that went around the rules |
 
 The setup tries GitHub first and records which one applies, and Akasha asks GitHub again before each landing: a branch
 whose protection does not require the checks of the team is never left to an auto-merge. In both cases the merge comes from the account of the person, so

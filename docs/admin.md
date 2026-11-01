@@ -7,8 +7,8 @@ any language. This page tells what happens, for the person who must understand i
 
 | Question | Where it goes |
 |:--|:--|
-| Who are the administrators? | `[team] admins` |
-| Which paths are risky, and who reviews a change there? | `[risk] paths`, `[team] reviewers` |
+| Who are the administrators? Each other person with write access is a teammate | `[team] admins` |
+| Which paths are risky? An administrator reviews a change there | `[risk] paths` |
 | Which commands check a change? Does the team have its own CI? | `[checks]`, `[ci] required` |
 | What must each computer install to run the checks? | `[checks] setup`, `ready` of each check, `[guides] join` |
 | Which documents must the AI read before the preview, the plan, and the review? | `[guides]` |
@@ -27,7 +27,7 @@ a long list of rules on the first day stops each task.
    |:--|:--|
    | `akasha.toml` | The rules of the team, with the usual commands of the main language |
    | `.gitignore` | Ignores `.akasha/state/`, the work folder, and the files that tests and builds make |
-   | `.github/CODEOWNERS` | The Akasha block: the reviewers own the risky paths, the administrators own the rules |
+   | `.github/CODEOWNERS` | The Akasha block: the administrators own the risky paths and the rules |
    | `.github/workflows/akasha.yml` | The check of Akasha, when the team has no CI of its own |
    | `.github/workflows/akasha-watch.yml` | The watch, where GitHub does not protect the default branch |
    | `.claude/settings.json` | Registers the marketplace of Akasha and turns the plugin on for each teammate |
@@ -72,7 +72,7 @@ a permission prompt: the hook of Akasha allows them, so a teammate does not need
 | Repository | What stops a bad merge |
 |:--|:--|
 | Public, or private on GitHub Pro, Team, or Enterprise | GitHub: the required checks on an up-to-date branch, the code owners, no force push |
-| Private on GitHub Free | Akasha on each computer merges only after its examination: the required checks passed on the current head, the branch is up to date, and a reviewer (risky paths) or an administrator (`akasha.toml`, `.github/`, CODEOWNERS) other than the author approved. GitHub does not enforce CODEOWNERS there, so Akasha reads the reviews itself. The watch examines each push to the default branch and opens an issue for the administrators when a change went around the rules: no Akasha task, no approved preview, no passed plan review, no passed checks, or no review of its owners. It changes no code |
+| Private on GitHub Free | Akasha on each computer merges only after its examination: the required checks passed on the current head, the branch is up to date, and an administrator other than the author approved a change of the risky paths or the rules (`akasha.toml`, `.github/`, CODEOWNERS, the guides). GitHub does not enforce CODEOWNERS there, so Akasha reads the reviews itself. The watch examines each push to the default branch and opens an issue for the administrators when a change went around the rules: no Akasha task, no approved preview, no passed plan review, no passed checks, or no review of its owners. It changes no code |
 
 On GitHub Free, a person with write access can still merge by hand on GitHub. The watch tells it after the push. For
 protection before each merge, move to GitHub Pro or Team, or make the repository public, then run

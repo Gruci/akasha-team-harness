@@ -18,7 +18,6 @@ class ConfigTests(unittest.TestCase):
         team = config.parse("""
 [team]
 admins = ["@Admin-A"]
-reviewers = ["rev-b"]
 [risk]
 paths = ["db/", "**/migrations/**"]
 [checks]

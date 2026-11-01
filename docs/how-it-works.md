@@ -6,11 +6,14 @@ The person who asks for a change decides what to make. They decide it once, at t
 see: a mockup of the screen, or a diagram of the flow and the data. The AI does everything after that, and another AI
 checks its plan in place of a person. Machines check the result. GitHub merges it.
 
+A team has two roles. A teammate asks for changes and approves their previews. An administrator sets up the team,
+reviews a change of the few risky parts, and helps when an AI is stuck.
+
 | Step | Who | What happens |
 |:--|:--|:--|
 | 1. Request | The person | Says what they want, in their own words. The AI asks until it is clear |
 | 2. Preview | The person | Looks at the preview in the browser. Says "approve", or what to change |
-| 3. Plan | The AI and the reviewer | The AI writes the research and the plan. The akasha-reviewer agent reviews the plan until it passes |
+| 3. Plan | The AI | The AI writes the research and the plan. A second AI (the akasha-reviewer agent) checks the plan until it passes |
 | 4. Build | The AI | Changes the code in its own work copy, with a test for each behavior of the preview |
 | 5. Check | The AI and the checks | Runs the checks of the team until they pass |
 | 6. Land | The AI and GitHub | Opens the pull request for review, brings it up to date, and merges it when the checks pass on GitHub |
@@ -54,14 +57,14 @@ Another AI reviews the plan, in place of a person who reads it.
 
 - The agent engine writes `research.md` and `plan.md`, and asks the akasha-reviewer agent for a review, with the plan
   digest from `akasha status`.
-- The reviewer reads the preview, the plan, the code, and the rules of the team (`[guides]`). It ends its answer with
+- This AI reads the preview, the plan, the code, and the rules of the team (`[guides]`). It ends its answer with
   `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES`.
 - The hook at the end of a subagent (`SubagentStop`) reads the mark and records it for that version of the plan. A
   change of the plan after a pass needs a new review. In Claude Code only the akasha-reviewer agent counts: a mark in
   the answer of another subagent does nothing.
-- Only where the agent engine has no reviewer agent (Codex), the agent engine reviews the plan itself and runs
+- Only where the agent engine has no akasha-reviewer agent (Codex), the agent engine reviews the plan itself and runs
   `akasha review <task> --verdict pass`. The pull request tells that it was a self-review. Akasha refuses it in
-  Claude Code, and a self-review never replaces a CHANGES of the reviewer for the same plan.
+  Claude Code, and a self-review never replaces a CHANGES of the akasha-reviewer agent for the same plan.
 
 ## What Akasha stops
 
@@ -72,7 +75,7 @@ Another AI reviews the plan, in place of a person who reads it.
 | An edit | A change of `.env` and of `.akasha/state` | Secret values, and the records of Akasha |
 | A command | A force push, a push to the default branch (also a plain `git push` on it), a delete of the default branch | They go around the pull request, or cannot be undone |
 | A command | `git worktree add` | Akasha makes the work copy of each task |
-| A command | `gh pr merge` and an approval of a pull request by the agent engine | Akasha lands each task, and a reviewer approves in person |
+| A command | `gh pr merge` and an approval of a pull request by the agent engine | Akasha lands each task, and an administrator approves in person |
 | A command | A recursive delete outside the project | It deletes what Akasha cannot restore |
 | After an edit | A secret key in the file | It must not go into git |
 
@@ -122,11 +125,11 @@ for the reviews that the change needs, and follows the pull request:
 | Everything passed | Merges the pull request as one squash commit, with the summary as its body |
 | `[deploy] workflow` is set | After the merge, waits for the deployment and says DEPLOYED, DEPLOY_FAILED, or DEPLOYING |
 
-A change of a risky path needs the approval of a reviewer, and a change of the rules of the team (`akasha.toml`,
-`.github/`, CODEOWNERS, and the files of `[guides]`, which each AI follows) the approval of an administrator. The
-person who made the change does not count. An approval covers the version that the reviewer saw: when a file of that
-kind changes after it, the change needs a new review. Akasha asks the reviewers at the first check that touches such
-a file, so that they review while the work goes on.
+A change of a risky path, or of the rules of the team (`akasha.toml`, `.github/`, CODEOWNERS, and the files of
+`[guides]`, which each AI follows), needs the approval of an administrator. The person who made the change does not
+count. An approval covers the version that the administrator saw: when a file of that kind changes after it, the
+change needs a new review. Akasha asks the administrators at the first check that touches such a file, so that they
+review while the work goes on.
 
 Who merges depends on GitHub. Before each landing, Akasha asks GitHub whether its protection of the default branch
 requires each check of the team:
