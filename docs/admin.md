@@ -1,14 +1,15 @@
 # Set up a team
 
-The administrator sets up a repository once. The AI does each step with the akasha-setup skill: say "Set up Akasha", in
-any language. This page tells what happens, for the person who must understand it.
+The administrator sets up a repository once, and then maintains it: the rules of Akasha, the database, and the
+deployment. The administrator reviews no task. The AI does each step with the akasha-setup skill: say "Set up Akasha",
+in any language. This page tells what happens, for the person who must understand it.
 
 ## What the administrator decides
 
 | Question | Where it goes |
 |:--|:--|
 | Who are the administrators? Each other person with write access is a teammate | `[team] admins` |
-| Which paths are risky? An administrator reviews a change there | `[risk] paths` |
+| Which parts are risky, for example the database and the deployment? Only an administrator changes them | `[risk] paths` |
 | Which commands check a change? Does the team have its own CI? | `[checks]`, `[ci] required` |
 | What must each computer install to run the checks? | `[checks] setup`, `ready` of each check, `[guides] join` |
 | Which documents must the AI read before the preview, the plan, and the review? | `[guides]` |
@@ -26,8 +27,7 @@ a long list of rules on the first day stops each task.
    | File | Function |
    |:--|:--|
    | `akasha.toml` | The rules of the team, with the usual commands of the main language |
-   | `.gitignore` | Ignores `.akasha/state/`, the work folder, and the files that tests and builds make |
-   | `.github/CODEOWNERS` | The Akasha block: the administrators own the risky paths and the rules |
+   | `.gitignore` | Ignores `.akasha/state/`, the work folder, the own agent settings of each person (`.claude/settings.local.json`, `CLAUDE.local.md`), and the files that tests and builds make |
    | `.github/workflows/akasha.yml` | The check of Akasha, when the team has no CI of its own |
    | `.github/workflows/akasha-watch.yml` | The watch, where GitHub does not protect the default branch |
    | `.claude/settings.json` | Registers the marketplace of Akasha and turns the plugin on for each teammate |
@@ -58,7 +58,7 @@ merge by the AI. Akasha works next to it; the hooks and gates of the repository 
 | A checker that examines files by their folder, for example Markdown files: the records of each task go into git | `[work] records`: a folder that the checker skips |
 | A folder that the repository already ignores for work copies, and that its gates know | `[work] folder`, for example `worktrees` |
 | Files that the hooks or tools of the repository write in each work copy, for example caches | `.gitignore` lines with `**/` in front |
-| A personal settings file in git, for example `.claude/settings.local.json` with wide permissions | remove it from git |
+| A personal settings file in git, for example `.claude/settings.local.json` with wide permissions | remove it from git. Each person tunes their own harness there, and the edits never need a task |
 | Hooks that start each session with maintenance or audits | do what is due before teammates join; Akasha tells the sessions of teammates to skip them |
 | Shared files that many features change (routes, menus, generated indexes) | a short document in `[guides] build` that tells how to merge each |
 | The programs that the hooks of the repository run, for example `python` | `ready` of the checks with the same name; `akasha doctor` also runs them |
@@ -71,8 +71,11 @@ a permission prompt: the hook of Akasha allows them, so a teammate does not need
 
 | Repository | What stops a bad merge |
 |:--|:--|
-| Public, or private on GitHub Pro, Team, or Enterprise | GitHub: the required checks on an up-to-date branch, the code owners, no force push |
-| Private on GitHub Free | Akasha on each computer merges only after its examination: the required checks passed on the current head, the branch is up to date, and an administrator other than the author approved a change of the risky paths or the rules (`akasha.toml`, `.github/`, CODEOWNERS, the guides). GitHub does not enforce CODEOWNERS there, so Akasha reads the reviews itself. The watch examines each push to the default branch and opens an issue for the administrators when a change went around the rules: no Akasha task, no approved preview, no passed plan review, no passed checks, or no review of its owners. It changes no code |
+| Public, or private on GitHub Pro, Team, or Enterprise | GitHub: the required checks on an up-to-date branch, no force push |
+| Private on GitHub Free | Akasha on each computer merges only after its examination: the required checks passed on the current head, and the branch is up to date. The watch examines each push to the default branch and opens an issue for the administrators when a change went around the rules: no Akasha task, no approved preview, no passed plan review, no passed checks, or a teammate's change of a part that only an administrator changes. It changes no code |
+
+Akasha asks for no review of a pull request. Where a rule of the repository on GitHub asks for one, the landing stops
+and names it, so that an administrator can remove the rule.
 
 On GitHub Free, a person with write access can still merge by hand on GitHub. The watch tells it after the push. For
 protection before each merge, move to GitHub Pro or Team, or make the repository public, then run
@@ -116,9 +119,10 @@ code, keep a list of the existing problems that it accepts, and let the list onl
 
 ## Change the rules, or update Akasha
 
-After the first setup, a change of the rules is a task like each other change: `akasha start "<title>"`, change
-`akasha.toml` in the work copy of the task, run `akasha setup` there (it writes CODEOWNERS and the workflows into the
-work copy), then check and land it. The landing waits for the review of an administrator other than the author.
+After the first setup, a change of the rules is a task of an administrator like each other change: `akasha start
+"<title>"`, change `akasha.toml` in the work copy of the task, run `akasha setup` there (it writes the workflows into
+the work copy), then check and land it. The same holds for the database and the deployment: when a teammate's task
+needs a change there, the AI asks with `akasha help`, and an administrator makes it in a task of their own.
 
 Each release of Akasha has its own tag. To update, each teammate updates the plugin, and one task runs `akasha setup`
 with the new Akasha: it writes the new version into the workflows.

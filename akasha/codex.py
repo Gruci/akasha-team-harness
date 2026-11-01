@@ -43,7 +43,8 @@ This repository uses Akasha. Each change is an Akasha task. The command is `py -
    `akasha check <task>` and repair each failure.
 5. Write summary.md (why, what changed, how to undo it), run the check again, then `akasha land <task> --wait 540`
    with a shell timeout of 10 minutes. Run it again while it says WAITING or DEPLOYING. Repair a FAILED or a CONFLICT,
-   and do what a BLOCKED or a REVIEW says.
+   and do what a BLOCKED says. Only an administrator changes akasha.toml, `.github/`, and the paths of [risk]: when
+   the task needs them, run `akasha help <task> "<what it needs>"`.
 6. Tell the person the result in simple words: MERGED, or DEPLOYED when the team deploys each merge.
 
 Never merge a pull request yourself, never force a push, and never change .akasha/state. If you cannot repair a

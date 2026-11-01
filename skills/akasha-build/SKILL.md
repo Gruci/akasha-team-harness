@@ -69,9 +69,11 @@ a task of yours, do its next step first.
    the work copy of the task. Akasha stops an edit before the approval and the review.
 2. Write an automated test for each behavior that the preview shows.
 3. Run `akasha check <task>` in the background, or with a shell timeout of 600000 ms (10 minutes). Repair each FAIL
-   and run it again. NOT_NEEDED is a pass. When the checks pass, Akasha saves the work as a commit and pushes it. When
-   it says that an administrator approves a change, tell the person: the administrators are asked now and look while
-   you go on.
+   and run it again. NOT_NEEDED is a pass. When the checks pass, Akasha saves the work as a commit and pushes it.
+   Only an administrator changes `akasha.toml`, `.github/`, and the paths of `[risk]` (for example the database and
+   the deployment). When Akasha stops such an edit, or the check `admin_only` fails, undo that part and run
+   `akasha help <task> "<what the task needs there>"`. Tell the person in simple words that an administrator does that
+   part; build the rest.
 4. If Akasha tells you of an overlap with another task after an edit, change only what your task needs in that file.
    An overlap only in a shared file that `[guides] build` names is normal: do not alarm the person.
 5. If you cannot repair a failure after three tries, or the cause is outside the task, run
@@ -89,9 +91,6 @@ a task of yours, do its next step first.
    - CONFLICT: Akasha names the files. Merge the default branch in the work copy as it tells, and keep the changes of
      both sides when they add different things (for example two new rows of a list). If `[guides] build` tells how to
      merge a shared file, do as it tells. Check, and land again.
-   - REVIEW: an administrator must review the change. Tell the person who, and that they only need to ask you to
-     continue after the review. Then land again, also in a later session. When an administrator asked for changes,
-     repair them first.
    - BLOCKED: do what the message says, then land again.
    - MERGED: tell the person in simple words what changed and where to see it. If the team deploys each merge,
      Akasha follows the deployment: DEPLOYING (exit code 3) means run the same command again, DEPLOYED means the

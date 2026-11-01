@@ -1,5 +1,5 @@
-"""The GitHub side of the team: branch protection, the repository settings, the labels, the Akasha block of
-CODEOWNERS, and the workflow files of Akasha. Only an administrator of the repository changes them."""
+"""The GitHub side of the team: branch protection, the repository settings, the labels, and the workflow files of
+Akasha. Only an administrator of the repository changes them."""
 
 from __future__ import annotations
 
@@ -8,13 +8,9 @@ import re
 from pathlib import Path
 
 from akasha import SOURCE, config, repo
-from akasha.checks import matches
 from akasha.config import CONFIG_FILE, HELP_LABEL, LABEL, Team
 
 TEMPLATES = Path(__file__).parent / "templates"
-CODEOWNERS_FILES = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")
-ADMIN_PATHS = (CONFIG_FILE, ".github/**") + CODEOWNERS_FILES       # the rules of the team and the GitHub files
-START, END = "# akasha:start", "# akasha:end"
 NO_PLAN = "Upgrade to GitHub Pro"            # GitHub Free has no branch protection for a private repository
 CHECK_FILE = ".github/workflows/akasha.yml"
 WATCH_FILE = ".github/workflows/akasha-watch.yml"
@@ -24,91 +20,16 @@ LABELS = {LABEL: ("6d28d9", "A task of Akasha"), HELP_LABEL: ("d93f0b", "Waits f
 
 
 def protection(team: Team) -> dict:
-    """The branch protection of the default branch: the checks of the team pass on an up-to-date branch, the code
-    owners approve a change of their files, and nobody forces a push or deletes the branch."""
+    """The branch protection of the default branch: each change comes through a pull request, the checks of the team
+    pass on an up-to-date branch, and nobody forces a push or deletes the branch. No person reviews a task."""
     return {
         "required_status_checks": {"strict": True, "contexts": list(team.status_checks)},
         "enforce_admins": False,
-        "required_pull_request_reviews": {"required_approving_review_count": 0,
-                                          "require_code_owner_reviews": bool(team.admins)},
+        "required_pull_request_reviews": {"required_approving_review_count": 0},
         "restrictions": None,
         "allow_force_pushes": False,
         "allow_deletions": False,
     }
-
-
-def codeowners(team: Team) -> str:
-    """The Akasha block of CODEOWNERS: the administrators own the risky paths, the team rules, and the GitHub
-    files."""
-    lines = [START, f"# Akasha writes this block from {CONFIG_FILE}. Change {CONFIG_FILE}, then run akasha setup."]
-    admins = " ".join(f"@{name}" for name in team.admins)
-    if admins:
-        lines += [f"{item} {admins}" for item in team.risk_paths]
-        guides = tuple(name for names in team.guides.values() for name in names)
-        lines += [f"/{path} {admins}" for path in dict.fromkeys((CONFIG_FILE, ".github/", "CODEOWNERS") + guides)]
-    return "\n".join(lines + [END]) + "\n"
-
-
-def reviews_needed(team: Team, files: list[str], authors: set[str]) -> list[tuple[str, set[str], tuple[str, ...]]]:
-    """For each kind of file of a change that needs a review: the first such file, the people of whom one must approve
-    it, and the patterns of that kind. The administrators review the rules of the team (akasha.toml, the GitHub files,
-    and the guides that each AI follows) and the risky paths. The person who made the change does not count. The same
-    rule holds where GitHub cannot enforce CODEOWNERS (a private repository on GitHub Free)."""
-    rules = ADMIN_PATHS + tuple(name for names in team.guides.values() for name in names)
-    people = set(team.admins) - authors
-    needs = []
-    for patterns in (rules, team.risk_paths):
-        path = next((name for name in files if any(matches(name, item) for item in patterns)), "")
-        if path and people:
-            needs.append((path, people, tuple(patterns)))
-    return needs
-
-
-def review_states(reviews: object) -> dict[str, tuple[str, str]]:
-    """The latest review of each person on a pull request: APPROVED, CHANGES_REQUESTED, or DISMISSED, and the commit
-    that the person reviewed."""
-    states = {}
-    for item in reviews if isinstance(reviews, list) else []:
-        if isinstance(item, dict) and item.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
-            states[str((item.get("user") or {}).get("login") or "").lower()] = (item["state"],
-                                                                                  str(item.get("commit_id") or ""))
-    return states
-
-
-COMPARE_LIMIT = 300                          # GitHub lists at most this many files of a comparison
-
-
-def approved(root: Path, states: dict[str, tuple[str, str]], people: set[str], patterns: tuple[str, ...],
-             head: str, own: list[str]) -> bool:
-    """True when one of the people approved, and no file of the patterns that the pull request changes (`own`)
-    changed between the commit that they reviewed and the head: a later change of a risky file needs a new review.
-    Files that came in from the default branch do not count. GitHub Free does not dismiss an old approval."""
-    mine = {path for path in own if any(matches(path, item) for item in patterns)}
-    for name in people:
-        state, reviewed = states.get(name, ("", ""))
-        if state != "APPROVED":
-            continue
-        if not reviewed or reviewed == head:
-            return True
-        changed = repo.gh(root, "api", f"repos/{repo.origin(root)}/compare/{reviewed}...{head}", "--jq",
-                          ".files[].filename")
-        files = changed.stdout.split()
-        if changed.returncode == 0 and len(files) < COMPARE_LIMIT and not mine & set(files):
-            return True
-    return False
-
-
-def block(text: str) -> str:
-    if START in text and END in text:
-        return text[text.index(START):text.index(END) + len(END)] + "\n"
-    return ""
-
-
-def merge_block(text: str, new_block: str) -> str:
-    """Put the Akasha block last in a CODEOWNERS text, because the last matching line wins. Keep the other lines."""
-    old = block(text)
-    rest = text.replace(old, "") if old else text
-    return (rest.rstrip() + "\n\n" if rest.strip() else "") + new_block
 
 
 def runs_on(labels: tuple[str, ...]) -> str:
@@ -193,9 +114,6 @@ def status(root: Path) -> list[str]:
     for path, text in workflows(team).items():
         if _server_file(root, branch, path) != text:
             problems.append(f"{path} on {branch} is missing or old: an administrator runs `akasha setup` and merges it")
-    owners = next((text for path in CODEOWNERS_FILES if (text := _server_file(root, branch, path)) is not None), "")
-    if team.admins and block(owners) != codeowners(team):
-        problems.append("the Akasha block of CODEOWNERS is missing or old: an administrator runs `akasha setup`")
     if team.server_rules == "github":
         found = _protection(root, slug, branch)
         if found is None and is_admin(root):

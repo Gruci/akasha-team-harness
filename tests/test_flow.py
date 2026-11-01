@@ -1,13 +1,12 @@
 """The whole way of a task on a computer without GitHub: start, preview, the approval of the person, the plan and its
 review, the build, the checks, and the summary."""
 
-import subprocess
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from akasha import approval, flow, land, review
+from akasha import approval, checks, flow, land, review
 from akasha.task import load, save
 from tests.helpers import Repository, run
 
@@ -178,19 +177,20 @@ class FlowTests(unittest.TestCase):
         with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "s"}), self.assertRaisesRegex(ValueError, "a day"):
             flow.approve(self.root, task.id)
 
-    def test_a_risky_change_asks_the_administrators_at_the_first_check(self):
-        task, records = self.reviewed()
+    def test_a_teammate_task_leaves_the_risky_paths_to_an_administrator(self):
+        """Nobody reviews a task: a teammate's task that changes the database fails its check, an administrator's
+        task passes."""
+        task, _records = self.reviewed()
         (Path(task.workcopy) / "db" / "schema.sql").write_text("create table b (y int);\n", encoding="utf-8")
-        task.number = 7
-        save(self.root, task)
-        with patch("akasha.board.available", return_value=True), patch("akasha.repo.me", return_value="me"), \
-                patch("akasha.repo.gh_json", return_value={"assignees": []}), patch("akasha.work.push"), \
-                patch("akasha.repo.gh", return_value=subprocess.CompletedProcess([], 0, "", "")) as gh:
-            _result, notes = flow.check(self.root, task.id)
-            flow.check(self.root, task.id)
-        self.assertTrue(any("@admin-a, @admin-b" in note for note in notes))
-        asked = [call.args for call in gh.call_args_list if "--add-reviewer" in call.args]
-        self.assertEqual(len(asked), 1)
+        with patch("akasha.repo.me", return_value="me"):
+            result, _notes = flow.check(self.root, task.id)
+        self.assertEqual(result.status[checks.ADMIN_ONLY], "FAIL")
+        self.assertIn("db/schema.sql", result.details[checks.ADMIN_ONLY])
+        self.assertFalse(load(self.root, task.id).checks.get("commit"))
+        with patch("akasha.repo.me", return_value="admin-a"):
+            result, _notes = flow.check(self.root, task.id)
+        self.assertNotIn(checks.ADMIN_ONLY, result.status)
+        self.assertTrue(load(self.root, task.id).checks.get("commit"))
 
     def test_two_previews_without_a_session_need_a_choice(self):
         first = self.started()

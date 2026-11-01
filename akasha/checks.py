@@ -18,6 +18,8 @@ from akasha.repo import GROUP, names, stop
 TIMEOUT_SECONDS = 1800
 WINDOWS = os.name == "nt"
 PASSING = ("PASS", "NOT_NEEDED")         # NOT_NEEDED: the change touches no file that the check examines
+ADMIN_PATHS = (CONFIG_FILE, ".github/**", "CODEOWNERS", "docs/CODEOWNERS")    # the rules of Akasha, the GitHub files
+ADMIN_ONLY = "admin_only"                # the check that a teammate's task leaves the administrators' files alone
 
 
 @dataclass
@@ -31,6 +33,17 @@ def matches(path: str, pattern: str) -> bool:
     if pattern.startswith("**/") and fnmatch.fnmatchcase(path, pattern[3:]):
         return True
     return fnmatch.fnmatchcase(path, pattern)
+
+
+def locked(team: Team, me: str) -> tuple[str, ...]:
+    """The file patterns that only an administrator changes: the rules of Akasha, the GitHub files, and the paths of
+    [risk], such as the database and the deployment. Nobody reviews a task: the administrators maintain these files,
+    and a person who keeps the own procedure of the repository changes them too."""
+    return () if me and me in team.admins + team.own_procedure else ADMIN_PATHS + team.risk_paths
+
+
+def touches(files: list[str], patterns: tuple[str, ...]) -> list[str]:
+    return [path for path in files if any(matches(path, item) for item in patterns)]
 
 
 def changed_files(tree: Path, base: str) -> list[str]:

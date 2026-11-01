@@ -9,7 +9,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from akasha import approval, board, checks, config, github, pr, repo, review, trace, work
+from akasha import approval, board, checks, config, pr, repo, review, trace, work
 from akasha.config import Team
 from akasha.task import PLAN, PREVIEW, SUMMARY, Task, all_local, digest, forget, load, new_id, record, records, save
 
@@ -101,10 +101,10 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = ()) -
     record(task, PREVIEW).parent.mkdir(parents=True, exist_ok=True)
     save(root, task)
     notes = [f"overlap — {line}" for line in board.overlaps(task, [], entries)]
-    risky = [item for item in task.scope if github.reviews_needed(team, [item], {task.owner})]
-    if risky:
-        notes.append(f"review — the task plans {', '.join(risky[:3])}: an administrator approves it "
-                     "before the merge. Tell the person now")
+    locked = checks.touches(task.scope, checks.locked(team, task.owner))
+    if locked:
+        notes.append(f"admin only — the task plans {', '.join(locked[:3])}, which only an administrator changes. "
+                     f"Plan without it, or ask an administrator: `akasha help {task.id} \"<what the task needs>\"`")
     if online:
         pushed = ""
         try:
@@ -221,6 +221,12 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
     base = repo.git(tree, "merge-base", "HEAD", f"origin/{repo.default_branch(root)}").stdout.strip() or task.base
     changed = checks.changed_files(tree, base)
     result = checks.run(team, tree, changed, only)
+    locked = checks.touches(changed, checks.locked(team, repo.me(root, kept=True)))
+    if locked:
+        result.status[checks.ADMIN_ONLY] = "FAIL"
+        result.details[checks.ADMIN_ONLY] = (
+            f"only an administrator changes {', '.join(locked[:5])}. Undo these changes in the task, or ask an "
+            f"administrator: `akasha help {task.id} \"<what the task needs there>\"`")
     notes = []
     made = sorted(set(work.untracked(tree)) - before)
     if made:                                          # for example __pycache__ of the tests: never into a commit
@@ -249,23 +255,9 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
                 work.push(tree, task.branch)
             except RuntimeError as error:
                 notes.append(f"note — {error}. The landing pushes again")
-            notes += _ask_reviews(root, team, task, changed)
             pr.update(root, task)
     save(root, task)
     return result, notes
-
-
-def _ask_reviews(root: Path, team: Team, task: Task, changed: list[str]) -> list[str]:
-    """Ask the administrators to review a risky change now, not only at the landing, so that they review while the work goes on."""
-    asked, notes = set(task.stats.get("reviews_asked") or []), []
-    for path, people, _patterns in github.reviews_needed(team, changed, {repo.me(root, kept=True), task.owner}):
-        new = sorted(people - asked)
-        if new and repo.gh(root, "pr", "edit", str(task.number), "--add-reviewer", ",".join(new)).returncode == 0:
-            asked |= set(new)
-        notes.append(f"review — the task changes {path}: {', '.join('@' + name for name in sorted(people))} approves "
-                     "it before the merge. Tell the person")
-    task.stats["reviews_asked"] = sorted(asked)
-    return notes
 
 
 def _assignees(found: dict | None) -> list[str]:

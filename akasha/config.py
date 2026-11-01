@@ -71,7 +71,7 @@ class Check:
 class Team:
     admins: tuple[str, ...] = ()             # GitHub names, in lower case, without @
     own_procedure: tuple[str, ...] = ()      # GitHub names that keep the own procedure of the repository
-    risk_paths: tuple[str, ...] = ()         # a change of these files waits for the review of an administrator
+    risk_paths: tuple[str, ...] = ()         # only an administrator changes these files, for example the database
     required_checks: tuple[str, ...] = ("secrets",)
     checks: dict[str, Check] = field(default_factory=dict)
     setup: str = ""                          # the command that prepares a new work copy, for example npm ci

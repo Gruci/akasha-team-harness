@@ -1,18 +1,18 @@
 # Team config
 
 `akasha.toml` holds the rules of the team for one repository, at the top of the repository or in `.github/` (for a
-repository that allows only listed files at the top). The administrators own it: a change of it, or of `.github/`,
-lands only with the review of an administrator. Each command reads it from the default branch as git fetched it last,
-so that each computer uses the merged rules, also when its checkout is old.
+repository that allows only listed files at the top). The administrators maintain it: a teammate's task cannot change
+it, or `.github/`. Each command reads it from the default branch as git fetched it last, so that each computer uses
+the merged rules, also when its checkout is old.
 
 ## Example
 
 ```toml
 [team]
-admins = ["lead", "dba"]           # GitHub names: they set up GitHub, review the risky changes, and help when the AI is stuck
+admins = ["lead", "dba"]           # GitHub names: they set up and maintain Akasha, and help when the AI is stuck
 
 [risk]
-paths = ["db/**", "**/migrations/**", ".github/workflows/**"]
+paths = ["db/**", "**/migrations/**", "deploy/**"]     # only an administrator changes them
 
 [checks]
 required = ["secrets", "tests", "front"]
@@ -52,22 +52,19 @@ rules = "akasha"                   # setup writes it
 ## `[team]`
 
 A team has two roles: the administrators, named here, and the teammates, who are each other person with write access.
+Nobody reviews a task. The administrators set up and maintain Akasha and the risky parts; a teammate approves the
+preview of their own request.
 
 | Key | Value |
 |:--|:--|
-| `admins` | The GitHub names of the administrators. They own `akasha.toml`, `.github/`, CODEOWNERS, the guides, and the paths of `[risk]`: a change of them waits for the review of an administrator. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch |
+| `admins` | The GitHub names of the administrators. Only they change `akasha.toml`, `.github/`, CODEOWNERS, and the paths of `[risk]`. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch |
 | `own_procedure` | The GitHub names of the people who keep the own procedure of the repository outside Akasha, for example the administrator who built it. Akasha does not stop their work outside its tasks (their own work copies, edits in the main checkout, their merges), and the watch accepts their pull requests when the checks passed. The other rules (a force push, a push to the default branch, `.env`) stay |
-
-Where GitHub protects the branch, it enforces CODEOWNERS. On a private repository on GitHub Free it does not, so
-Akasha reads the reviews of the pull request itself before it merges, and the watch reports a merge by hand without
-them. The person who made the change does not count: name two or more administrators, so that the change of an
-administrator also gets a review.
 
 ## `[risk]`
 
 | Key | Value |
 |:--|:--|
-| `paths` | File patterns. A change of a matching file waits for the review of an administrator before the merge. Keep the list short: each risky path makes a person wait |
+| `paths` | File patterns of the parts that only an administrator changes, for example the database and the deployment. In a teammate's task, Akasha stops an edit of a matching file, and the check `admin_only` fails; the AI asks an administrator with `akasha help`. On GitHub Free the watch reports a merge that changed one. Keep the list short: each path sends work to an administrator |
 
 ## `[checks]`
 

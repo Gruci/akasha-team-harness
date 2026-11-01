@@ -37,13 +37,12 @@ their language and in simple words.
      as `[work] folder`.
 5. Ask the person these questions, one at a time, and write each answer into `akasha.toml`:
    - Who are the administrators? (GitHub names) → `[team] admins`. A team has only two roles: the administrators,
-     and the teammates (each other person with write access). The administrators review each change of
-     `akasha.toml`, `.github/`, the guides, and the risky paths. Name two or more, so that the change of an
-     administrator also gets a review.
-   - Which folders are risky, for example the database, the data writes, the deployment, the own gates and rules of
-     the repository? → `[risk] paths`. A change of these paths waits for an administrator before the merge, and
-     Akasha asks the administrators at the first check that touches them. Keep screens and small features out of the
-     list, so that most tasks wait for nobody.
+     who set up and maintain Akasha, and the teammates (each other person with write access), who approve the
+     previews of their own requests. Nobody reviews a task. Only the administrators change `akasha.toml`, `.github/`,
+     CODEOWNERS, and the risky parts.
+   - Which parts are risky, for example the database and the deployment? → `[risk] paths`. Only an administrator
+     changes them: a teammate's task stops there, and its AI asks an administrator with `akasha help`. Keep screens,
+     features, and the own agent settings of each person out of the list, so that teammates rarely wait.
    - Does the repository have its own CI on GitHub? What are the names of its required checks, as GitHub shows the
      jobs (for example `checks`, not the name of the workflow)? → `[ci] required`. Without a CI, Akasha adds its own
      check, which runs `[checks]` on GitHub.
@@ -65,7 +64,7 @@ their language and in simple words.
      Then Akasha tells the person when the change is live, not only merged.
    - Does the repository already use the folder of `[work] folder` or branches that start with `akasha/`? →
      `[work]`.
-6. Run `akasha setup` again. It writes CODEOWNERS and the workflow files from the answers.
+6. Run `akasha setup` again. It writes the workflow files from the answers.
 7. If the person administers the repository on GitHub, ask them to approve the GitHub changes, then run
    `akasha setup --apply`. It turns on the branch protection, or records that GitHub cannot protect the branch on
    this plan. Tell the person the result in simple words. If the person does not administer the repository, tell them
@@ -91,9 +90,9 @@ their language and in simple words.
 
 ## Later changes of the rules
 
-After the setup merged, a change of the rules is a task (akasha-build): the preview is a short page that tells what
-changes in the rules and why. In the work copy of the task, change `akasha.toml`, run `akasha setup` there, then check
-and land. An administrator reviews it before the merge. Run `akasha setup --apply` again after the merge when the
-change touches the GitHub settings, for example `[ci] required` or the administrators.
+After the setup merged, a change of the rules is a task of an administrator (akasha-build): the preview is a short
+page that tells what changes in the rules and why. In the work copy of the task, change `akasha.toml`, run
+`akasha setup` there, then check and land. Run `akasha setup --apply` again after the merge when the change touches
+the GitHub settings, for example `[ci] required`.
 
 > **CAUTION:** Do not change the GitHub settings without the approval of an administrator.

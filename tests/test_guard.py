@@ -108,6 +108,16 @@ class EditTests(unittest.TestCase):
         self.assertIsNone(self.edit(self.root / ".akasha" / "work" / "other" / "x.log"))    # git ignores it
         self.assertIsNone(self.edit(Path(self.repo.folder.name) / "outside.txt"))
 
+    def test_a_teammate_leaves_the_files_of_the_administrators_alone(self):
+        """The own agent settings of a person are free: git ignores them. The database is for an administrator."""
+        locked = ("akasha.toml", ".github/**", "db/**")
+        blocked = check_edit(self.work / "db" / "x.sql", self.root, [self.task], True, lambda task: "", locked=locked)
+        self.assertIn("only an administrator changes db/x.sql", blocked)
+        self.assertIsNone(check_edit(self.work / "app.py", self.root, [self.task], True, lambda task: "",
+                                     locked=locked))
+        (self.root / ".gitignore").write_text(".akasha/state/\n.akasha/work/\nCLAUDE.local.md\n", encoding="utf-8")
+        self.assertIsNone(self.edit(self.root / "CLAUDE.local.md"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,7 +15,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from akasha import approval, board, config, flow, repo, review, secrets, trace
+from akasha import approval, board, checks, config, flow, repo, review, secrets, trace
 from akasha.checks import matches
 from akasha.guard import check_command, check_edit, folders
 from akasha.task import Task, all_local, records
@@ -126,6 +126,15 @@ def _own(root: Path) -> bool:
     except config.ConfigError:
         return False
     return bool(people) and repo.me(root, kept=True, timeout=NETWORK_SECONDS) in people
+
+
+def _locked(root: Path) -> tuple[str, ...]:
+    """The file patterns that this person does not change: only an administrator changes them."""
+    try:
+        team = flow.rules(root)
+    except config.ConfigError:
+        return ()
+    return checks.locked(team, repo.me(root, kept=True, timeout=NETWORK_SECONDS))
 
 
 def _role_lines(root: Path) -> list[str]:
@@ -240,9 +249,9 @@ def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict, here: bool =
     elif tool in EDIT_TOOLS:
         tasks = all_local(root)
         set_up = config.on_server(root, repo.default_branch(root))
-        own = _own(root)
+        own, locked = _own(root), _locked(root)
         reason = next((found for path in _edited(tool, tool_input, cwd)
-                       if (found := check_edit(path, root, tasks, set_up, flow.gate, own))), None)
+                       if (found := check_edit(path, root, tasks, set_up, flow.gate, own, locked))), None)
     if reason:
         trace.note(root, "blocked", tool=tool, reason=reason[:300])
         print(reason, file=sys.stderr)

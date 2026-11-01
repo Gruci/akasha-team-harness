@@ -27,14 +27,12 @@ def view(head: str, checks: str = "SUCCESS", status: str = "COMPLETED", state: s
                                    "detailsUrl": "https://github.com/o/r/actions/runs/55/job/1"}]}
 
 
-def answers(behind=0, reviews=(), protected=False, assignees=()):
+def answers(behind=0, protected=False, assignees=()):
     """The JSON answers of gh. `protected` is None for no answer about the branch."""
     def gh_json(_root, *args, **_kwargs):
         path = next((arg for arg in args if arg.startswith("repos/")), "")
         if "/compare/" in path:
             return {"behind_by": behind} if behind is not None else None
-        if "/reviews" in path:
-            return list(reviews)
         if "/branches/" in path:
             return None if protected is None else {
                 "protected": protected, "protection": {"required_status_checks": {"contexts": ["akasha"]}}}
@@ -78,7 +76,7 @@ class Landing(unittest.TestCase):
             patcher = patch(target, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.files, self.runs, self.branch_runs, self.merge_error = ["app.py"], None, None, ""
+        self.runs, self.branch_runs, self.merge_error = None, None, ""
         self.gh = patch("akasha.repo.gh", side_effect=self.github).start()
         patch("akasha.pr.gh", self.gh).start()
         patch("akasha.repo.me", return_value="me").start()
@@ -120,9 +118,7 @@ class Landing(unittest.TestCase):
             return land.land(self.root, self.task.id, wait=wait)
 
     def github(self, _root, *args, **_kwargs) -> subprocess.CompletedProcess:
-        """The other calls of gh: the files of the pull request, the runs of the deployment, and the merge."""
-        if "--paginate" in args:
-            return done("\n".join(self.files))
+        """The other calls of gh: the runs of the deployment, and the merge."""
         if args[:2] == ("run", "list"):
             runs = self.branch_runs if "--branch" in args else self.runs
             return done(json.dumps(runs)) if runs is not None else done("", 1, "could not find any workflows")
@@ -191,28 +187,6 @@ class LandTests(Landing):
         state, _lines = self.land(view(self.head, merge="DIRTY"))
         self.assertEqual(state, land.CONFLICT)
         self.assertEqual(load(self.root, self.task.id).status, "approved")
-
-    def test_a_risky_change_waits_for_an_administrator(self):
-        self.files = [f"app/{number:03}.py" for number in range(150)] + ["db/x.sql"]     # beyond the first 100 files
-        state, lines = self.land(view(self.head), wait=0)
-        self.assertEqual(state, land.REVIEW)
-        self.assertIn("@admin-b", lines[-1])
-        self.assertFalse(self.own_merges())
-        state, _lines = self.land(view(self.head), reviews=[{"user": {"login": "admin-b"}, "state": "APPROVED"}])
-        self.assertEqual(state, land.MERGED)
-
-    def test_another_collaborator_does_not_approve_a_risky_change(self):
-        """On GitHub Free nothing enforces CODEOWNERS: Akasha asks for an administrator itself (audit F11)."""
-        self.files = ["db/x.sql"]
-        state, _lines = self.land(view(self.head), wait=0, reviews=[{"user": {"login": "someone"}, "state": "APPROVED"}])
-        self.assertEqual(state, land.REVIEW)
-        self.assertFalse(self.own_merges())
-
-    def test_a_change_of_the_rules_waits_for_an_administrator(self):
-        self.files = ["akasha.toml"]
-        state, lines = self.land(view(self.head), wait=0)
-        self.assertEqual(state, land.REVIEW)
-        self.assertIn("@admin-a", lines[-1])
 
     def test_a_merge_that_github_refuses_is_named_or_tried_again(self):
         self.merge_error = "GraphQL: Head branch was modified. Review and try the merge again."
@@ -356,21 +330,6 @@ class LandTests(Landing):
             load(self.root, self.task.id)                                                    # the task ended
 
 
-class AdministratorAuthorTests(Landing):
-    """The author is an administrator: another administrator reviews (audit F25)."""
-
-    def setUp(self):
-        super().setUp()
-        patch("akasha.repo.me", return_value="admin-b").start()
-
-    def test_a_risky_change_waits_for_an_administrator(self):
-        self.files = ["db/x.sql"]
-        state, lines = self.land(view(self.head), wait=0)
-        self.assertEqual(state, land.REVIEW)
-        self.assertIn("@admin-a", lines[-1])
-        self.assertNotIn("@admin-b", lines[-1])
-
-
 class GitHubRulesTests(LandTests):
     rules = "github"
     protected = True
@@ -381,15 +340,11 @@ class GitHubRulesTests(LandTests):
         self.assertIn("--auto", self.calls("merge")[0])
         self.assertFalse(self.own_merges())
 
-    def test_a_risky_change_waits_for_an_administrator(self):
-        self.files = ["db/x.sql"]
-        state, _lines = self.land(view(self.head, review_state="REVIEW_REQUIRED"), wait=0)
-        self.assertEqual(state, land.REVIEW)
-
-    def test_another_collaborator_does_not_approve_a_risky_change(self):
-        self.files = ["db/x.sql"]
-        state, _lines = self.land(view(self.head, review_state="REVIEW_REQUIRED"), wait=0)
-        self.assertEqual(state, land.REVIEW)
+    def test_a_review_rule_of_the_repository_is_named(self):
+        """Akasha asks for no review. A rule of the repository on GitHub that asks for one goes to an administrator."""
+        state, lines = self.land(view(self.head, review_state="REVIEW_REQUIRED"), wait=0)
+        self.assertEqual(state, land.BLOCKED)
+        self.assertIn("not of Akasha, asks for a review", lines[-1])
 
     def test_a_merge_that_github_refuses_is_named_or_tried_again(self):
         """GitHub merges with its auto-merge here: Akasha never merges itself."""

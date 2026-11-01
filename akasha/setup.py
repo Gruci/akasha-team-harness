@@ -18,6 +18,7 @@ NEXT_STEPS = ("Next: answer the questions of the setup in akasha.toml and run `a
               "of the GitHub repository runs `akasha setup --apply` on their computer. Then commit these files on a "
               "new branch, open a pull request, wait for its checks, and merge it.")
 HOOK_SCRIPT = Path(__file__).resolve().parents[1] / "hook.sh"      # in the plugin: the hooks find Python with it
+PERSONAL = (".claude/settings.local.json", "CLAUDE.local.md")      # the own agent settings of each person: not in git
 
 
 def first_config(root: Path) -> str:
@@ -29,11 +30,11 @@ def first_config(root: Path) -> str:
     admins = f'"{me}"' if me else ""
     folder = "worktrees" if _ignored(root, "worktrees/x") else config.WORK_DIR     # a worktree folder of the team
     lines = ["# The team rules of Akasha. An administrator changes them with a pull request.", "",
-             "[team]", f"admins = [{admins}]          # GitHub names: they set up GitHub and help when the AI is "
-             "stuck",
+             "[team]", f"admins = [{admins}]          # GitHub names: they set up and maintain Akasha, and help when "
+             "the AI is stuck",
              "own_procedure = []      # GitHub names that keep the own procedure of the repository outside Akasha", "",
-             "[risk]", 'paths = []              # for example ["db/**", "**/migrations/**"]: a change waits for an '
-             "administrator", "",
+             "[risk]", 'paths = []              # for example ["db/**", "deploy/**"]: only an administrator changes '
+             "them", "",
              "[checks]"]
     required = ["secrets"] + (["tests"] if pack and pack.tests else [])
     lines.append("required = [" + ", ".join(f'"{name}"' for name in required) + "]")
@@ -62,27 +63,13 @@ def _ignore(root: Path, team: config.Team) -> bool:
     path = root / ".gitignore"
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     made = [line for pack in langs.detect(root) for line in pack.ignore]     # the files that tests and builds make
-    wanted = list(dict.fromkeys([f"{STATE_DIR.as_posix()}/", f"{team.work_dir}/", *made]))
+    wanted = list(dict.fromkeys([f"{STATE_DIR.as_posix()}/", f"{team.work_dir}/", *PERSONAL, *made]))
     missing = [line for line in wanted if line not in text.splitlines()
                and not (line.endswith("/") and _ignored(root, f"{line}x"))]      # the team ignores it already
     if missing:
         path.write_text(text.rstrip("\n") + ("\n" if text.strip() else "") + "\n".join(missing) + "\n",
                         encoding="utf-8")
     return bool(missing)
-
-
-def _codeowners(root: Path, team: config.Team) -> str:
-    if not team.admins:
-        return ""
-    path = next((root / name for name in github.CODEOWNERS_FILES if (root / name).is_file()),
-                root / github.CODEOWNERS_FILES[0])
-    old = path.read_text(encoding="utf-8") if path.is_file() else ""
-    new = github.merge_block(old, github.codeowners(team))
-    if new == old:
-        return ""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(new, encoding="utf-8")
-    return path.relative_to(root).as_posix()
 
 
 def write_files(root: Path) -> list[str]:
@@ -95,8 +82,6 @@ def write_files(root: Path) -> list[str]:
     team = config.load(root)
     if _ignore(root, team):
         changed.append(".gitignore")
-    owners = _codeowners(root, team)
-    changed += [owners] if owners else []
     for name, text in github.workflows(team).items():
         target = root / name
         if not target.is_file() or target.read_text(encoding="utf-8") != text:
