@@ -3,12 +3,18 @@ review, the build, the checks, and the summary."""
 
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
 from akasha import approval, checks, flow, land, review
 from akasha.task import load, save
 from tests.helpers import Repository, run
+
+
+def box(text: str) -> str:
+    """A preview with the box of the decisions at the top, as Akasha asks."""
+    return f'<html><section id="akasha-decisions">{text}</section></html>'
 
 
 class FlowTests(unittest.TestCase):
@@ -30,7 +36,7 @@ class FlowTests(unittest.TestCase):
     def approved(self):
         task = self.started()
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<html>날짜 필터</html>", encoding="utf-8")
+        (records / "preview.html").write_text(box("날짜 필터"), encoding="utf-8")
         flow.preview(self.root, task.id)
         self.assertIn("akasha approve", approval.on_prompt(self.root, Path(task.workcopy), "좋아요, 이대로 만들어 주세요"))
         _task, message = flow.approve(self.root, task.id)
@@ -59,12 +65,12 @@ class FlowTests(unittest.TestCase):
     def test_only_a_message_after_the_shown_preview_approves_it(self):
         task = self.started()
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<html>v1</html>", encoding="utf-8")
+        (records / "preview.html").write_text(box("v1"), encoding="utf-8")
         flow.preview(self.root, task.id)
         with self.assertRaises(ValueError):
             flow.approve(self.root, task.id)                     # the person wrote nothing yet
         self.assertIn("feedback", approval.on_prompt(self.root, self.root, "ok, go ahead"))
-        (records / "preview.html").write_text("<html>v2</html>", encoding="utf-8")
+        (records / "preview.html").write_text(box("v2"), encoding="utf-8")
         with self.assertRaises(ValueError):
             flow.approve(self.root, task.id)                     # the preview changed after it was shown
         self.assertEqual(load(self.root, task.id).status, "preview")
@@ -76,9 +82,52 @@ class FlowTests(unittest.TestCase):
         task = load(self.root, task.id)
         self.assertEqual((task.status, task.approval["words"], task.heard), ("approved", "d'accord, allez-y", {}))
 
+    def test_a_preview_without_the_box_is_refused(self):
+        """The box at the top keeps the questions and the answers of the person, and the approval keeps the box."""
+        task = self.started()
+        records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
+        (records / "preview.html").write_text("<html>날짜 필터</html>", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "box of the decisions"):
+            flow.preview(self.root, task.id)
+        self.assertFalse(load(self.root, task.id).shown_at)
+        (records / "preview.html").unlink()
+        flow.preview(self.root, task.id, text="Who: the team\nWhere: the report menu")     # a plain preview has it
+        self.assertIn('<section id="akasha-decisions"><p>Who: the team</p>',
+                      (records / "preview.html").read_text(encoding="utf-8"))
+
+    def test_the_check_records_core_changes_and_admins_are_free(self):
+        """A teammate may change code that other areas use, but the landing waits for an administrator then."""
+        found = {"app.py": "used by 2 other areas"}
+        with patch("akasha.core.planned", return_value=found):
+            _task, notes = flow.start(self.root, "Other", name="other", scope=("app.py",))
+        self.assertIn("core — app.py (used by 2 other areas)", notes[0])
+        with patch("akasha.core.planned", return_value=found), patch("akasha.repo.person", return_value="admin-a"):
+            _task, notes = flow.start(self.root, "Admin", name="admin", scope=("app.py",))
+        self.assertFalse([note for note in notes if note.startswith("core")])
+        task, _records = self.reviewed()
+        (Path(task.workcopy) / "app.py").write_text("print('date filter')\n", encoding="utf-8")
+        with patch("akasha.repo.me", return_value="me"), patch("akasha.core.changed", return_value=found) as changed:
+            result, notes = flow.check(self.root, task.id)
+        self.assertTrue(checks.passed(result.status))
+        self.assertEqual(load(self.root, task.id).checks["core"], found)
+        self.assertIn("core — the task changes existing lines of app.py", notes[-1])
+        self.assertEqual(changed.call_args.args[1], Path(task.workcopy))
+        with patch("akasha.repo.me", return_value="admin-a"), patch("akasha.core.changed", return_value=found):
+            _result, notes = flow.check(self.root, task.id)
+        self.assertNotIn("core", load(self.root, task.id).checks)
+        self.assertFalse([note for note in notes if note.startswith("core")])
+        team = replace(flow.rules(self.root), own_procedure=("owner",))
+        (Path(task.workcopy) / "app.py").write_text("print('owner')\n", encoding="utf-8")
+        with patch("akasha.flow.rules", return_value=team), patch("akasha.repo.me", return_value="owner"), \
+                patch("akasha.core.changed", return_value=found):
+            result, notes = flow.check(self.root, task.id)
+        self.assertTrue(checks.passed(result.status))
+        self.assertNotIn("core", load(self.root, task.id).checks)
+        self.assertFalse([note for note in notes if note.startswith("core")])
+
     def test_a_changed_preview_after_the_approval_needs_a_new_approval(self):
         task, records = self.approved()
-        (records / "preview.html").write_text("<html>other</html>", encoding="utf-8")
+        (records / "preview.html").write_text(box("other"), encoding="utf-8")
         _task, message = flow.preview(self.root, task.id)
         self.assertIn("approves it again", message)
         self.assertEqual(load(self.root, task.id).status, "preview")
@@ -112,7 +161,7 @@ class FlowTests(unittest.TestCase):
         """A "좋아요" in one window approved the newest preview of another window (audit F07)."""
         task = self.started()
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<html>v1</html>", encoding="utf-8")
+        (records / "preview.html").write_text(box("v1"), encoding="utf-8")
         with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "session-a"}):
             flow.preview(self.root, task.id)
         self.assertEqual(approval.on_prompt(self.root, self.root, "approve", "session-b"), "")
@@ -130,7 +179,7 @@ class FlowTests(unittest.TestCase):
     def test_an_old_preview_is_not_approved(self):
         task = self.started()
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<html>v1</html>", encoding="utf-8")
+        (records / "preview.html").write_text(box("v1"), encoding="utf-8")
         flow.preview(self.root, task.id)
         task = load(self.root, task.id)
         task.shown_at -= approval.MAX_AGE + 1
@@ -142,7 +191,7 @@ class FlowTests(unittest.TestCase):
     def test_codex_approves_without_a_session_of_claude_code(self):
         """Codex gives its hooks a session, but not its commands: the approval went round in circles (critic)."""
         task = self.started()
-        (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text("<p>x</p>", encoding="utf-8")
+        (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text(box("x"), encoding="utf-8")
         flow.preview(self.root, task.id)
         self.assertIn("akasha approve", approval.on_prompt(self.root, Path(task.workcopy), "approve", "codex-1"))
         flow.approve(self.root, task.id)
@@ -151,7 +200,7 @@ class FlowTests(unittest.TestCase):
     def test_the_hook_tells_the_session_of_an_akasha_command(self):
         """After /clear the environment of a command can keep an old session; the hook knows the current one."""
         task = self.started()
-        (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text("<p>x</p>", encoding="utf-8")
+        (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text(box("x"), encoding="utf-8")
         line = f'"C:/python.exe" -X utf8 "C:/plugin/akasha_run.py" preview {task.id}'
         approval.note_session(self.root, "other-session", '"C:/python.exe" -X utf8 "C:/plugin/akasha_run.py" status')
         with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "before-clear"}), \
@@ -166,7 +215,7 @@ class FlowTests(unittest.TestCase):
         """A person answered the next morning in the same window, and the approval went round in circles (review)."""
         task = self.started()
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<html>v1</html>", encoding="utf-8")
+        (records / "preview.html").write_text(box("v1"), encoding="utf-8")
         with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "s"}):
             flow.preview(self.root, task.id)
         task = load(self.root, task.id)
@@ -196,7 +245,7 @@ class FlowTests(unittest.TestCase):
         first = self.started()
         second, _notes = flow.start(self.root, "두 번째", name="second")
         for task in (first, second):
-            (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text("<p>x</p>",
+            (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text(box("x"),
                                                                                             encoding="utf-8")
             flow.preview(self.root, task.id)
         self.assertEqual(approval.on_prompt(self.root, self.root, "approve"), "")
@@ -215,7 +264,7 @@ class FlowTests(unittest.TestCase):
         task = self.started()
         tree = Path(task.workcopy)
         records = tree / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<p>x</p>", encoding="utf-8")
+        (records / "preview.html").write_text(box("x"), encoding="utf-8")
         flow.preview(self.root, task.id)
         approval.on_prompt(self.root, tree, "approve")
         flow.approve(self.root, task.id)

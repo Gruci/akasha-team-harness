@@ -4,11 +4,11 @@ when the checks of the team pass on GitHub.
 Where GitHub protects the default branch, GitHub merges with its auto-merge, as the person who turned it on, so the
 workflows after a merge start, for example a deployment. Where it does not, for example a private repository on
 GitHub Free, Akasha merges on this computer with the account of the person, after the same examination: the required
-checks passed on the current head, and the branch is up to date. No person reviews a task: the preview approval, the
-plan check, and the checks guard it. Akasha asks GitHub before each landing whether it protects the branch, so a
-missing or old [server] rules never sends a merge to an auto-merge that nothing stops. In both cases Akasha brings a
-pull request that is behind up to date, because GitHub does not do it. With [deploy] workflow, the landing then
-waits for that deployment, because the change is live only after it."""
+checks passed on the current head, and the branch is up to date. The preview approval, the plan check, and the checks
+guard a task; an administrator approves only a change of existing lines of core code. Akasha asks GitHub before
+each landing whether it protects the branch, so a missing or old [server] rules never sends a merge to an auto-merge
+that nothing stops. In both cases Akasha brings a pull request that is behind up to date, because GitHub does not do
+it. With [deploy] workflow, the landing then waits for that deployment, because the change is live only after it."""
 
 from __future__ import annotations
 
@@ -17,9 +17,9 @@ import re
 import time
 from pathlib import Path
 
-from akasha import board, github, pr, repo, trace, work
+from akasha import board, checks, core, github, pr, repo, trace, work
 from akasha.config import Team
-from akasha.flow import drop, gate, rules, taken
+from akasha.flow import ask_help, drop, gate, rules, taken
 from akasha.task import SUMMARY, Task, load, record, records, save
 
 POLL_SECONDS = 15
@@ -31,7 +31,7 @@ _RUN = re.compile(r"/actions/runs/(\d+)")
 # The results of a landing. WAITING and DEPLOYING ask for one more `akasha land <task> --wait`.
 MERGED, CLOSED, WAITING, FAILED_CHECK, CONFLICT, BLOCKED = (
     "MERGED", "CLOSED", "WAITING", "FAILED", "CONFLICT", "BLOCKED")
-DEPLOYED, DEPLOY_FAILED, DEPLOYING = "DEPLOYED", "DEPLOY_FAILED", "DEPLOYING"
+DEPLOYED, DEPLOY_FAILED, DEPLOYING, VERIFY_FAILED = "DEPLOYED", "DEPLOY_FAILED", "DEPLOYING", "VERIFY_FAILED"
 AGAIN = "Run `akasha land {task} --wait 540` again (shell timeout 600000 ms)"
 
 
@@ -72,7 +72,7 @@ def land(root: Path, task_id: str, wait: float = 0) -> tuple[str, list[str]]:
     akasha_merges = team.server_rules == "akasha" or not github.protected(root, team)
     told: list[str] = []
     if task.status != "landing":
-        problem = _ready(task)
+        problem = _ready(task) or _core(root, team, task)
         if problem:
             return BLOCKED, [problem]
         state, told = _hand_over(root, task, akasha_merges)
@@ -80,6 +80,27 @@ def land(root: Path, task_id: str, wait: float = 0) -> tuple[str, list[str]]:
             return state, told
     state, lines = follow(root, team, load(root, task_id), deadline, akasha_merges)
     return state, told + lines
+
+
+def _core(root: Path, team: Team, task: Task) -> str:
+    """What the core changes of the task still need, or "". Akasha asks the administrators once for each version of
+    the work."""
+    files = task.checks.get("core") or {}
+    if not files:
+        return ""
+    who = core.approver(root, Path(task.workcopy), task.number, team, list(files))
+    if who:
+        task.checks["core_approved_by"] = who
+        save(root, task)
+        return ""
+    if task.checks.get("core_asked") != task.checks.get("commit"):
+        ask_help(root, task.id, core.request(task.id, files))
+        task.checks["core_asked"] = task.checks.get("commit")
+        save(root, task)
+    return (f"the task changes existing lines of {', '.join(list(files)[:3])}, which other areas use, so an "
+            f"administrator approves the pull request first: {task.pr}. Akasha asked them. Tell the person in one "
+            f"simple sentence that an administrator checks one part, and land again later. Or change the task to "
+            f"keep those lines, run `akasha check {task.id}`, and land again")
 
 
 def _hand_over(root: Path, task: Task, akasha_merges: bool) -> tuple[str, list[str]]:
@@ -334,7 +355,7 @@ def _deploy(root: Path, team: Team, task: Task, deadline: float) -> tuple[str, l
             drop(root, task, server=str(task.checks.get("head") or "?"))
         if done_now:
             if str(latest.get("conclusion") or "").lower() == "success":
-                return DEPLOYED, [f"the deployment put the change live: {latest.get('url')}"]
+                return _verify(root, team, task, latest)
             return DEPLOY_FAILED, [f"the deployment failed: {latest.get('url')}. Tell the person, and ask an "
                                    f"administrator: `akasha help {task.id} \"<the deployment failed>\"`"]
         if late and not latest:
@@ -346,3 +367,17 @@ def _deploy(root: Path, team: Team, task: Task, deadline: float) -> tuple[str, l
         if time.monotonic() >= deadline:
             return DEPLOYING, ["the deployment still runs. " + AGAIN.format(task=task.id)]
         time.sleep(POLL_SECONDS)
+
+
+def _verify(root: Path, team: Team, task: Task, run: dict) -> tuple[str, list[str]]:
+    """Run the command of [deploy] verify at the top of the main checkout, after a deployment that passed."""
+    live = [f"the deployment put the change live: {run.get('url')}"]
+    if not team.deploy_verify:
+        return DEPLOYED, live
+    status, detail = checks.shell(team.deploy_verify, root)
+    if status == "PASS":
+        return DEPLOYED, live + ["the check after the deployment passed"]
+    trace.note(root, "verify_failed", task=task.id, detail=detail[-300:])
+    return VERIFY_FAILED, live + [f"the check after the deployment failed: {detail[-500:]}. Tell the person in simple "
+                                  f"words, ask an administrator: `akasha help {task.id} \"<the check after the "
+                                  f"deployment failed>\"`, and offer to undo the change with a new task"]

@@ -1,7 +1,8 @@
 """The watch: where GitHub cannot protect the default branch, a workflow examines each new commit after a push and
 reports each problem to the administrators: a commit that no merged pull request brought, a merge before the required
 checks passed, a pull request that was not an Akasha task or had no approved preview or no passed plan review, and a
-change by a teammate of a file that only an administrator changes. It changes no code: a revert would start a
+change by a teammate of a file that only an administrator changes, or of existing lines of core code without an
+approval of an administrator. It changes no code: a revert would start a
 deployment that nobody asked for, and the administrators decide."""
 
 from __future__ import annotations
@@ -69,6 +70,10 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
     locked = checks.touches(changed, checks.locked(team, author))
     if locked:
         return f"pull request #{pull['number']} of @{author} changed {locked[0]}, which only an administrator changes"
+    found = task.checks.get("core") or {}
+    if found and not task.checks.get("core_approved_by") and author not in team.admins + team.own_procedure:
+        return (f"pull request #{pull['number']} of @{author} changed existing lines of {next(iter(found))}, which "
+                "other areas use, without an approval of an administrator")
     return ""
 
 

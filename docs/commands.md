@@ -13,7 +13,7 @@ or `akasha <command>`.
 | `approve <task>` | Record the approval from the last message of the person after the preview, in this session |
 | `review <task> --verdict pass\|changes` | Record a self-review, only where the akasha-reviewer agent does not exist (not in Claude Code) |
 | `check <task> [--only <checks>]` | Run the checks of the team. When each passes, save the work and push it. With `--only`, run only those checks and save nothing: run `check <task>` before `land` |
-| `land <task> [--wait <seconds>]` | Make the pull request ready and merge it when the checks pass, then follow the deployment of `[deploy]`. Exit code 3: still waiting (WAITING, DEPLOYING) |
+| `land <task> [--wait <seconds>]` | Make the pull request ready and merge it when the checks pass, then follow the deployment of `[deploy]` and run its `verify`. Exit code 3: still waiting (WAITING, DEPLOYING) |
 | `status [<task>]` | The tasks on this computer, the records folder, the plan digest, and the next step |
 | `board` | The open tasks of the team |
 | `resume <task or #number> [--force]` | Continue a task of the board on this computer. It runs `[checks] setup` in the new work copy |
@@ -26,7 +26,9 @@ or `akasha <command>`.
 | `version` | The version of Akasha |
 
 The results of `land`: MERGED, DEPLOYED, and CLOSED end the task (exit code 0). WAITING and DEPLOYING ask for the same
-command again (exit code 3). FAILED, CONFLICT, BLOCKED, and DEPLOY_FAILED tell what to do (exit code 1).
+command again (exit code 3). FAILED, CONFLICT, BLOCKED, DEPLOY_FAILED, and VERIFY_FAILED tell what to do (exit code 1).
+BLOCKED also comes when a core change waits for the approval of an administrator. VERIFY_FAILED means that the change
+is live, but the command of `[deploy] verify` failed.
 
 The workflows run `check --ci` (the check of Akasha) and `server watch` (the watch). The hooks run `hook --event`
 through `hook.sh`, which finds Python 3.11 or higher. A shell line that is exactly one of these commands with the

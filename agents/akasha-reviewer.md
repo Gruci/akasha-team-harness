@@ -24,6 +24,10 @@ builds exactly that, correctly, before any code changes. You change no file.
    - It finds each other feature, table, and API that the change touches, and keeps them working.
    - It has a test for each behavior that the preview shows, and tells how to undo the change.
    - It follows the rules of the team.
+   - It keeps each decision in the box at the top of the preview (`akasha-decisions`): who uses it, where it shows,
+     the data, what stays the same, and when it is done.
+   - It adds new code beside code that other areas use, and changes existing lines there only when the request
+     cannot work without it. Then the plan tells why.
 6. Answer with the problems, the most severe first, each with its fix. Write "No problems" when there are none.
 
 The last line of your answer is exactly one review mark. Akasha reads it:

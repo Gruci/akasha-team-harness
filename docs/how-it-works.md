@@ -8,7 +8,8 @@ checks its plan in place of a person. Machines check the result. GitHub merges i
 
 A team has two roles. A teammate asks for changes and approves their previews, and never reads code. An
 administrator sets up and maintains Akasha and the few risky parts (the database, the deployment), and helps when an
-AI is stuck. Nobody reviews a task.
+AI is stuck. Nobody reviews a task, except one kind of change: when a task changes existing lines of the core (code
+that other areas use), an administrator approves it on GitHub before it lands.
 
 | Step | Who | What happens |
 |:--|:--|:--|
@@ -33,7 +34,7 @@ A task is one change of one person.
 
 ## The approval of the person
 
-The approval is the only decision of a person, so Akasha takes it only from the person.
+The approval of the preview is the only decision of the person, so Akasha takes it only from the person. (An administrator also approves a change of the core, see "The core".)
 
 - The agent engine runs `akasha preview <task>`. Akasha opens the preview and keeps its digest, and in Claude Code
   also the session that showed it.
@@ -48,6 +49,9 @@ The approval is the only decision of a person, so Akasha takes it only from the 
   background task: Akasha does not keep those. Where the agent engine gives no session (Codex), the work copy of the
   session decides, and only when one preview waits.
 - A choice in a tool such as AskUserQuestion is not a message of the person: the AI asks in plain chat.
+- At the top of the preview, a box (`<section id="akasha-decisions">`) shows each question that the AI asked and the
+  answer of the person. `akasha preview` refuses a preview without it. The digest covers the box, so the approval is
+  also the record of the answers.
 - The approval holds the digest of the preview that the person saw. When the preview changes after the approval, the
   task needs a new approval. The digest ignores the line ends, so an approval stays valid on another computer. A
   person who continues a task with `akasha resume` before its approval sees the preview again first.
@@ -98,6 +102,23 @@ without notice.
 
 > **CAUTION:** The hooks keep a cooperative agent engine on the procedure. They are not a sandbox.
 
+## The core
+
+A teammate's task can add anything. Only one kind of change waits for an administrator: a change or a delete of
+existing lines of a core file. Other screens use that code, and nobody of them saw the change.
+
+| Part | How it works |
+|:--|:--|
+| A core file | A file that `[core] used_by` or more other areas import (the default is 2), or a file of `[core] paths`. An area is a folder of `[core] areas`, else the first two folders of the path. Imports by tests do not count |
+| Free | A new file, and new lines in a core file. `git diff --numstat` decides: a file without deleted lines is free |
+| The edit | Akasha never stops it. `akasha start` names the core files of the scope, and `akasha check` names the core files whose existing lines changed, so that the AI can keep those lines and add new code beside them |
+| The landing | Waits with BLOCKED until an administrator approves the pull request on GitHub (Review changes → Approve). Akasha asks the administrators once for each version of the work. A later change of the core files needs a new approval, and a later "Request changes" of the same administrator takes it back |
+| Who is free of it | The administrators and the people of `[team] own_procedure` |
+
+Akasha finds the users of a file in the imports of Python, JavaScript, and TypeScript. It does not see a call of an
+API by its address, a table name in the text of SQL, or code in another language: for those, list the files in
+`[core] paths`. The akasha-reviewer agent and the check after the deployment (`[deploy] verify`) also guard them.
+
 ## The checks
 
 `akasha check <task>` adds the new files to the index of git, so that a check that lists the files with git sees them,
@@ -123,12 +144,15 @@ follows the pull request:
 | The branch is behind the default branch | Asks GitHub to bring it up to date. The checks run again. When GitHub does not answer, it does not merge |
 | A conflict | Stops with CONFLICT. The next landing brings the latest default branch into the work copy and names the files |
 | The work copy changed during the landing | Stops with BLOCKED: the change needs its checks first |
-| A rule of the repository on GitHub asks for a review | Stops with BLOCKED at the end of the wait: Akasha asks for no review, so an administrator removes the rule |
+| The task changes existing lines of the core, and no administrator approved it | Stops with BLOCKED, and asks the administrators on the pull request once for each version of the work. The AI tells the person and lands again later |
+| A rule of the repository on GitHub asks for a review | Stops with BLOCKED at the end of the wait: Akasha asks for no review, except the approval of a core change, so an administrator removes the rule |
 | Everything passed | Merges the pull request as one squash commit, with the summary as its body |
-| `[deploy] workflow` is set | After the merge, waits for the deployment and says DEPLOYED, DEPLOY_FAILED, or DEPLOYING |
+| `[deploy] workflow` is set | After the merge, waits for the deployment and says DEPLOYED, DEPLOY_FAILED, or DEPLOYING, or VERIFY_FAILED with `verify` (next row) |
+| `[deploy] verify` is set, and the deployment passed | Runs the command at the top of the main checkout. It passes: DEPLOYED. It fails: VERIFY_FAILED, and the AI asks an administrator and offers to undo the change |
 
-No person reviews the pull request. The preview approval of the person, the plan check of the second AI, and the checks
-of the team guard each task. The parts that only an administrator changes never reach the landing from a teammate's
+No person reviews the pull request, except a change of existing lines of the core: an administrator approves it (see
+"The core"). The preview approval of the person, the plan check of the second AI, and the checks of the team guard
+each task. The parts that only an administrator changes never reach the landing from a teammate's
 task: the guard stops the edit, and the check `admin_only` fails.
 
 Who merges depends on GitHub. Before each landing, Akasha asks GitHub whether its protection of the default branch

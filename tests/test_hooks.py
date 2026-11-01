@@ -15,6 +15,8 @@ from akasha import flow, hooks, setup
 from akasha.task import load
 from tests.helpers import TEAM, Repository
 
+PREVIEW = '<html><section id="akasha-decisions">x</section></html>'      # with the box of the decisions
+
 
 class HookTests(unittest.TestCase):
     def setUp(self):
@@ -55,7 +57,7 @@ class HookTests(unittest.TestCase):
     def test_the_prompt_of_the_person_approves_the_shown_preview(self):
         task, _notes = flow.start(self.root, "Title", name="t2")
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<html>x</html>", encoding="utf-8")
+        (records / "preview.html").write_text(PREVIEW, encoding="utf-8")
         flow.preview(self.root, task.id)
         code, out, _err = self.hook("UserPromptSubmit", {"prompt": "Looks right, build it."})
         self.assertEqual(code, 0)
@@ -68,7 +70,7 @@ class HookTests(unittest.TestCase):
         (2026-10-31)."""
         task, _notes = flow.start(self.root, "Title", name="t4")
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<html>x</html>", encoding="utf-8")
+        (records / "preview.html").write_text(PREVIEW, encoding="utf-8")
         flow.preview(self.root, task.id)
         env = {**os.environ, "PYTHONUTF8": "0", "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
         env.pop("PYTHONIOENCODING", None)
@@ -96,7 +98,7 @@ class HookTests(unittest.TestCase):
     def test_only_the_reviewer_agent_records_a_review(self):
         task, _notes = flow.start(self.root, "Title", name="t5")
         records = Path(task.workcopy) / ".akasha" / "tasks" / task.id
-        (records / "preview.html").write_text("<html>x</html>", encoding="utf-8")
+        (records / "preview.html").write_text(PREVIEW, encoding="utf-8")
         flow.preview(self.root, task.id)
         self.hook("UserPromptSubmit", {"prompt": "approve"})
         flow.approve(self.root, task.id)
@@ -168,7 +170,7 @@ class HookTests(unittest.TestCase):
     def test_a_new_session_shows_the_preview_again(self):
         """Only the session that showed a preview takes its approval, so a session after /clear shows it again."""
         task, _notes = flow.start(self.root, "Title", name="t6")
-        (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text("<p>x</p>", encoding="utf-8")
+        (Path(task.workcopy) / ".akasha" / "tasks" / task.id / "preview.html").write_text(PREVIEW, encoding="utf-8")
         with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "old"}):
             flow.preview(self.root, task.id)
         _code, out, _err = self.hook("SessionStart", {"session_id": "new"})

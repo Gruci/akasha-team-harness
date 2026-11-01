@@ -43,9 +43,13 @@ This repository uses Akasha. Each change is an Akasha task. The command is `py -
    `akasha check <task>` and repair each failure.
 5. Write summary.md (why, what changed, how to undo it), run the check again, then `akasha land <task> --wait 540`
    with a shell timeout of 10 minutes. Run it again while it says WAITING or DEPLOYING. Repair a FAILED or a CONFLICT,
-   and do what a BLOCKED says. Only an administrator changes akasha.toml, `.github/`, and the paths of [risk]: when
-   the task needs them, run `akasha help <task> "<what it needs>"`.
-6. Tell the person the result in simple words: MERGED, or DEPLOYED when the team deploys each merge.
+   and do what a BLOCKED says. When a BLOCKED says that an administrator approves a core change first, Akasha
+   already asked the administrators: tell the person in one simple sentence that an administrator checks one part,
+   land again later, and do not ask again with `akasha help`. Only an administrator changes akasha.toml, `.github/`,
+   and the paths of [risk]: when the task needs them, run `akasha help <task> "<what it needs>"`.
+6. Tell the person the result in simple words: MERGED, or DEPLOYED when the team deploys each merge. VERIFY_FAILED
+   means the change is live, but the check of the team after the deployment failed: tell the person in simple words,
+   run `akasha help <task> "<the check after the deployment failed>"`, and offer to undo the change with a new task.
 
 Never merge a pull request yourself, never force a push, and never change .akasha/state. If you cannot repair a
 problem after three tries, run `akasha help <task> "<what blocks you>"` and tell the person. A question that is not a

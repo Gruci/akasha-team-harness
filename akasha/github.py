@@ -21,7 +21,8 @@ LABELS = {LABEL: ("6d28d9", "A task of Akasha"), HELP_LABEL: ("d93f0b", "Waits f
 
 def protection(team: Team) -> dict:
     """The branch protection of the default branch: each change comes through a pull request, the checks of the team
-    pass on an up-to-date branch, and nobody forces a push or deletes the branch. No person reviews a task."""
+    pass on an up-to-date branch, and nobody forces a push or deletes the branch. GitHub asks for no review: an
+    administrator approves only a change of existing lines of core code, and Akasha waits for that approval."""
     return {
         "required_status_checks": {"strict": True, "contexts": list(team.status_checks)},
         "enforce_admins": False,

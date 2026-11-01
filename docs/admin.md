@@ -1,7 +1,8 @@
 # Set up a team
 
 The administrator sets up a repository once, and then maintains it: the rules of Akasha, the database, and the
-deployment. The administrator reviews no task. The AI does each step with the akasha-setup skill: say "Set up Akasha",
+deployment. The administrator reviews no task, except a change of existing lines of the core: the administrator
+approves it on GitHub (below). The AI does each step with the akasha-setup skill: say "Set up Akasha",
 in any language. This page tells what happens, for the person who must understand it.
 
 ## What the administrator decides
@@ -10,11 +11,14 @@ in any language. This page tells what happens, for the person who must understan
 |:--|:--|
 | Who are the administrators? Each other person with write access is a teammate | `[team] admins` |
 | Which parts are risky, for example the database and the deployment? Only an administrator changes them | `[risk] paths` |
+| Which folders hold one feature each? The AI proposes them from the folders of the repository. A file that two or more other areas import is core | `[core] areas`, `[core] used_by` |
+| Which files must an administrator approve before a change of their existing lines, for example the definitions of the database? | `[core] paths` |
 | Which commands check a change? Does the team have its own CI? | `[checks]`, `[ci] required` |
 | What must each computer install to run the checks? | `[checks] setup`, `ready` of each check, `[guides] join` |
 | Which documents must the AI read before the preview, the plan, and the review? | `[guides]` |
 | Which folder do the checkers of the team skip, for the records of the tasks? | `[work] records` |
 | Which workflow deploys each merge? | `[deploy] workflow` |
+| Which command shows that the live service works after a deployment? | `[deploy] verify` |
 
 Start with the checks that the team already has. Add a check when the same problem comes back (see the retro below):
 a long list of rules on the first day stops each task.
@@ -72,14 +76,27 @@ a permission prompt: the hook of Akasha allows them, so a teammate does not need
 | Repository | What stops a bad merge |
 |:--|:--|
 | Public, or private on GitHub Pro, Team, or Enterprise | GitHub: the required checks on an up-to-date branch, no force push |
-| Private on GitHub Free | Akasha on each computer merges only after its examination: the required checks passed on the current head, and the branch is up to date. The watch examines each push to the default branch and opens an issue for the administrators when a change went around the rules: no Akasha task, no approved preview, no passed plan review, no passed checks, or a teammate's change of a part that only an administrator changes. It changes no code |
+| Private on GitHub Free | Akasha on each computer merges only after its examination: the required checks passed on the current head, and the branch is up to date. The watch examines each push to the default branch and opens an issue for the administrators when a change went around the rules: no Akasha task, no approved preview, no passed plan review, no passed checks, a teammate's change of a part that only an administrator changes, or a teammate's change of existing lines of the core without an approval of an administrator. It changes no code |
 
-Akasha asks for no review of a pull request. Where a rule of the repository on GitHub asks for one, the landing stops
-and names it, so that an administrator can remove the rule.
+Akasha asks for no review of a pull request, except the approval of a core change (below). Where a rule of the
+repository on GitHub asks for one, the landing stops and names it, so that an administrator can remove the rule.
 
 On GitHub Free, a person with write access can still merge by hand on GitHub. The watch tells it after the push. For
 protection before each merge, move to GitHub Pro or Team, or make the repository public, then run
 `akasha setup --apply` again.
+
+## Approve a core change
+
+A teammate's task adds code freely. When it changes or deletes existing lines of a core file (`[core]`), its landing
+waits, and Akasha asks the administrators on the pull request. The comment names the files and why each one is core.
+
+1. Open the pull request on GitHub.
+2. Examine the change of the named files: do the other areas that use them still work?
+3. Click Review changes → Approve. The next landing of the task merges it.
+
+The approval holds for the core files as they are in the approved commit. A later change of those files needs a new
+approval. A later Request changes of the same administrator takes the approval back. Only an approval of an
+administrator counts. The changes of the administrators and of the people of `[team] own_procedure` need no approval.
 
 ## A team that has its own CI
 

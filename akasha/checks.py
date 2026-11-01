@@ -37,8 +37,9 @@ def matches(path: str, pattern: str) -> bool:
 
 def locked(team: Team, me: str) -> tuple[str, ...]:
     """The file patterns that only an administrator changes: the rules of Akasha, the GitHub files, and the paths of
-    [risk], such as the database and the deployment. Nobody reviews a task: the administrators maintain these files,
-    and a person who keeps the own procedure of the repository changes them too."""
+    [risk], such as the database and the deployment. An administrator approves only a change of existing lines of core
+    code, and no person reviews the rest of a task: so the administrators maintain these files, and a person who
+    keeps the own procedure of the repository changes them too."""
     return () if me and me in team.admins + team.own_procedure else ADMIN_PATHS + team.risk_paths
 
 

@@ -27,6 +27,11 @@ def meta(task: Task) -> list[str]:
     if task.checks:
         status = ", ".join(f"{name} {value}" for name, value in task.checks.get("status", {}).items())
         lines.append(f"- Checks on this computer: {status}")
+    found = task.checks.get("core") or {}
+    if found:
+        state = f"approved by @{task.checks['core_approved_by']}" if task.checks.get("core_approved_by") else \
+            "waits for an approval of an administrator"
+        lines.append(f"- Core changes: {', '.join(f'`{name}`' for name in found)} — {state}")
     if task.scope:
         lines.append(f"- Planned files: {', '.join(f'`{item}`' for item in task.scope)}")
     lines.append(f"- Records: `{records(task)}/` (preview, research, plan, summary)")
