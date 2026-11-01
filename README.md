@@ -15,7 +15,7 @@
 Each person asks for a change in plain words and approves a preview of it. That is their only step.<br>
 The AI plans, another AI reviews the plan, and the AI builds, checks, and lands the change.
 
-<img src="https://img.shields.io/badge/version-1.0.1-7c3aed" alt="Version 1.0.1">
+<img src="https://img.shields.io/badge/version-1.0.0-7c3aed" alt="Version 1.0.0">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -72,37 +72,28 @@ tell what to change. The AI does the rest and tells you when the change is merge
 live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.1"` in that Python
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"` in that Python
 > (on Windows `py -3 -m pip install …`).
 
 * * *
 
 ## How It Works
 
-```mermaid
-flowchart LR
-    A([Request]) --> B[Preview]
-    B -->|the person approves| C[Research and plan]
-    C --> D{Reviewer AI}
-    D -->|CHANGES| C
-    D -->|PASS| E[Build]
-    E --> F[Checks]
-    F -->|FAIL| E
-    F -->|PASS| G[Land]
-    G --> H([Merged])
-```
+<img src="docs/readme/how-it-works.svg" width="900" alt="Several teams ask at the same time. Each person only approves a preview. For each task an AI plans, a second AI checks the plan, the AI builds and tests. The tasks of all teams merge into one product one by one.">
+
+Each task goes through the same six steps, and many tasks go through them at the same time:
 
 | Step | Who | Gate |
 |:--|:--|:--|
 | 1. Request | The person says what they want | — |
 | 2. Preview | The AI makes an HTML preview, the person looks at it | The person approves it in the chat |
-| 3. Plan | The AI writes research and a plan | The akasha-reviewer agent passes the plan |
+| 3. Plan | The AI writes research and a plan | A second AI checks the plan until it passes |
 | 4. Build | The AI changes the code in its own work copy | The code cannot change before steps 2 and 3 |
 | 5. Check | The checks of the team run | Each required check passes |
-| 6. Land | The pull request gets ready, comes up to date, and merges | The checks pass on GitHub; a risky path also needs a reviewer, and the team rules an administrator |
+| 6. Land | The pull request gets ready, comes up to date, and merges | The checks pass on GitHub |
 
 The hooks hold the AI on these steps: they keep the message of the person for the approval, record the verdict of
-the reviewer agent, stop a change of the code before the gates, stop a change in the main checkout or in a work copy
+the second AI, stop a change of the code before the gates, stop a change in the main checkout or in a work copy
 outside Akasha, and stop a force push, a push to the default branch, and a merge by hand. They examine the repository
 that a tool acts on, also from a session in another folder. [How it works](docs/how-it-works.md) tells each detail.
 
@@ -127,10 +118,9 @@ Each person, from any team, works on their own task at the same time as the othe
 
 | Who | Does | Does not have to |
 |:--|:--|:--|
-| **Administrator** | Sets up the repository once: the rules in `akasha.toml`, the GitHub settings | Watch each task |
+| **Administrator** | Sets up the repository once: the rules in `akasha.toml`, the GitHub settings. If the team wants, also looks at changes of the few risky parts, for example the database | Watch each task |
 | **Each person** | Says what to make, approves the preview | Read code, judge technical risk, review plans |
-| **Reviewer** (optional) | Reviews a change of a risky path, for example the database | Review other changes |
-| **The AI** | Plans, builds, tests, lands, and tells the result | Ask technical questions |
+| **The AI** | Plans, has a second AI check the plan, builds, tests, lands, and tells the result | Ask technical questions |
 
 * * *
 
@@ -155,7 +145,7 @@ deployment and tells when the change is live.
 | An approval comes from a message of the person | Only the hook of the prompt keeps the message, in the session that showed the preview. The approval holds the exact words and the digest of the preview |
 | The code waits for the approval and a reviewed plan | The guard stops each edit of the code before both |
 | A change that failed the checks does not merge through Akasha | The landing waits for the required checks to really run and pass on GitHub |
-| A risky change merges only with a review of the version that merges | The approval of a reviewer covers the commit that they saw; a later change of a risky file needs a new review |
+| A change of a part that the team marked risky merges only after the administrator saw that version | The approval covers the commit that the administrator saw; a later change of a risky file needs a new look |
 | Each change can be found and undone | One squash commit with its summary and its records |
 
 | Does not guarantee | Know this |
@@ -184,7 +174,6 @@ deployment and tells when the change is live.
 
 | Version | Changes |
 |:--|:--|
-| **v1.0.1** | Ready for several teams on one repository that keeps its own harness: approval in any language from a message that the person typed in the session of the preview; reviews bound to the commit that the reviewer saw; the merge path follows the live branch protection; people of `[team] own_procedure` keep the repository's own procedure; rules can live in `.github/akasha.toml`; exact Akasha commands run without a permission prompt; deploy follow-up; `akasha ask` for questions that are not a change; unknown settings of a newer Akasha are a notice, not a stop. |
 | **v1.0.0** | First release. |
 
 * * *

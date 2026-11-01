@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" viewBox="0 0 900 260" role="img" aria-labelledby="title desc">
   <title id="title">Akasha</title>
-  <desc id="desc">Akasha lets any person on your team build one product with an AI agent. Each task goes through six stages: request, specification, build, checks, inspection, and handover.</desc>
+  <desc id="desc">Akasha lets any person on your team build one product with an AI agent. Each task goes through six steps: request, preview, plan, build, check, and land.</desc>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#1e1b4b"/>
@@ -31,12 +31,12 @@
     </g>
     <g font-size="14" font-weight="600" fill="#f5f3ff" text-anchor="middle">
       <text x="109" y="201">Request</text>
-      <text x="245.4" y="201">Specification</text>
-      <text x="381.8" y="201">Build</text>
-      <text x="518.2" y="201">Checks</text>
-      <text x="654.6" y="201">Inspection</text>
-      <text x="791" y="201">Handover</text>
+      <text x="245.4" y="201">Preview</text>
+      <text x="381.8" y="201">Plan</text>
+      <text x="518.2" y="201">Build</text>
+      <text x="654.6" y="201">Check</text>
+      <text x="791" y="201">Land</text>
     </g>
-    <text x="48" y="242" font-size="14" fill="#c4b5fd">People decide what to make · The AI decides how · GitHub merges each checked change</text>
+    <text x="48" y="242" font-size="14" fill="#c4b5fd">The person approves a preview · The AI does the rest · Machines check it, GitHub merges it</text>
   </g>
 </svg>
