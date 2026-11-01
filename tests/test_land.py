@@ -192,17 +192,17 @@ class LandTests(Landing):
         self.assertEqual(state, land.CONFLICT)
         self.assertEqual(load(self.root, self.task.id).status, "approved")
 
-    def test_a_risky_change_waits_for_a_reviewer(self):
+    def test_a_risky_change_waits_for_an_administrator(self):
         self.files = [f"app/{number:03}.py" for number in range(150)] + ["db/x.sql"]     # beyond the first 100 files
         state, lines = self.land(view(self.head), wait=0)
         self.assertEqual(state, land.REVIEW)
-        self.assertIn("@rev-b", lines[-1])
+        self.assertIn("@admin-b", lines[-1])
         self.assertFalse(self.own_merges())
-        state, _lines = self.land(view(self.head), reviews=[{"user": {"login": "rev-b"}, "state": "APPROVED"}])
+        state, _lines = self.land(view(self.head), reviews=[{"user": {"login": "admin-b"}, "state": "APPROVED"}])
         self.assertEqual(state, land.MERGED)
 
     def test_another_collaborator_does_not_approve_a_risky_change(self):
-        """On GitHub Free nothing enforces CODEOWNERS: Akasha asks for a reviewer itself (audit F11)."""
+        """On GitHub Free nothing enforces CODEOWNERS: Akasha asks for an administrator itself (audit F11)."""
         self.files = ["db/x.sql"]
         state, _lines = self.land(view(self.head), wait=0, reviews=[{"user": {"login": "someone"}, "state": "APPROVED"}])
         self.assertEqual(state, land.REVIEW)
@@ -356,18 +356,19 @@ class LandTests(Landing):
             load(self.root, self.task.id)                                                    # the task ended
 
 
-class OnlyReviewerTests(Landing):
-    """The author is the only reviewer: an administrator reviews in place (audit F25)."""
+class AdministratorAuthorTests(Landing):
+    """The author is an administrator: another administrator reviews (audit F25)."""
 
     def setUp(self):
         super().setUp()
-        patch("akasha.repo.me", return_value="rev-b").start()
+        patch("akasha.repo.me", return_value="admin-b").start()
 
-    def test_a_risky_change_waits_for_a_reviewer(self):
+    def test_a_risky_change_waits_for_an_administrator(self):
         self.files = ["db/x.sql"]
         state, lines = self.land(view(self.head), wait=0)
         self.assertEqual(state, land.REVIEW)
         self.assertIn("@admin-a", lines[-1])
+        self.assertNotIn("@admin-b", lines[-1])
 
 
 class GitHubRulesTests(LandTests):
@@ -380,7 +381,7 @@ class GitHubRulesTests(LandTests):
         self.assertIn("--auto", self.calls("merge")[0])
         self.assertFalse(self.own_merges())
 
-    def test_a_risky_change_waits_for_a_reviewer(self):
+    def test_a_risky_change_waits_for_an_administrator(self):
         self.files = ["db/x.sql"]
         state, _lines = self.land(view(self.head, review_state="REVIEW_REQUIRED"), wait=0)
         self.assertEqual(state, land.REVIEW)

@@ -9,8 +9,7 @@ so that each computer uses the merged rules, also when its checkout is old.
 
 ```toml
 [team]
-admins = ["lead"]                  # GitHub names: they set up GitHub and help when the AI is stuck
-reviewers = ["lead", "dba"]        # GitHub names that review a change of a risky path
+admins = ["lead", "dba"]           # GitHub names: they set up GitHub, review the risky changes, and help when the AI is stuck
 
 [risk]
 paths = ["db/**", "**/migrations/**", ".github/workflows/**"]
@@ -52,21 +51,23 @@ rules = "akasha"                   # setup writes it
 
 ## `[team]`
 
+A team has two roles: the administrators, named here, and the teammates, who are each other person with write access.
+
 | Key | Value |
 |:--|:--|
-| `admins` | The GitHub names of the administrators. They own `akasha.toml`, `.github/`, and CODEOWNERS: a change of them waits for the review of an administrator. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch |
-| `reviewers` | The GitHub names that review a change of a path of `[risk]`. The landing waits for the approval of one of them. Without reviewers, the administrators review |
+| `admins` | The GitHub names of the administrators. They own `akasha.toml`, `.github/`, CODEOWNERS, the guides, and the paths of `[risk]`: a change of them waits for the review of an administrator. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch |
 | `own_procedure` | The GitHub names of the people who keep the own procedure of the repository outside Akasha, for example the administrator who built it. Akasha does not stop their work outside its tasks (their own work copies, edits in the main checkout, their merges), and the watch accepts their pull requests when the checks passed. The other rules (a force push, a push to the default branch, `.env`) stay |
+
 Where GitHub protects the branch, it enforces CODEOWNERS. On a private repository on GitHub Free it does not, so
 Akasha reads the reviews of the pull request itself before it merges, and the watch reports a merge by hand without
-them. The person who made the change does not count: when no reviewer is free, an administrator reviews, and the
-other way around.
+them. The person who made the change does not count: name two or more administrators, so that the change of an
+administrator also gets a review.
 
 ## `[risk]`
 
 | Key | Value |
 |:--|:--|
-| `paths` | File patterns. A change of a matching file waits for the review of a reviewer before the merge. Keep the list short: each risky path makes a person wait |
+| `paths` | File patterns. A change of a matching file waits for the review of an administrator before the merge. Keep the list short: each risky path makes a person wait |
 
 ## `[checks]`
 
@@ -110,7 +111,7 @@ The files of the team that the AI reads in each step. The session start notice n
 | `preview` | Before it makes the preview: the design, the words on the screen |
 | `plan` | Before it writes the research and the plan: the architecture, the rules |
 | `build` | While it builds |
-| `review` | The reviewer reads them for the review of the plan |
+| `review` | The AI that checks the plan reads them too |
 
 ## `[work]`
 
@@ -134,4 +135,5 @@ The files of the team that the AI reads in each step. The session start notice n
 
 ## How Akasha examines this file
 
-Akasha refuses an unknown section, an unknown key, and a value of the wrong type, with the name of the key.
+Akasha refuses a value of the wrong type, with the name of the key. It skips a section or a key that it does not
+know, for example a setting of a newer Akasha, and the session start notice names it.

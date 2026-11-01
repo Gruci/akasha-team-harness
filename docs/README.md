@@ -7,7 +7,7 @@
 | [Team config](team-config.md) | You write or change `akasha.toml` |
 | [Commands](commands.md) | You want to know each command of Akasha. The agent engine runs them; people do not have to |
 
-The procedures that the agent engine follows are in [`skills/`](../skills), and the reviewer of the plans is in
+The procedures that the agent engine follows are in [`skills/`](../skills), and the AI that checks the plans is in
 [`agents/`](../agents).
 
 ## Run the tests of Akasha

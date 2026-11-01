@@ -95,7 +95,7 @@ def _team_lines(root: Path) -> list[str]:
     except config.ConfigError as error:
         return [f"[AKASHA] The team config has a problem: {error}. Tell an administrator."]
     names = {"join": "for a new teammate", "preview": "before the preview", "plan": "before the plan",
-             "build": "while you build", "review": "for the reviewer"}
+             "build": "while you build", "review": "for the AI that checks the plan"}
     lines = [f"[AKASHA] Team guide {names[step]}: {', '.join(files)}" for step, files in team.guides.items()]
     if team.unknown:
         lines.append(f"[AKASHA] akasha.toml has settings that this Akasha does not know ({', '.join(team.unknown[:3])}). "

@@ -30,7 +30,7 @@ def protection(team: Team) -> dict:
         "required_status_checks": {"strict": True, "contexts": list(team.status_checks)},
         "enforce_admins": False,
         "required_pull_request_reviews": {"required_approving_review_count": 0,
-                                          "require_code_owner_reviews": bool(team.reviewers or team.admins)},
+                                          "require_code_owner_reviews": bool(team.admins)},
         "restrictions": None,
         "allow_force_pushes": False,
         "allow_deletions": False,
@@ -38,14 +38,12 @@ def protection(team: Team) -> dict:
 
 
 def codeowners(team: Team) -> str:
-    """The Akasha block of CODEOWNERS: the reviewers own the risky paths, and the administrators own the team rules
-    and the GitHub files."""
+    """The Akasha block of CODEOWNERS: the administrators own the risky paths, the team rules, and the GitHub
+    files."""
     lines = [START, f"# Akasha writes this block from {CONFIG_FILE}. Change {CONFIG_FILE}, then run akasha setup."]
-    reviewers = " ".join(f"@{name}" for name in team.reviewers)
-    if reviewers:
-        lines += [f"{item} {reviewers}" for item in team.risk_paths]
     admins = " ".join(f"@{name}" for name in team.admins)
     if admins:
+        lines += [f"{item} {admins}" for item in team.risk_paths]
         guides = tuple(name for names in team.guides.values() for name in names)
         lines += [f"/{path} {admins}" for path in dict.fromkeys((CONFIG_FILE, ".github/", "CODEOWNERS") + guides)]
     return "\n".join(lines + [END]) + "\n"
@@ -53,16 +51,14 @@ def codeowners(team: Team) -> str:
 
 def reviews_needed(team: Team, files: list[str], authors: set[str]) -> list[tuple[str, set[str], tuple[str, ...]]]:
     """For each kind of file of a change that needs a review: the first such file, the people of whom one must approve
-    it, and the patterns of that kind. The administrators own the rules of the team: akasha.toml, the GitHub files, and
-    the guides that each AI follows ([guides]). The reviewers own the risky paths. When none of the owners is free,
-    because they made the change or the team named none, the other group reviews. The same rule holds where GitHub
-    cannot enforce CODEOWNERS (a private repository on GitHub Free)."""
+    it, and the patterns of that kind. The administrators review the rules of the team (akasha.toml, the GitHub files,
+    and the guides that each AI follows) and the risky paths. The person who made the change does not count. The same
+    rule holds where GitHub cannot enforce CODEOWNERS (a private repository on GitHub Free)."""
     rules = ADMIN_PATHS + tuple(name for names in team.guides.values() for name in names)
+    people = set(team.admins) - authors
     needs = []
-    for patterns, owners, others in ((rules, team.admins, team.reviewers),
-                                     (team.risk_paths, team.reviewers, team.admins)):
+    for patterns in (rules, team.risk_paths):
         path = next((name for name in files if any(matches(name, item) for item in patterns)), "")
-        people = (set(owners) - authors) or (set(others) - authors)
         if path and people:
             needs.append((path, people, tuple(patterns)))
     return needs
@@ -198,7 +194,7 @@ def status(root: Path) -> list[str]:
         if _server_file(root, branch, path) != text:
             problems.append(f"{path} on {branch} is missing or old: an administrator runs `akasha setup` and merges it")
     owners = next((text for path in CODEOWNERS_FILES if (text := _server_file(root, branch, path)) is not None), "")
-    if (team.admins or team.reviewers) and block(owners) != codeowners(team):
+    if team.admins and block(owners) != codeowners(team):
         problems.append("the Akasha block of CODEOWNERS is missing or old: an administrator runs `akasha setup`")
     if team.server_rules == "github":
         found = _protection(root, slug, branch)

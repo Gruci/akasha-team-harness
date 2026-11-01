@@ -11,7 +11,7 @@ or `akasha <command>`.
 | `start "<title>" [--name <name>] [--scope <patterns>]` | Start a task: a work copy on a new branch, and a draft pull request on the board |
 | `preview <task> [--text <text>] [--no-open]` | Show the preview to the person and wait for the approval |
 | `approve <task>` | Record the approval from the last message of the person after the preview, in this session |
-| `review <task> --verdict pass\|changes` | Record a self-review, only where no reviewer agent exists (not in Claude Code) |
+| `review <task> --verdict pass\|changes` | Record a self-review, only where the akasha-reviewer agent does not exist (not in Claude Code) |
 | `check <task> [--only <checks>]` | Run the checks of the team. When each passes, save the work and push it. With `--only`, run only those checks and save nothing: run `check <task>` before `land` |
 | `land <task> [--wait <seconds>]` | Make the pull request ready and merge it when the checks pass, then follow the deployment of `[deploy]`. Exit code 3: still waiting (WAITING, DEPLOYING) |
 | `status [<task>]` | The tasks on this computer, the records folder, the plan digest, and the next step |

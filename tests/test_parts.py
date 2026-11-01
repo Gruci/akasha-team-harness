@@ -151,16 +151,16 @@ class GitHubFileTests(unittest.TestCase):
         self.assertEqual(github.protection(own_ci)["required_status_checks"]["contexts"], ["checks"])
 
     def test_who_must_review(self):
-        team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b"]\n[risk]\npaths = ["db/**"]\n'
+        team = config.parse('[team]\nadmins = ["a", "b"]\n[risk]\npaths = ["db/**"]\n'
                             '[guides]\npreview = ["design/UX.md"]\n')
 
         def who(files, authors):
             return [(path, people) for path, people, _patterns in github.reviews_needed(team, files, authors)]
         self.assertEqual(who(["app.py"], {"me"}), [])
-        self.assertEqual(who(["db/x.sql"], {"me"}), [("db/x.sql", {"b"})])
-        self.assertEqual(who(["db/x.sql"], {"b"}), [("db/x.sql", {"a"})])
-        self.assertEqual(who([".github/workflows/ci.yml"], {"me"}), [(".github/workflows/ci.yml", {"a"})])
-        self.assertEqual(who(["design/UX.md"], {"me"}), [("design/UX.md", {"a"})])    # a guide of each AI is a rule
+        self.assertEqual(who(["db/x.sql"], {"me"}), [("db/x.sql", {"a", "b"})])
+        self.assertEqual(who(["db/x.sql"], {"b"}), [("db/x.sql", {"a"})])       # the author does not review
+        self.assertEqual(who([".github/workflows/ci.yml"], {"me"}), [(".github/workflows/ci.yml", {"a", "b"})])
+        self.assertEqual(who(["design/UX.md"], {"a"}), [("design/UX.md", {"b"})])    # a guide of each AI is a rule
         self.assertEqual(who(["akasha.toml"], {"a", "b"}), [])
         self.assertEqual(github.review_states([{"user": {"login": "B"}, "state": "APPROVED", "commit_id": "c1"},
                                                {"user": {"login": "b"}, "state": "COMMENTED"},
@@ -183,9 +183,11 @@ class GitHubFileTests(unittest.TestCase):
         self.assertTrue(github.approved(Path.cwd(), states, {"b"}, ("db/**",), "old", ["db/x.sql"]))
         self.assertFalse(github.approved(Path.cwd(), states, {"c"}, ("db/**",), "old", ["db/x.sql"]))
 
-    def test_without_reviewers_the_administrators_review_a_risky_path(self):
-        team = config.parse('[team]\nadmins = ["a"]\n[risk]\npaths = ["db/**"]\n')
+    def test_the_team_has_only_administrators_and_teammates(self):
+        """A reviewer role of an older akasha.toml is a setting that this Akasha does not know, not a role."""
+        team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b"]\n[risk]\npaths = ["db/**"]\n')
         self.assertEqual([need[:2] for need in github.reviews_needed(team, ["db/x.sql"], {"me"})], [("db/x.sql", {"a"})])
+        self.assertIn("[team] reviewers", team.unknown)
 
     def test_a_long_output_keeps_its_start_and_its_end(self):
         from akasha.checks import _short
@@ -206,19 +208,19 @@ class GitHubFileTests(unittest.TestCase):
             "checks": [{"context": "checks"}]}}}, team))
 
     def test_codeowners_block(self):
-        team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b", "c"]\n[risk]\npaths = ["db/**"]\n'
+        team = config.parse('[team]\nadmins = ["a", "b"]\n[risk]\npaths = ["db/**"]\n'
                             '[guides]\nplan = ["dev/RULES.md"]\n')
         owners = github.codeowners(team)
-        self.assertIn("db/** @b @c", owners)
-        self.assertIn("/akasha.toml @a", owners)
-        self.assertIn("/dev/RULES.md @a", owners)                # a guide that each AI follows is a rule
+        self.assertIn("db/** @a @b", owners)
+        self.assertIn("/akasha.toml @a @b", owners)
+        self.assertIn("/dev/RULES.md @a @b", owners)             # a guide that each AI follows is a rule
         merged = github.merge_block("* @team\n", owners)
         self.assertTrue(merged.startswith("* @team") and merged.endswith("# akasha:end\n"))
         self.assertEqual(github.merge_block(merged, owners), merged)
 
 
 class WatchTests(unittest.TestCase):
-    team = config.parse('[team]\nadmins = ["a"]\nreviewers = ["b"]\nown_procedure = ["a"]\n[risk]\npaths = ["db/**"]\n'
+    team = config.parse('[team]\nadmins = ["a", "b"]\nown_procedure = ["a"]\n[risk]\npaths = ["db/**"]\n'
                         '[ci]\nrequired = ["checks"]\n')
 
     def answers(self, pulls, runs, reviews=()):

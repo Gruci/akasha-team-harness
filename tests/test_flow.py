@@ -178,7 +178,7 @@ class FlowTests(unittest.TestCase):
         with patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": "s"}), self.assertRaisesRegex(ValueError, "a day"):
             flow.approve(self.root, task.id)
 
-    def test_a_risky_change_asks_its_reviewer_at_the_first_check(self):
+    def test_a_risky_change_asks_the_administrators_at_the_first_check(self):
         task, records = self.reviewed()
         (Path(task.workcopy) / "db" / "schema.sql").write_text("create table b (y int);\n", encoding="utf-8")
         task.number = 7
@@ -188,7 +188,7 @@ class FlowTests(unittest.TestCase):
                 patch("akasha.repo.gh", return_value=subprocess.CompletedProcess([], 0, "", "")) as gh:
             _result, notes = flow.check(self.root, task.id)
             flow.check(self.root, task.id)
-        self.assertTrue(any("@rev-b" in note for note in notes))
+        self.assertTrue(any("@admin-a, @admin-b" in note for note in notes))
         asked = [call.args for call in gh.call_args_list if "--add-reviewer" in call.args]
         self.assertEqual(len(asked), 1)
 
