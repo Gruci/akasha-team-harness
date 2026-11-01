@@ -1,40 +1,114 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="388" viewBox="0 0 900 388" role="img" aria-label="Several teams ask for changes at the same time, and each person approves the preview of their change. For each task, Akasha shows the preview, has a second AI check the plan, builds and tests in its own work copy, and lands the change after the checks pass. The tasks merge into one product one by one.">
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="456" viewBox="0 0 900 456" role="img" aria-labelledby="title desc">
+<title id="title">Several teams build one product at the same time</title>
+<desc id="desc">Three teams, Sales, Operations and Finance, each ask for a change in plain words and only approve a preview. For each task an AI plans, a second AI checks the plan, and the AI builds and tests in its own work copy, all at the same time. A shared board shows who builds what and where tasks overlap. The tasks merge into one main branch one by one after their checks pass; a later one is first brought up to date with the earlier merges.</desc>
 <style>
-.label{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;letter-spacing:.06em;fill:#8b949e}
-.name{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;fill:#e6edf3}
-.sub{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:13px;fill:#8b949e}
-.ok{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:12.5px;fill:#58a6ff}
-.row{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:13.5px;font-weight:600;fill:#e6edf3}
-.how{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:12.5px;fill:#8b949e}
-.edge{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:12px;fill:#8b949e}
-.main{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;fill:#3fb950}
-.tag{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;fill:#e6edf3}
+.label,.name,.sub,.ok,.row,.how,.edge,.step,.tag{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif}
+.label{font-size:12px;font-weight:600;letter-spacing:.06em;fill:#8b949e}
+.name{font-size:15px;font-weight:700;fill:#e6edf3}
+.name.main{fill:#3fb950}
+.sub{font-size:13px;fill:#8b949e}
+.ok{font-size:12.5px;fill:#8b949e}
+.row{font-size:13.5px;font-weight:600;fill:#e6edf3}
+.how{font-size:12.5px;fill:#8b949e}
+.edge{font-size:12px;fill:#8b949e}
+.step{font-size:12px;font-weight:600;fill:#e6edf3}
+.tag{font-size:16px;font-weight:600;fill:#e6edf3}
+.card{fill:#161b22;stroke:#30363d;stroke-width:1.5}
+.chip{fill:#0d1117;stroke:#30363d;stroke-width:1}
 @media (prefers-reduced-motion:reduce){.dot{display:none}}
 </style>
 <defs>
 <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3d444d"/></marker>
-<marker id="time" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#30363d"/></marker>
+<marker id="small" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3d444d"/></marker>
+<marker id="green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3fb950"/></marker>
+<marker id="time" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#30363d"/></marker>
 </defs>
-<rect width="900" height="388" rx="12" fill="#0d1117"/>
-<text x="24" y="36" class="label">EACH TEAM · AT THE SAME TIME</text>
-<path d="M250,32 L662,32" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5" marker-end="url(#time)"/>
-<text x="676" y="36" class="label">ONE PRODUCT</text>
-<rect x="24" y="52" width="200" height="80" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="75" r="5" fill="#2f81f7"/><text x="56" y="80" class="name">Sales</text><text x="38" y="102" class="sub">“Add a CSV download”</text><text x="38" y="121" class="ok">✓ approves the preview</text>
-<rect x="24" y="140" width="200" height="80" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="163" r="5" fill="#2f81f7"/><text x="56" y="168" class="name">Operations</text><text x="38" y="190" class="sub">“Show the batch status”</text><text x="38" y="209" class="ok">✓ approves the preview</text>
-<rect x="24" y="228" width="200" height="80" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/><circle cx="44" cy="251" r="5" fill="#2f81f7"/><text x="56" y="256" class="name">Finance</text><text x="38" y="278" class="sub">“Add a monthly total”</text><text x="38" y="297" class="ok">✓ approves the preview</text>
-<rect x="278" y="52" width="344" height="256" rx="12" fill="#161b22" stroke="#2f81f7" stroke-width="1.5"/>
-<text x="298" y="84" class="name">Akasha</text><text x="298" y="104" class="how">one AI for each task, all at once</text>
-<path d="M298,122 L602,122 M450,134 L450,294 M298,214 L602,214" stroke="#30363d" stroke-width="1"/>
-<text x="298" y="158" class="row">1 · Preview</text><text x="298" y="178" class="how">the person approves it</text>
-<text x="466" y="158" class="row">2 · Plan</text><text x="466" y="178" class="how">a second AI checks it</text>
-<text x="298" y="248" class="row">3 · Build</text><text x="298" y="268" class="how">tested in its own copy</text>
-<text x="466" y="248" class="row">4 · Land</text><text x="466" y="268" class="how">after the checks pass</text>
-<rect x="676" y="132" width="200" height="96" rx="10" fill="#0f1a13" stroke="#238636" stroke-width="1.5"/><circle cx="696" cy="156" r="5" fill="#3fb950"/><text x="708" y="161" class="main">main</text><text x="690" y="186" class="sub">merges each task in turn,</text><text x="690" y="208" class="sub">a later one up to date first</text>
-<path d="M228,92 L272,92" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2s" begin="0s" repeatCount="indefinite" path="M228,92 L272,92"/></circle>
-<path d="M228,180 L272,180" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2s" begin="-0.7s" repeatCount="indefinite" path="M228,180 L272,180"/></circle>
-<path d="M228,268 L272,268" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2s" begin="-1.4s" repeatCount="indefinite" path="M228,268 L272,268"/></circle>
-<path d="M626,180 L670,180" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#3fb950" class="dot"><animateMotion dur="2s" begin="-1s" repeatCount="indefinite" path="M626,180 L670,180"/></circle>
-<text x="250" y="80" text-anchor="middle" class="edge">asks</text>
-<text x="648" y="168" text-anchor="middle" class="edge">merges</text>
-<text x="450" y="352" text-anchor="middle" class="tag">Each person approves what they see. The AI does the rest.</text>
+<rect width="900" height="456" rx="12" fill="#0d1117"/>
+
+<!-- column heads -->
+<text x="24" y="36" class="label">EACH PERSON</text>
+<text x="24" y="56" class="how">asks, and approves a preview</text>
+<text x="252" y="36" class="label">AN AI FOR EACH TASK, AT THE SAME TIME</text>
+<text x="252" y="56" class="how">plans · a second AI checks the plan · builds · tests</text>
+<path d="M528,32 L686,32" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5" fill="none" marker-end="url(#time)"/>
+<text x="700" y="36" class="label">ONE PRODUCT</text>
+<text x="700" y="56" class="how">merged one by one</text>
+
+<!-- the person cards -->
+<rect x="24" y="119" width="180" height="76" rx="10" class="card"/>
+<text x="40" y="142" class="name">Sales</text>
+<text x="40" y="162" class="sub">“Add a CSV download”</text>
+<text x="40" y="180" class="ok"><tspan fill="#3fb950">✓</tspan> approves the preview</text>
+<rect x="24" y="205" width="180" height="76" rx="10" class="card"/>
+<text x="40" y="228" class="name">Operations</text>
+<text x="40" y="248" class="sub">“Show the batch status”</text>
+<text x="40" y="266" class="ok"><tspan fill="#3fb950">✓</tspan> approves the preview</text>
+<rect x="24" y="291" width="180" height="76" rx="10" class="card"/>
+<text x="40" y="314" class="name">Finance</text>
+<text x="40" y="334" class="sub">“Add a monthly total”</text>
+<text x="40" y="352" class="ok"><tspan fill="#3fb950">✓</tspan> approves the preview</text>
+
+<!-- the AI frame: the board on top, one lane per task -->
+<rect x="252" y="72" width="368" height="300" rx="12" fill="#161b22" stroke="#2f81f7" stroke-width="1.5"/>
+<text x="270" y="98" class="row">The board</text><text x="343" y="98" class="how">who builds what, and where tasks overlap</text>
+<path d="M270,114 L602,114 M270,200 L602,200 M270,286 L602,286" stroke="#30363d" stroke-width="1"/>
+<g>
+<rect x="270" y="143" width="44" height="28" rx="6" class="chip"/><text x="292" y="161" text-anchor="middle" class="step">Plan</text>
+<rect x="352" y="143" width="78" height="28" rx="6" class="chip"/><text x="391" y="161" text-anchor="middle" class="step">Plan check</text>
+<rect x="468" y="143" width="48" height="28" rx="6" class="chip"/><text x="492" y="161" text-anchor="middle" class="step">Build</text>
+<rect x="554" y="143" width="48" height="28" rx="6" class="chip"/><text x="578" y="161" text-anchor="middle" class="step">Tests</text>
+<rect x="270" y="229" width="44" height="28" rx="6" class="chip"/><text x="292" y="247" text-anchor="middle" class="step">Plan</text>
+<rect x="352" y="229" width="78" height="28" rx="6" class="chip"/><text x="391" y="247" text-anchor="middle" class="step">Plan check</text>
+<rect x="468" y="229" width="48" height="28" rx="6" class="chip"/><text x="492" y="247" text-anchor="middle" class="step">Build</text>
+<rect x="554" y="229" width="48" height="28" rx="6" class="chip"/><text x="578" y="247" text-anchor="middle" class="step">Tests</text>
+<rect x="270" y="315" width="44" height="28" rx="6" class="chip"/><text x="292" y="333" text-anchor="middle" class="step">Plan</text>
+<rect x="352" y="315" width="78" height="28" rx="6" class="chip"/><text x="391" y="333" text-anchor="middle" class="step">Plan check</text>
+<rect x="468" y="315" width="48" height="28" rx="6" class="chip"/><text x="492" y="333" text-anchor="middle" class="step">Build</text>
+<rect x="554" y="315" width="48" height="28" rx="6" class="chip"/><text x="578" y="333" text-anchor="middle" class="step">Tests</text>
+</g>
+<g stroke="#3d444d" stroke-width="1.5" fill="none" marker-end="url(#small)">
+<path d="M320,157 L346,157"/><path d="M436,157 L462,157"/><path d="M522,157 L548,157"/>
+<path d="M320,243 L346,243"/><path d="M436,243 L462,243"/><path d="M522,243 L548,243"/>
+<path d="M320,329 L346,329"/><path d="M436,329 L462,329"/><path d="M522,329 L548,329"/>
+</g>
+
+<!-- person to lane -->
+<path d="M208,157 L246,157" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2s" begin="0s" repeatCount="indefinite" path="M208,157 L246,157"/></circle>
+<path d="M208,243 L246,243" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2s" begin="-0.7s" repeatCount="indefinite" path="M208,243 L246,243"/></circle>
+<path d="M208,329 L246,329" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/><circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="2s" begin="-1.4s" repeatCount="indefinite" path="M208,329 L246,329"/></circle>
+
+<!-- merges into the main branch, one at a time -->
+<g stroke="#238636" stroke-width="2" fill="none" marker-end="url(#green)">
+<path d="M624,157 C668,157 664,216 696,216"/>
+<path d="M624,243 L696,243"/>
+<path d="M624,329 C668,329 664,270 696,270"/>
+</g>
+<!-- a later task is brought up to date with the earlier merges before it merges -->
+<path d="M788,324 L788,350 L628,350" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4 4" fill="none" marker-end="url(#green)"/>
+<text x="712" y="342" text-anchor="middle" class="edge">brought up to date</text>
+
+<rect x="700" y="168" width="176" height="150" rx="10" fill="#112119" stroke="#3fb950" stroke-width="1.5"/>
+<circle cx="720" cy="193" r="5" fill="#3fb950"/><text x="732" y="198" class="name main">Main branch</text>
+<path d="M716,218 L860,218" stroke="#238636" stroke-width="2"/>
+<circle cx="740" cy="218" r="5" fill="#3fb950" stroke="#112119" stroke-width="2"/>
+<circle cx="788" cy="218" r="5" fill="#3fb950" stroke="#112119" stroke-width="2"/>
+<circle cx="836" cy="218" r="5" fill="#3fb950" stroke="#112119" stroke-width="2"/>
+<text x="716" y="246" class="how">each task merges</text>
+<text x="716" y="264" class="how">after its checks pass;</text>
+<text x="716" y="282" class="how">a later one is brought</text>
+<text x="716" y="300" class="how">up to date first</text>
+
+<!-- moving dots in turn on a 6s cycle: merge 1, merge 2, the update, merge 3 -->
+<circle r="4" fill="#3fb950" class="dot"><animateMotion dur="6s" begin="0s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.17;1" calcMode="linear" path="M624,157 C668,157 664,216 696,216"/><animate attributeName="opacity" values="1;0" keyTimes="0;0.17" calcMode="discrete" dur="6s" begin="0s" repeatCount="indefinite"/></circle>
+<circle r="4" fill="#3fb950" opacity="0" class="dot"><animateMotion dur="6s" begin="1.5s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.17;1" calcMode="linear" path="M624,243 L696,243"/><animate attributeName="opacity" values="1;0" keyTimes="0;0.17" calcMode="discrete" dur="6s" begin="1.5s" repeatCount="indefinite"/></circle>
+<circle r="4" fill="#3fb950" opacity="0" class="dot"><animateMotion dur="6s" begin="3s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.17;1" calcMode="linear" path="M788,324 L788,350 L628,350"/><animate attributeName="opacity" values="1;0" keyTimes="0;0.17" calcMode="discrete" dur="6s" begin="3s" repeatCount="indefinite"/></circle>
+<circle r="4" fill="#3fb950" opacity="0" class="dot"><animateMotion dur="6s" begin="4.5s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.17;1" calcMode="linear" path="M624,329 C668,329 664,270 696,270"/><animate attributeName="opacity" values="1;0" keyTimes="0;0.17" calcMode="discrete" dur="6s" begin="4.5s" repeatCount="indefinite"/></circle>
+<!-- a commit on main pulses as each merge lands -->
+<circle cx="740" cy="218" r="5" fill="none" stroke="#3fb950" stroke-width="2" opacity="0" class="dot"><animate attributeName="r" values="5;12;12" keyTimes="0;0.12;1" dur="6s" begin="1s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.9;0;0" keyTimes="0;0.12;1" dur="6s" begin="1s" repeatCount="indefinite"/></circle>
+<circle cx="788" cy="218" r="5" fill="none" stroke="#3fb950" stroke-width="2" opacity="0" class="dot"><animate attributeName="r" values="5;12;12" keyTimes="0;0.12;1" dur="6s" begin="2.5s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.9;0;0" keyTimes="0;0.12;1" dur="6s" begin="2.5s" repeatCount="indefinite"/></circle>
+<circle cx="836" cy="218" r="5" fill="none" stroke="#3fb950" stroke-width="2" opacity="0" class="dot"><animate attributeName="r" values="5;12;12" keyTimes="0;0.12;1" dur="6s" begin="5.5s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.9;0;0" keyTimes="0;0.12;1" dur="6s" begin="5.5s" repeatCount="indefinite"/></circle>
+
+<!-- tagline -->
+<text x="450" y="408" text-anchor="middle" class="tag">Each person only says what they want and approves what they see.</text>
+<text x="450" y="432" text-anchor="middle" class="tag">The AI does the rest, and the tasks of all teams land in one product.</text>
 </svg>
