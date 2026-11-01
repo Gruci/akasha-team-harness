@@ -1,70 +1,89 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="330" viewBox="0 0 900 330" role="img" aria-labelledby="title desc">
-  <title id="title">How Akasha works</title>
-  <desc id="desc">Six steps. The person makes a request and approves a preview. The AI writes the plan, which a reviewer AI reviews until it passes, builds the change, and runs the checks until they pass. GitHub merges it.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" role="img" aria-labelledby="title desc">
+  <title id="title">Several teams build one product at the same time</title>
+  <desc id="desc">Three teams ask for changes at the same time. Each person only approves a preview. For each task an AI plans, has the plan checked by a second AI, builds, and tests, in its own work copy. A shared board shows who builds what. The tasks merge into one product one by one, and each later one is brought up to date and checked again.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 Z" fill="#7c3aed"/>
     </marker>
-    <marker id="back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 Z" fill="#b45309"/>
+    <marker id="merge" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#16a34a"/>
     </marker>
   </defs>
-  <rect width="900" height="330" rx="20" fill="#ffffff" stroke="#e5e7eb"/>
+  <rect width="900" height="420" rx="20" fill="#ffffff" stroke="#e5e7eb"/>
   <g font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
-    <!-- who does each part -->
-    <rect x="30" y="26" width="270" height="30" rx="15" fill="#fef3c7"/>
-    <text x="165" y="46" font-size="14" font-weight="700" fill="#92400e" text-anchor="middle">THE PERSON · decides once</text>
-    <rect x="310" y="26" width="420" height="30" rx="15" fill="#ede9fe"/>
-    <text x="520" y="46" font-size="14" font-weight="700" fill="#5b21b6" text-anchor="middle">THE AI · does the rest, checked by machines</text>
-    <rect x="740" y="26" width="130" height="30" rx="15" fill="#dcfce7"/>
-    <text x="805" y="46" font-size="14" font-weight="700" fill="#166534" text-anchor="middle">GITHUB</text>
-
-    <!-- steps -->
-    <g stroke-width="2">
-      <rect x="30" y="90" width="125" height="86" rx="14" fill="#fffbeb" stroke="#f59e0b"/>
-      <rect x="175" y="90" width="125" height="86" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
-      <rect x="320" y="90" width="125" height="86" rx="14" fill="#f5f3ff" stroke="#8b5cf6"/>
-      <rect x="465" y="90" width="125" height="86" rx="14" fill="#f5f3ff" stroke="#8b5cf6"/>
-      <rect x="610" y="90" width="125" height="86" rx="14" fill="#f5f3ff" stroke="#8b5cf6"/>
-      <rect x="755" y="90" width="115" height="86" rx="14" fill="#f0fdf4" stroke="#22c55e"/>
+    <!-- column heads -->
+    <g font-size="13" font-weight="700" text-anchor="middle">
+      <text x="110" y="40" fill="#92400e">EACH PERSON</text>
+      <text x="400" y="40" fill="#5b21b6">AN AI FOR EACH TASK, AT THE SAME TIME</text>
+      <text x="770" y="40" fill="#166534">ONE PRODUCT</text>
     </g>
-    <g font-size="12" font-weight="600" fill="#6b7280" text-anchor="middle">
-      <text x="92.5" y="112">1</text><text x="237.5" y="112">2</text><text x="382.5" y="112">3</text>
-      <text x="527.5" y="112">4</text><text x="672.5" y="112">5</text><text x="812.5" y="112">6</text>
-    </g>
-    <g font-size="18" font-weight="700" fill="#111827" text-anchor="middle">
-      <text x="92.5" y="136">Request</text><text x="237.5" y="136">Preview</text><text x="382.5" y="136">Plan</text>
-      <text x="527.5" y="136">Build</text><text x="672.5" y="136">Check</text><text x="812.5" y="136">Land</text>
-    </g>
-    <g font-size="12" fill="#374151" text-anchor="middle">
-      <text x="92.5" y="156">says what they</text><text x="92.5" y="170">want, in any words</text>
-      <text x="237.5" y="156">sees a mockup and</text><text x="237.5" y="170">approves it in chat</text>
-      <text x="382.5" y="156">research and plan,</text><text x="382.5" y="170">reviewed by an AI</text>
-      <text x="527.5" y="156">in its own copy,</text><text x="527.5" y="170">with tests</text>
-      <text x="672.5" y="156">the checks of</text><text x="672.5" y="170">the team</text>
-      <text x="812.5" y="156">merges when the</text><text x="812.5" y="170">checks pass</text>
+    <g font-size="11" fill="#6b7280" text-anchor="middle">
+      <text x="110" y="56">asks, and approves a preview</text>
+      <text x="400" y="56">plans · a second AI checks the plan · builds · tests</text>
+      <text x="770" y="56">merged one by one</text>
     </g>
 
-    <!-- forward arrows -->
+    <!-- the shared board -->
+    <rect x="215" y="70" width="370" height="26" rx="13" fill="#f3f4f6" stroke="#d1d5db"/>
+    <text x="400" y="88" font-size="12" fill="#374151" text-anchor="middle">The board: who builds what, and where tasks overlap</text>
+
+    <!-- three lanes -->
+    <g>
+      <!-- lane 1 -->
+      <rect x="30" y="112" width="160" height="64" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+      <text x="110" y="137" font-size="15" font-weight="700" fill="#111827" text-anchor="middle">Sales</text>
+      <text x="110" y="157" font-size="11" fill="#374151" text-anchor="middle">"Add a CSV download"</text>
+      <text x="110" y="170" font-size="11" fill="#92400e" text-anchor="middle">✓ approves the preview</text>
+      <rect x="215" y="112" width="370" height="64" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+      <!-- lane 2 -->
+      <rect x="30" y="192" width="160" height="64" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+      <text x="110" y="217" font-size="15" font-weight="700" fill="#111827" text-anchor="middle">Operations</text>
+      <text x="110" y="237" font-size="11" fill="#374151" text-anchor="middle">"Show the batch status"</text>
+      <text x="110" y="250" font-size="11" fill="#92400e" text-anchor="middle">✓ approves the preview</text>
+      <rect x="215" y="192" width="370" height="64" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+      <!-- lane 3 -->
+      <rect x="30" y="272" width="160" height="64" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+      <text x="110" y="297" font-size="15" font-weight="700" fill="#111827" text-anchor="middle">Finance</text>
+      <text x="110" y="317" font-size="11" fill="#374151" text-anchor="middle">"Add a monthly total"</text>
+      <text x="110" y="330" font-size="11" fill="#92400e" text-anchor="middle">✓ approves the preview</text>
+      <rect x="215" y="272" width="370" height="64" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+    </g>
+
+    <!-- the AI steps inside each lane -->
+    <g font-size="12" font-weight="600" fill="#4c1d95" text-anchor="middle">
+      <g>
+        <text x="262" y="149">Plan</text><text x="352" y="149">Plan check</text><text x="447" y="149">Build</text><text x="535" y="149">Tests</text>
+        <text x="262" y="229">Plan</text><text x="352" y="229">Plan check</text><text x="447" y="229">Build</text><text x="535" y="229">Tests</text>
+        <text x="262" y="309">Plan</text><text x="352" y="309">Plan check</text><text x="447" y="309">Build</text><text x="535" y="309">Tests</text>
+      </g>
+    </g>
+    <g stroke="#a78bfa" stroke-width="2" fill="none" marker-end="url(#arrow)">
+      <line x1="289" y1="144" x2="308" y2="144"/><line x1="397" y1="144" x2="420" y2="144"/><line x1="474" y1="144" x2="500" y2="144"/>
+      <line x1="289" y1="224" x2="308" y2="224"/><line x1="397" y1="224" x2="420" y2="224"/><line x1="474" y1="224" x2="500" y2="224"/>
+      <line x1="289" y1="304" x2="308" y2="304"/><line x1="397" y1="304" x2="420" y2="304"/><line x1="474" y1="304" x2="500" y2="304"/>
+    </g>
+
+    <!-- person to AI -->
     <g stroke="#7c3aed" stroke-width="2.5" fill="none" marker-end="url(#arrow)">
-      <line x1="157" y1="133" x2="171" y2="133"/>
-      <line x1="302" y1="133" x2="316" y2="133"/>
-      <line x1="447" y1="133" x2="461" y2="133"/>
-      <line x1="592" y1="133" x2="606" y2="133"/>
-      <line x1="737" y1="133" x2="751" y2="133"/>
+      <line x1="192" y1="144" x2="212" y2="144"/>
+      <line x1="192" y1="224" x2="212" y2="224"/>
+      <line x1="192" y1="304" x2="212" y2="304"/>
     </g>
 
-    <!-- loops back -->
-    <g stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#back)">
-      <path d="M415 178 C 415 222, 350 222, 350 181"/>
-      <path d="M672 178 C 672 226, 527 226, 527 181"/>
+    <!-- merge into one product -->
+    <g stroke="#16a34a" stroke-width="2.5" fill="none" marker-end="url(#merge)">
+      <path d="M587 144 C 640 144, 640 210, 683 214"/>
+      <line x1="587" y1="224" x2="683" y2="224"/>
+      <path d="M587 304 C 640 304, 640 238, 683 234"/>
     </g>
-    <g font-size="12" font-weight="600" fill="#b45309" text-anchor="middle">
-      <text x="382.5" y="236">reviewer: CHANGES</text>
-      <text x="599.5" y="240">a check fails: repair</text>
-    </g>
+    <rect x="686" y="172" width="170" height="104" rx="14" fill="#f0fdf4" stroke="#22c55e" stroke-width="2.5"/>
+    <text x="771" y="206" font-size="17" font-weight="700" fill="#111827" text-anchor="middle">Main branch</text>
+    <text x="771" y="228" font-size="11" fill="#374151" text-anchor="middle">each task merges after</text>
+    <text x="771" y="243" font-size="11" fill="#374151" text-anchor="middle">its checks pass; a later one</text>
+    <text x="771" y="258" font-size="11" fill="#374151" text-anchor="middle">is brought up to date first</text>
 
     <!-- one line -->
-    <text x="450" y="290" font-size="15" fill="#374151" text-anchor="middle">The person checks only what they can see. The plan, the code, and the merge are checked by machines.</text>
+    <text x="450" y="378" font-size="15" fill="#374151" text-anchor="middle">Each person only says what they want and approves what they see.</text>
+    <text x="450" y="400" font-size="15" fill="#374151" text-anchor="middle">The AI does the rest, and the tasks of all teams land in one product.</text>
   </g>
 </svg>

@@ -79,20 +79,21 @@ live.
 
 ## How It Works
 
-<img src="docs/readme/how-it-works.svg" width="900" alt="Six steps: the person makes a request and approves a preview; the AI plans (a reviewer AI reviews the plan), builds, and checks; GitHub merges.">
+<img src="docs/readme/how-it-works.svg" width="900" alt="Several teams ask at the same time. Each person only approves a preview. For each task an AI plans, a second AI checks the plan, the AI builds and tests. The tasks of all teams merge into one product one by one.">
 
+Each task goes through the same six steps, and many tasks go through them at the same time:
 
 | Step | Who | Gate |
 |:--|:--|:--|
 | 1. Request | The person says what they want | — |
 | 2. Preview | The AI makes an HTML preview, the person looks at it | The person approves it in the chat |
-| 3. Plan | The AI writes research and a plan | The akasha-reviewer agent passes the plan |
+| 3. Plan | The AI writes research and a plan | A second AI checks the plan until it passes |
 | 4. Build | The AI changes the code in its own work copy | The code cannot change before steps 2 and 3 |
 | 5. Check | The checks of the team run | Each required check passes |
-| 6. Land | The pull request gets ready, comes up to date, and merges | The checks pass on GitHub; a risky path also needs a reviewer, and the team rules an administrator |
+| 6. Land | The pull request gets ready, comes up to date, and merges | The checks pass on GitHub |
 
 The hooks hold the AI on these steps: they keep the message of the person for the approval, record the verdict of
-the reviewer agent, stop a change of the code before the gates, stop a change in the main checkout or in a work copy
+the second AI, stop a change of the code before the gates, stop a change in the main checkout or in a work copy
 outside Akasha, and stop a force push, a push to the default branch, and a merge by hand. They examine the repository
 that a tool acts on, also from a session in another folder. [How it works](docs/how-it-works.md) tells each detail.
 
@@ -117,10 +118,9 @@ Each person, from any team, works on their own task at the same time as the othe
 
 | Who | Does | Does not have to |
 |:--|:--|:--|
-| **Administrator** | Sets up the repository once: the rules in `akasha.toml`, the GitHub settings | Watch each task |
+| **Administrator** | Sets up the repository once: the rules in `akasha.toml`, the GitHub settings. If the team wants, also looks at changes of the few risky parts, for example the database | Watch each task |
 | **Each person** | Says what to make, approves the preview | Read code, judge technical risk, review plans |
-| **Reviewer** (optional) | Reviews a change of a risky path, for example the database | Review other changes |
-| **The AI** | Plans, builds, tests, lands, and tells the result | Ask technical questions |
+| **The AI** | Plans, has a second AI check the plan, builds, tests, lands, and tells the result | Ask technical questions |
 
 * * *
 
@@ -145,7 +145,7 @@ deployment and tells when the change is live.
 | An approval comes from a message of the person | Only the hook of the prompt keeps the message, in the session that showed the preview. The approval holds the exact words and the digest of the preview |
 | The code waits for the approval and a reviewed plan | The guard stops each edit of the code before both |
 | A change that failed the checks does not merge through Akasha | The landing waits for the required checks to really run and pass on GitHub |
-| A risky change merges only with a review of the version that merges | The approval of a reviewer covers the commit that they saw; a later change of a risky file needs a new review |
+| A change of a part that the team marked risky merges only after the administrator saw that version | The approval covers the commit that the administrator saw; a later change of a risky file needs a new look |
 | Each change can be found and undone | One squash commit with its summary and its records |
 
 | Does not guarantee | Know this |
