@@ -17,7 +17,7 @@ import re
 import time
 from pathlib import Path
 
-from akasha import board, checks, core, github, pr, repo, trace, work
+from akasha import board, checks, core, github, pr, quick, repo, trace, work
 from akasha.config import Team
 from akasha.flow import ask_help, drop, gate, rules, taken
 from akasha.task import SUMMARY, Task, load, record, records, save
@@ -40,6 +40,13 @@ def _ready(task: Task) -> str:
     missing = gate(task)
     if missing:
         return missing
+    if task.parts:
+        return (f"the parts {', '.join(part['name'] for part in task.parts)} did not join the task. Run `akasha join "
+                f"{task.id}`, then `akasha check {task.id}`")
+    if quick.is_quick(task):
+        missing = quick.missing(rules(repo.main_root(Path(task.workcopy)) or Path(task.workcopy)), task)
+        if missing:
+            return missing
     if _moved(task):
         return f"the checks did not pass on the current work. Run `akasha check {task.id}` first"
     if not record(task, SUMMARY).is_file():

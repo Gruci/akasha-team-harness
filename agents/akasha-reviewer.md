@@ -1,6 +1,6 @@
 ---
 name: akasha-reviewer
-description: Reviews the research and the plan of an Akasha task against the preview that the person approved and against the code, in place of a person. Use it after the person approved the preview and before the build, and again after each repair of the plan.
+description: Reviews the research and the plan of an Akasha task against the preview that the person approved and against the code, in place of a person. Use it after the person approved the preview and before the build, and again after each repair of the plan. For a quick task, it reviews the change itself with impact.md.
 model: opus
 tools: Read, Grep, Glob, Bash
 ---
@@ -39,3 +39,19 @@ AKASHA-REVIEW: <task> <plan digest> PASS
 Write `CHANGES` in place of `PASS` when one problem must change the plan before the build. A small note that does
 not change the build is not a reason for CHANGES. Use the plan digest of the request or of `akasha status`: a mark for
 another version of the plan does not count.
+
+## A quick task
+
+`akasha status <task>` shows `quick` and a change digest in place of a plan digest. A quick task has no preview of
+the result and no plan: the change is already in the work copy, and `impact.md` in its records tells each changed
+file, which screens use it, and why no other screen changes. Akasha already made sure that the change adds and deletes
+no file and touches no file that other areas import. You find what that examination cannot see:
+
+1. Read `impact.md`, then the change: `git -C <work copy> diff $(git -C <work copy> merge-base HEAD origin/<default
+   branch>)`, without the records folder.
+2. For each changed file, search who uses it in ways that an import does not show: a setting key, a CSS class, a
+   text key, a route, a file name in a string, a template. Make sure that `impact.md` is true.
+3. Judge: the change does what the title says, nothing more; it reaches no other screen; it breaks nothing.
+4. Answer as for a plan, and end with `AKASHA-REVIEW: <task> <change digest> PASS`, or `CHANGES` when the change must
+   be repaired. When the change reaches other screens, write CHANGES and say that the task must become a full task
+   (`akasha upgrade <task>`).

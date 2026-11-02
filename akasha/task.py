@@ -18,7 +18,7 @@ from akasha.repo import write_whole
 
 STATUSES = ("preview", "approved", "landing", "merged", "closed")
 TASK_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,59}")
-LOCAL_ONLY = ("workcopy", "shown_in", "heard")  # this computer and this session only. They never go on GitHub
+LOCAL_ONLY = ("workcopy", "shown_in", "heard", "parts")  # this computer and this session only: never on GitHub
 BLOCK = re.compile(r"<!-- akasha:task (\{.*?\}) -->", re.S)
 PREVIEW, PLAN, RESEARCH, SUMMARY = "preview.html", "plan.md", "research.md", "summary.md"
 
@@ -27,6 +27,7 @@ PREVIEW, PLAN, RESEARCH, SUMMARY = "preview.html", "plan.md", "research.md", "su
 class Task:
     id: str
     title: str
+    kind: str = "full"              # "full", or "quick": a small change without a preview and a plan (quick.py)
     branch: str = ""
     base: str = ""                  # the commit of the default branch where the work copy started
     scope: list[str] = field(default_factory=list)          # file patterns that the task plans to change
@@ -45,6 +46,9 @@ class Task:
     stats: dict = field(default_factory=dict)               # for the retro: failed checks by name, review rounds
     records_dir: str = RECORDS_DIR  # the folder of the records of the tasks, as [work] records was at the start
     workcopy: str = ""
+    # The parts of the work for workers at the same time (`akasha split`): name, branch, scope, workcopy. Each part
+    # is a work copy on this computer only, on a local branch from the branch of the task; `akasha join` merges it
+    parts: list[dict] = field(default_factory=list)
 
 
 def new_id(title: str, name: str = "") -> str:

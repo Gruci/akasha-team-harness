@@ -3,7 +3,10 @@
 The agent engine writes research.md and plan.md, then asks the akasha-reviewer agent to review them. The reviewer
 ends its answer with a mark: `AKASHA-REVIEW: <task> <plan digest> PASS` or `... CHANGES`. When the reviewer stops,
 the hook (SubagentStop) reads the mark and records the verdict for that version of the plan. A change of the plan
-after a pass needs a new review."""
+after a pass needs a new review.
+
+A quick task has no plan: the reviewer reviews its change with impact.md, and the mark holds the digest of the change
+(quick.py)."""
 
 from __future__ import annotations
 
@@ -12,6 +15,7 @@ import re
 import time
 from pathlib import Path
 
+from akasha import quick
 from akasha.task import PLAN, Task, digest, load, record, save
 
 MARK = re.compile(r"AKASHA-REVIEW:\s*([a-z0-9][a-z0-9-]*)\s+([0-9a-f]{12})\s+(PASS|CHANGES)\b", re.I)
@@ -20,6 +24,11 @@ REVIEWER = "akasha-reviewer"
 
 def plan_digest(task: Task) -> str:
     return digest(record(task, PLAN))
+
+
+def subject_digest(task: Task) -> str:
+    """The digest that a review mark names: of the plan, or of the change of a quick task."""
+    return quick.digest(task) if quick.is_quick(task) else plan_digest(task)
 
 
 def passed(task: Task) -> bool:
@@ -79,9 +88,10 @@ def on_subagent_stop(root: Path, payload: dict, agent: str = "claude") -> str:
             task = load(root, task_id)
         except LookupError:
             continue
-        if sha != plan_digest(task):
-            told.append(f"the review mark of {task_id} is for another version of the plan")
+        if sha != subject_digest(task):
+            what = "change" if quick.is_quick(task) else "plan"
+            told.append(f"the review mark of {task_id} is for another version of the {what}")
             continue
         note(root, task, verdict, sha, "reviewer")
-        told.append(f"the reviewer gave {verdict} to the plan of {task_id}")
+        told.append(f"the reviewer gave {verdict} to the {'change' if quick.is_quick(task) else 'plan'} of {task_id}")
     return "; ".join(told)

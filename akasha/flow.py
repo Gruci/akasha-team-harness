@@ -9,12 +9,14 @@ import time
 import webbrowser
 from pathlib import Path
 
-from akasha import approval, board, checks, config, core, pr, repo, review, trace, work
+from akasha import approval, board, checks, config, core, pr, quick, repo, review, trace, work
 from akasha.config import Team
-from akasha.task import PLAN, PREVIEW, SUMMARY, Task, all_local, digest, forget, load, new_id, record, records, save
+from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id, record,
+                         records, save)
 
 STUCK = 3                      # failed checks in a row before Akasha suggests to ask an administrator
 DECISIONS = 'id="akasha-decisions"'       # the box of the questions and the answers of the person, in the preview
+QUICK = "quick"                            # the check that the change of a quick task is a quick change
 
 
 def rules(root: Path) -> Team:
@@ -23,7 +25,10 @@ def rules(root: Path) -> Team:
 
 
 def gate(task: Task) -> str:
-    """What the task still needs before its code can change, or "" when it is ready to build."""
+    """What the task still needs before its code can change, or "" when it is ready to build. A quick task changes
+    its code first: its review and its approval come after the change (quick.missing)."""
+    if quick.is_quick(task):
+        return ""
     if task.status == "preview" or not task.approval:
         return (f"The person did not approve its preview yet. Write the preview at {records(task)}/{PREVIEW}, "
                 f"show it with `akasha preview {task.id}`, and ask the person in the chat. When their own message "
@@ -45,6 +50,8 @@ def next_step(task: Task) -> str:
         return f"The task is {task.status}."
     if task.status == "landing":
         return f"Wait for the merge: `akasha land {task.id} --wait 540` (shell timeout 600000 ms)."
+    if quick.is_quick(task):
+        return _quick_step(task)
     if task.status == "preview":
         if not record(task, PREVIEW).is_file():
             return (f"Ask the person what they want until it is clear. Then write the preview (an HTML mockup of "
@@ -58,9 +65,38 @@ def next_step(task: Task) -> str:
     missing = gate(task)
     if missing:
         return missing
+    if task.parts:
+        listed = ", ".join(f"{part['name']} ({part['workcopy']})" for part in task.parts)
+        return (f"The workers build in the parts: {listed}. When each one is done, run `akasha join {task.id}`, then "
+                f"`akasha check {task.id}`.")
     tree = Path(task.workcopy)
     if work.dirty(tree) or task.checks.get("commit") != work.head(tree):
         return f"Build the change in {task.workcopy}, then run `akasha check {task.id}`."
+    if not record(task, SUMMARY).is_file():
+        return (f"Write {records(task)}/{SUMMARY} (why, what changed, how to undo it), run `akasha check "
+                f"{task.id}` again, then `akasha land {task.id}`.")
+    return f"Land the task: `akasha land {task.id} --wait 540` (shell timeout 600000 ms)."
+
+
+def _quick_step(task: Task) -> str:
+    tree = Path(task.workcopy)
+    if not quick.changes(tree, quick.base(tree), task.records_dir):
+        return (f"Make the change in {task.workcopy}. A quick change only changes existing files that no other area "
+                "uses.")
+    now = quick.digest(task)
+    if not now:
+        return (f"Write {records(task)}/{quick.IMPACT}: each changed file, which screens use it, and why no other "
+                "screen changes.")
+    if task.review.get("verdict") != "PASS" or task.review.get("plan_sha") != now:
+        return (f"Ask the akasha-reviewer agent to review the change of the quick task {task.id} (change digest "
+                f"{now}), and repair the change until it passes.")
+    if not task.approval or task.approval.get("change_sha") != now:
+        if task.status == "preview" and task.shown_at and quick.shown_change(task) == now:
+            return (f"Wait for the message of the person. When it approves the change, run `akasha approve "
+                    f"{task.id}`; else change it as the person tells.")
+        return f"Show the change to the person: `akasha preview {task.id}`, and ask in the chat."
+    if work.dirty(tree) or task.checks.get("commit") != work.head(tree):
+        return f"Run `akasha check {task.id}`."
     if not record(task, SUMMARY).is_file():
         return (f"Write {records(task)}/{SUMMARY} (why, what changed, how to undo it), run `akasha check "
                 f"{task.id}` again, then `akasha land {task.id}`.")
@@ -79,15 +115,16 @@ def _name_taken(root: Path, task: Task, branch: str, entries: list[board.Entry],
                        or repo.git(root, "cat-file", "-e", f"origin/{branch}:{records(task)}").returncode == 0)
 
 
-def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = ()) -> tuple[Task, list[str]]:
+def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
+          fast: bool = False) -> tuple[Task, list[str]]:
     """Record a new task: a work copy on a new branch from the latest default branch, and a draft pull request on
-    the board. Return the task and the other tasks that plan the same files."""
+    the board. Return the task and the other tasks that plan the same files. `fast` makes a quick task."""
     team, branch = rules(root), repo.default_branch(root)
     online = board.available(root)
     if online and repo.fetch(root, branch).returncode:
         raise RuntimeError(f"git cannot fetch {branch} from origin. Examine the network and the GitHub login of git")
     task = Task(id=new_id(title, name), title=title.strip(), scope=[config.pattern(item) for item in scope],
-                records_dir=team.records_dir)
+                records_dir=team.records_dir, kind="quick" if fast else "full")
     task.branch = team.branch_prefix + task.id
     entries = board.read(root) if online else []
     if entries is None:
@@ -106,8 +143,12 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = ()) -
     if locked:
         notes.append(f"admin only — the task plans {', '.join(locked[:3])}, which only an administrator changes. "
                      f"Plan without it, or ask an administrator: `akasha help {task.id} \"<what the task needs>\"`")
-    planned = {} if core.exempt(team, task.owner) else core.planned(team, path, task.scope)
-    if planned:
+    # A quick task holds for each person: the core of an administrator is no quick change either
+    planned = core.planned(team, path, task.scope) if fast or not core.exempt(team, task.owner) else {}
+    if planned and fast:
+        notes.append(f"not quick — {', '.join(f'{name} ({why})' for name, why in planned.items())}. Other areas use "
+                     f"these files: run `akasha upgrade {task.id}` for a full task with a preview and a plan")
+    elif planned:
         notes.append(f"core — {', '.join(f'{name} ({why})' for name, why in planned.items())}. Add new code beside "
                      f"these files; a change of their existing lines waits for an approval of an administrator")
     if online:
@@ -150,6 +191,24 @@ def _simple_preview(title: str, text: str) -> str:
             f'<h1>{html.escape(title)}</h1><section id="akasha-decisions">{lines}</section></body></html>\n')
 
 
+def _quick_preview(root: Path, task: Task) -> None:
+    """Make the preview of a quick task from its change. The change must be a quick one, with impact.md and a review
+    that passed."""
+    tree = Path(task.workcopy)
+    found = quick.problems(rules(root), tree, quick.base(tree))
+    if found:
+        raise ValueError("this is not a quick change: " + "; ".join(found[:5]) + f". Run `akasha upgrade {task.id}`")
+    now = quick.digest(task)
+    if not now:
+        raise ValueError(f"write {records(task)}/{quick.IMPACT} first: each changed file, which screens use it, and "
+                         "why no other screen changes")
+    if task.review.get("verdict") != "PASS" or task.review.get("plan_sha") != now:
+        raise ValueError(f"the akasha-reviewer agent did not pass this version of the change (digest {now}) yet")
+    path = record(task, PREVIEW)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(quick.preview_text(task), encoding="utf-8")
+
+
 def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tuple[Task, str]:
     """Show the preview to the person and wait for the approval. A preview that changed after an approval needs a new
     approval. `text` makes a plain preview for a change without a screen, when the file is not there."""
@@ -158,6 +217,8 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
     if holder:
         raise ValueError(f"@{holder} holds task {task.id} now. Run `akasha tidy` to remove the copy on this computer")
     path = record(task, PREVIEW)
+    if quick.is_quick(task):
+        _quick_preview(root, task)
     if text and not path.is_file():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_simple_preview(task.title, text), encoding="utf-8")
@@ -193,11 +254,22 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
 def approve(root: Path, task_id: str) -> tuple[Task, str]:
     """Record the approval of the person from their last message after the preview, in this session."""
     task = load(root, task_id)
+    change = quick.digest(task) if quick.is_quick(task) else ""
+    if quick.is_quick(task) and (not change or quick.shown_change(task) != change):
+        raise ValueError(f"the change moved after the person saw it. Show it again with `akasha preview {task.id}` "
+                         "and ask again")
     problem = approval.approve(root, task, approval.session(root))
     if problem:
         raise ValueError(problem)
+    if change:
+        task.approval["change_sha"] = change
+        save(root, task)
     if board.available(root) and task.number:
         pr.update(root, task)
+    if change:
+        return task, (f"Recorded the approval of {task.approval['by']}: \"{task.approval['words']}\". Next, without "
+                      f"stopping: run `akasha check {task.id}`, write summary.md, check again, and run `akasha land`. "
+                      "A change of the code after now needs a new review and a new approval.")
     return task, (f"Recorded the approval of {task.approval['by']}: \"{task.approval['words']}\". Do not ask the person "
                   "anything more unless the plan must change what they approved. Next, without stopping: write "
                   "research.md and plan.md in the records folder of the task, ask the akasha-reviewer agent to review "
@@ -210,11 +282,11 @@ def self_review(root: Path, task_id: str, verdict: str) -> Task:
     if os.environ.get("CLAUDECODE") == "1":
         raise ValueError("Claude Code has the akasha-reviewer agent: ask it to review the plan")
     task = load(root, task_id)
-    sha = review.plan_digest(task)
+    sha = review.subject_digest(task)
     if not sha:
-        raise ValueError(f"write the plan first: {record(task, PLAN)}")
+        raise ValueError(f"write {record(task, quick.IMPACT if quick.is_quick(task) else PLAN)} first")
     if task.review.get("source") == "reviewer" and task.review.get("plan_sha") == sha:
-        raise ValueError("the reviewer agent already judged this version of the plan: repair the plan")
+        raise ValueError("the reviewer agent already judged this version: repair it")
     review.note(root, task, verdict, sha, "self")
     return task
 
@@ -231,6 +303,11 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
     result = checks.run(team, tree, changed, only)
     me = repo.me(root, kept=True)
     locked = checks.touches(changed, checks.locked(team, me))
+    if quick.is_quick(task) and not only:
+        found = quick.problems(team, tree, base)
+        result.status[QUICK] = "FAIL" if found else "PASS"
+        result.details[QUICK] = ("this is not a quick change: " + "; ".join(found[:5]) + f". Run `akasha upgrade "
+                                 f"{task.id}` for a full task with a preview and a plan") if found else ""
     if locked:
         result.status[checks.ADMIN_ONLY] = "FAIL"
         result.details[checks.ADMIN_ONLY] = (
@@ -307,6 +384,11 @@ def drop(root: Path, task: Task, force: bool = False, server: str = "") -> str:
     copy, or when git cannot remove it: `akasha tidy` at the next session start, or `akasha cancel <task> --force`,
     ends them."""
     tree = Path(task.workcopy)
+    if any(repo.inside(Path.cwd(), Path(part["workcopy"])) for part in task.parts):
+        return "the session works in a part of the task: leave that folder, then run `akasha tidy`"
+    problem = _drop_parts(root, task, force and not server)
+    if problem:
+        return problem
     if task.workcopy and tree.is_dir():
         if repo.inside(Path.cwd(), tree):
             return f"the session works in {tree}: leave that folder, then run `akasha tidy`"
@@ -361,6 +443,124 @@ def resume(root: Path, ref: str, force: bool = False) -> tuple[Task, list[str]]:
     return task, notes
 
 
+def upgrade(root: Path, task_id: str) -> Task:
+    """Make a quick task a full task: the person approves a preview of the result, and the reviewer passes a plan.
+    The change so far stays in the work copy."""
+    task = load(root, task_id)
+    if not quick.is_quick(task):
+        raise ValueError(f"task {task.id} is a full task already")
+    if task.status not in ("preview", "approved"):
+        raise ValueError(f"task {task.id} is {task.status}: it cannot change now")
+    task.kind, task.status = "full", "preview"
+    task.approval, task.review, task.checks = {}, {}, {}
+    task.preview_sha, task.shown_at, task.shown_in, task.heard = "", 0.0, "", {}
+    record(task, PREVIEW).unlink(missing_ok=True)               # Akasha made it from the change: not a preview
+    save(root, task)
+    trace.note(root, "upgraded", task=task.id)
+    if board.available(root) and task.number:
+        pr.update(root, task)
+    return task
+
+
+def _overlap(one: list[str], other: list[str], files: list[str]) -> bool:
+    """True when two scopes can hold the same file: a file of the work copy matches both, or a pattern matches the
+    other pattern (web/** and web/new/**)."""
+    if any(checks.matches(a, b) or checks.matches(b, a) for a in one for b in other):
+        return True
+    return any(any(checks.matches(path, a) for a in one) and any(checks.matches(path, b) for b in other)
+               for path in files)
+
+
+def split(root: Path, task_id: str, name: str, scope: tuple[str, ...]) -> tuple[dict, list[str]]:
+    """Make a part of the task for a worker that builds at the same time as others: a work copy on this computer, on a
+    local branch from the branch of the task. The part changes only the files of its scope, and no two parts have the
+    same file. The person approved one preview and the reviewer passed one plan for the whole task."""
+    team, task = rules(root), load(root, task_id)
+    if quick.is_quick(task):
+        raise ValueError("a quick task is small: build it in its work copy, without parts")
+    if task.status != "approved":
+        raise ValueError(f"task {task.id} is {task.status}: only a task that is ready to build has parts")
+    missing = gate(task)
+    if missing:
+        raise ValueError(missing)
+    name = name.strip().lower()
+    if not TASK_ID.fullmatch(name):
+        raise ValueError(f"the part name {name!r} can have only a to z, 0 to 9, and -, up to 60 characters")
+    if any(part["name"] == name for part in task.parts):
+        raise ValueError(f"task {task.id} already has a part {name}")
+    patterns = [config.pattern(item) for item in scope if item.strip()]
+    if not patterns:
+        raise ValueError("give the files of the part with --scope, for example --scope \"server/**\": the parts must "
+                         "not change the same files")
+    tree = Path(task.workcopy)
+    files = repo.names(tree, "ls-files")
+    for part in task.parts:
+        if _overlap(patterns, part["scope"], files):
+            raise ValueError(f"the scope {', '.join(patterns)} has files of the part {part['name']} "
+                             f"({', '.join(part['scope'])}). Give each part other files")
+    branch, path = f"{task.branch}--{name}", root / team.work_dir / f"{task.id}--{name}"
+    if path.exists() or repo.git(root, "rev-parse", "-q", "--verify", f"refs/heads/{branch}").returncode == 0:
+        raise ValueError(f"{path} or the branch {branch} is in use. Give another name")
+    work.commit(tree, f"{task.title} (before the parts)")       # the parts start from each change of the task so far
+    work.create(root, path, branch, work.head(tree))
+    part = {"name": name, "branch": branch, "scope": patterns, "workcopy": str(path)}
+    task.parts.append(part)
+    save(root, task)
+    trace.note(root, "split", task=task.id, part=name)
+    return part, _prepare(team, path)
+
+
+def join(root: Path, task_id: str, keep: bool = False) -> list[str]:
+    """Merge each part into the work copy of the task, then remove the part (`keep` leaves it). A conflict stops the
+    join with the files, and the work copy stays as it was before that part."""
+    task = load(root, task_id)
+    if not task.parts:
+        raise ValueError(f"task {task.id} has no parts")
+    tree, told = Path(task.workcopy), []
+    work.commit(tree, task.title)
+    for part in list(task.parts):
+        copy = Path(part["workcopy"])
+        if copy.is_dir():
+            work.commit(copy, f"{task.title} — {part['name']}")
+        merged = repo.git(tree, "merge", "--no-ff", "--no-edit", "-m", f"akasha: join {part['name']}", part["branch"])
+        if merged.returncode:
+            files = repo.names(tree, "diff", "--name-only", "--diff-filter=U")
+            repo.git(tree, "merge", "--abort")
+            save(root, task)
+            trace.note(root, "join_conflict", task=task.id, part=part["name"], files=files[:10])
+            raise ValueError(f"the part {part['name']} conflicts with the work copy of the task in "
+                             f"{', '.join(files) or 'some files'}. Repair it in {copy} (merge the branch "
+                             f"{task.branch} there), then run `akasha join {task.id}` again"
+                             + (f". Joined before it: {', '.join(told)}" if told else ""))
+        told.append(part["name"])
+        task.parts = [item for item in task.parts if item["name"] != part["name"]]
+        if keep:
+            task.parts.append(part)
+        else:
+            problem = work.remove(root, copy, part["branch"])
+            if problem:
+                told[-1] += f" ({problem})"
+        save(root, task)
+        trace.note(root, "joined", task=task.id, part=part["name"])
+    return told
+
+
+def _drop_parts(root: Path, task: Task, force: bool) -> str:
+    """Remove the parts of the task. A part with work that did not join stays, unless `force`."""
+    for part in list(task.parts):
+        copy = Path(part["workcopy"])
+        joined = copy.is_dir() and not work.dirty(copy) and work.contains(copy, work.head(Path(task.workcopy)))
+        if not force and copy.is_dir() and not joined:
+            return (f"the part {part['name']} has work that did not join the task: run `akasha join {task.id}`, or "
+                    f"drop it with `akasha cancel {task.id} --force`")
+        problem = work.remove(root, copy, part["branch"], force=True)
+        if problem:
+            return problem
+        task.parts = [item for item in task.parts if item["name"] != part["name"]]
+        save(root, task)
+    return ""
+
+
 def _outside(task: Task) -> None:
     if task.workcopy and repo.inside(Path.cwd(), Path(task.workcopy)):
         raise ValueError(f"the session works in {task.workcopy}: leave that folder first (ExitWorktree, or cd to the "
@@ -371,6 +571,8 @@ def handoff(root: Path, task_id: str) -> str:
     """Save the work on the server and free the task, so that another person or computer continues it."""
     task = load(root, task_id)
     _outside(task)
+    if task.parts:
+        raise ValueError(f"task {task.id} has parts on this computer: run `akasha join {task.id}` first")
     holder = taken(root, task)
     if holder:
         raise ValueError(f"@{holder} holds task {task.id} now. Run `akasha tidy` to remove the copy on this computer")

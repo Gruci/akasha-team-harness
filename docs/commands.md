@@ -8,13 +8,16 @@ or `akasha <command>`.
 |:--|:--|
 | `setup` | Write the files of Akasha into the checkout. `--apply` also changes the GitHub settings (an administrator) |
 | `doctor` | What this person needs to work in the repository, with the fix of each problem |
-| `start "<title>" [--name <name>] [--scope <patterns>]` | Start a task: a work copy on a new branch, and a draft pull request on the board |
+| `start "<title>" [--name <name>] [--scope <patterns>] [--quick]` | Start a task: a work copy on a new branch, and a draft pull request on the board. `--quick` starts a quick task: a small change of existing files that no other area uses, without a preview of the result and a plan |
+| `split <task> <part> --scope <patterns>` | Make a part of a task that is ready to build, for a worker at the same time as others: a work copy `<work folder>/<task>--<part>` on a local branch from the branch of the task. The part changes only the files of its scope, and no two parts have the same files |
+| `join <task> [--keep]` | Merge each part into the work copy of the task, then remove the part. A conflict stops with the files. The landing waits until each part joined |
+| `upgrade <task>` | Make a quick task a full task: the person approves a preview, and the reviewer passes a plan. The change so far stays |
 | `preview <task> [--text <text>] [--no-open]` | Show the preview to the person and wait for the approval |
 | `approve <task>` | Record the approval from the last message of the person after the preview, in this session |
 | `review <task> --verdict pass\|changes` | Record a self-review, only where the akasha-reviewer agent does not exist (not in Claude Code) |
 | `check <task> [--only <checks>]` | Run the checks of the team. When each passes, save the work and push it. With `--only`, run only those checks and save nothing: run `check <task>` before `land` |
 | `land <task> [--wait <seconds>]` | Make the pull request ready and merge it when the checks pass, then follow the deployment of `[deploy]` and run its `verify`. Exit code 3: still waiting (WAITING, DEPLOYING) |
-| `status [<task>]` | The tasks on this computer, the records folder, the plan digest, and the next step |
+| `status [<task>]` | The tasks on this computer, the records folder, the plan digest (the change digest of a quick task), and the next step |
 | `board` | The open tasks of the team |
 | `resume <task or #number> [--force]` | Continue a task of the board on this computer. It runs `[checks] setup` in the new work copy |
 | `handoff <task>` | Save the work on the server and free the task |
@@ -32,5 +35,5 @@ is live, but the command of `[deploy] verify` failed.
 
 The workflows run `check --ci` (the check of Akasha) and `server watch` (the watch). The hooks run `hook --event`
 through `hook.sh`, which finds Python 3.11 or higher. A shell line that is exactly one of these commands with the
-launcher of the plugin runs without a permission prompt: `start`, `preview`, `approve`, `status`, `check`, `land`,
+launcher of the plugin runs without a permission prompt: `start`, `upgrade`, `split`, `join`, `preview`, `approve`, `status`, `check`, `land`,
 `board`, `help`, `ask`, `handoff`, `resume` (without `--force`), `tidy`, `doctor`, `version`, `retro`.

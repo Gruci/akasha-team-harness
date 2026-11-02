@@ -89,6 +89,18 @@ approves the pull request on GitHub. Akasha never stops the edit. The administra
 Akasha finds the imports of Python, JavaScript, and TypeScript. It does not see a call of an API by its address, a
 table name in the text of SQL, or another language: put such files into `paths`.
 
+## `[quick]`
+
+A quick task changes only existing files that no other area uses, for example a typo or one setting (see "A quick
+task" in [how it works](how-it-works.md)). Akasha knows the users of code of Python, JavaScript, and TypeScript from
+the imports, and text for people (`*.md`, `*.txt`, `*.rst`, `*.adoc`) has none. It cannot tell who uses another kind
+of file, for example a CSS file, a template, or a settings file: a quick task changes such a file only when it matches
+`paths`.
+
+| Key | Value |
+|:--|:--|
+| `paths` | File patterns of files other than code and text that a quick task can change, for example `["config/messages/*.json", "src/pages/*/*.css"]`. Do not put files that many screens read here, for example a global style sheet |
+
 ## `[checks]`
 
 | Key | Value |
@@ -117,7 +129,7 @@ file in the folder.
 
 | Key | Value |
 |:--|:--|
-| `required` | The names of the required checks of the own CI of the team, as GitHub shows them. With it, Akasha installs no check of its own. Each named check must really run on a pull request that is ready: a check that only skips never passes for Akasha |
+| `required` | The names of the required checks of the own CI of the team, as GitHub shows them. With it, Akasha installs no check of its own. Each named check must really run on a pull request that is ready: a check that only skips never passes for Akasha. The CI of the team then runs `python -m akasha check --ci --config <akasha.toml of the base branch> --base origin/<base branch>` too, for the quick check of quick tasks on the server |
 | `runs-on` | The machine of the check of Akasha: a label, or a list of labels of a runner of the team. The default is `ubuntu-latest` |
 | `python` | The Python of the check of Akasha, as text, 3.11 or higher. The default is `"3.12"` |
 
