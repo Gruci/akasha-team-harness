@@ -48,7 +48,8 @@ The approval of the preview is the only decision of the person, so Akasha takes 
   it, within a day. The hook also runs for prompts that the person did not type, for example the notice of a
   background task: Akasha does not keep those. Where the agent engine gives no session (Codex), the work copy of the
   session decides, and only when one preview waits.
-- A choice in a tool such as AskUserQuestion is not a message of the person: the AI asks in plain chat.
+- A choice in a tool such as AskUserQuestion is not a message of the person: the AI asks for the approval in plain
+  chat. The questions before the preview (who uses it, where, what) can use such a tool: they are not the approval.
 - At the top of the preview, a box (`<section id="akasha-decisions">`) shows each question that the AI asked and the
   answer of the person. `akasha preview` refuses a preview without it. The digest covers the box, so the approval is
   also the record of the answers.
@@ -71,6 +72,22 @@ Another AI reviews the plan, in place of a person who reads it.
   `akasha review <task> --verdict pass`. The pull request tells that it was a self-review. Akasha refuses it in
   Claude Code, and a self-review never replaces a CHANGES of the akasha-reviewer agent for the same plan.
 
+## A quick task
+
+A typo or one setting needs no preview of the result and no plan. A quick task (`akasha start --quick`) skips them,
+and keeps the review of another AI, the approval of the person, the checks, and the landing.
+
+| Part | How it works |
+|:--|:--|
+| What is quick | Akasha decides from what the change touches, not from its size. A quick change only changes existing files: it adds and deletes no file, so a new screen never comes in without a preview. No changed file is a core file (`[core]`): one line of a button that many screens use is not quick, also a new line. It touches no file that only an administrator changes. A file other than code and text matches `[quick] paths` |
+| The same for each person | The administrators and the people of `[team] own_procedure` are free of the core approval, not of these rules: when they need more, they make a full task |
+| The order | The AI makes the change, then writes `impact.md` in the records: each changed file, which screens use it, and why no other screen changes |
+| The review | The akasha-reviewer agent reviews the change with `impact.md`, and finds the users that an import does not show (a setting key, a CSS class, a text key). Its mark holds the digest of the change and of `impact.md` |
+| The approval | `akasha preview` makes the preview from the change itself, and the person approves it in the chat as for each task. The approval holds the digest of the change |
+| A later change | A change of the code after the review or the approval needs both again. The landing stops until they hold for the current change |
+| Not quick | `akasha check` fails the check `quick`, and the landing stops. `akasha upgrade <task>` makes it a full task: the change stays, and the person approves a preview first |
+| On GitHub | The server check runs the same rules for each pull request whose records have `impact.md`, and fails the check `quick` when the change is not a quick change. A team with its own CI runs `akasha check --ci` in it for this (`[ci] required`) |
+
 ## What Akasha stops
 
 | Before | Akasha stops | Why |
@@ -80,7 +97,7 @@ Another AI reviews the plan, in place of a person who reads it.
 | An edit | A change of `.env` and of `.akasha/state` | Secret values, and the records of Akasha |
 | An edit | In a teammate's task, a change of `akasha.toml`, `.github/`, CODEOWNERS, or a path of `[risk]` | The administrators maintain them. The AI asks with `akasha help`, and the check `admin_only` also fails on such a change |
 | A command | A force push, a push to the default branch (also a plain `git push` on it), a delete of the default branch | They go around the pull request, or cannot be undone |
-| A command | `git worktree add` | Akasha makes the work copy of each task |
+| A command | `git worktree add` | Akasha makes the work copy of each task, and of each part of a task (`akasha split`) |
 | A command | `gh pr merge` and an approval of a pull request by the agent engine | Akasha lands each task, and needs no approval of a pull request |
 | A command | A recursive delete outside the project | It deletes what Akasha cannot restore |
 | After an edit | A secret key in the file | It must not go into git |
@@ -186,6 +203,21 @@ Each person, from any team, holds their own tasks. Any number of tasks can be op
 | Another person took a task with `akasha resume --force` | The old computer stops pushing, landing, and closing it, and removes its copy at the next session start |
 | A task name is already in use | The start refuses the name: on the board, on the server, and in the records of an earlier task |
 | A person is stuck | `akasha help <task> "<text>"` asks the administrators on the pull request |
+
+## Workers at the same time: the parts of a task
+
+A large task can go to several workers (AI agents) at the same time, for example one for the server and one for the
+screen. The person approves one preview and the reviewer passes one plan for the whole task; the parts share them.
+
+| Part | How it works |
+|:--|:--|
+| When | After the approval and the review: `akasha split <task> <part> --scope <patterns>` refuses a task that is not ready to build, and a quick task |
+| The work copy | `<work folder>/<task>--<part>`, on the local branch `<branch of the task>--<part>` from the work of the task so far. It never goes to GitHub and never shows on the board |
+| The files | Each part has a scope, and no two parts have the same files: a scope that holds a file or a pattern of another part is refused. An edit outside the scope stops, so that the parts do not conflict. The records of the task change only in its own work copy |
+| The rules | The rules of the task hold in each part: the files of the administrators, and the build only after the approval and the review |
+| The join | `akasha join <task>` saves each part, merges it into the work copy of the task, and removes it. A conflict with the work copy of the task stops the join with the files, and the work copy stays as before that part |
+| The landing | Waits until each part joined, then runs as for each task: one pull request |
+| Cancel and hand off | `akasha cancel` removes the parts; a part with work that did not join needs `--force`. `akasha handoff` needs the join first, because the parts are only on this computer |
 
 ## Where Akasha keeps its data
 

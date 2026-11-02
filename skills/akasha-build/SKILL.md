@@ -15,8 +15,8 @@ a task of yours, do its next step first.
 
 ## 1. Understand the request
 
-1. Ask until the request is clear. Ask one question at a time, in simple words, and only what the person did not
-   say yet. Never ask how to build it. These questions apply to each request:
+1. Ask until the request is clear, in simple words, and only what the person did not say yet. Never ask how to
+   build it. These seven questions apply to each request, in this order:
    - Who uses it? Must some people not see it?
    - Where do they open it (which screen or menu)?
    - What must they see or do? Ask for an example.
@@ -24,6 +24,13 @@ a task of yours, do its next step first.
    - What changes in what exists now, and what stays the same?
    - What shows when there is no data, or when an entry is wrong?
    - When is it done? What will the person check?
+
+   If the agent app has a choice tool (Claude Code: `AskUserQuestion`), ask these questions with it: up to four
+   questions in one call, each with two to four options that fit the request, in the words of the person. Put the
+   option that you think fits best first. Never make an option that only leads the person to your own idea: the tool
+   always lets the person type another answer. Without a choice tool, ask one question at a time in the chat.
+   The choice tool is only for these questions. The approval of the preview (step 2) is always a message that the
+   person types.
 2. Run `akasha board`. If another open task changes the same screen or feature, tell the person who holds it.
 3. Read the files of `[guides] build`: they can name shared files that many tasks change, for example a list of
    routes or menus. Find the files that the change will probably touch, without those shared files. Run
@@ -31,6 +38,28 @@ a task of yours, do its next step first.
    timeout of 600000 ms. It makes the work copy, and a draft pull request on the board. When Akasha shows an overlap
    with another task, tell the person, and continue unless they want to wait. When it says that the plan needs a
    review, tell the person who will review. If the name is in use, give another name.
+
+## A quick task: a typo or one setting
+
+A quick task has no preview of the result and no plan. Use it only for a small change of existing files that no other
+area uses, for example a typo, a text, or one setting. Akasha decides from what the change touches, not from its
+size: one line of a button that many screens use is not a quick change, and a quick change adds and deletes no file.
+Skip the questions of step 1 that the request already answers.
+
+1. `akasha start "<title in the words of the person>" --name <short-name> --scope <file patterns> --quick`. When it
+   says "not quick", run `akasha upgrade <task>` and follow the full steps from step 1.
+2. Make the change in the work copy (step 4.1 tells how to move into it).
+3. Write `impact.md` in the records folder, in the language of the person: each changed file, which screens use it
+   (search for its imports, setting keys, CSS classes, and text keys), and why no other screen changes.
+4. Run `akasha status <task>` for the change digest. Ask the akasha-reviewer agent: "Review the change of the Akasha
+   quick task <task>. Work copy: <path>. Change digest: <digest>. Akasha command: <the command of the session start
+   notice>." Repair until the mark is PASS. When the reviewer says that the change reaches other screens, run
+   `akasha upgrade <task>`.
+5. Run `akasha preview <task>`: Akasha makes the preview from the change. Tell the person in a few short lines what
+   changes, and ask in plain chat whether it is good. As in step 2, only a message that the person types approves it:
+   then run `akasha approve <task>`.
+6. Continue with step 4.3 (check) and step 5 (land). A change of the code after the review or the approval needs both
+   again. When a check named `quick` fails, the change is not a quick change: run `akasha upgrade <task>`.
 
 ## 2. The preview: the decision of the person
 
@@ -43,7 +72,8 @@ a task of yours, do its next step first.
      result before and after with sample values.
    - At the top, three short lines: what changes, what the person will see, and what stays the same.
    - At the very top, a box `<section id="akasha-decisions">` titled in the language of the person (for example
-     "정한 것"): each question that you asked and the answer of the person, in their words. Akasha refuses a preview
+     "정한 것"): each question that you asked and the answer of the person, in their words (for a choice, the option
+     that they chose, or the words that they typed). Akasha refuses a preview
      without it. The approval of the preview is the record of these answers.
 3. Run `akasha preview <task>`. It opens the preview in the browser. Tell the person what they see in a few short
    lines, then ask in plain chat, in the language of the person: "Shall I build it like this, or what should change?"
@@ -82,6 +112,11 @@ a task of yours, do its next step first.
    (`ExitWorktree`) before `akasha handoff` or `akasha cancel`, and after the landing ends. Change the files only in
    the work copy of the task. Akasha stops an edit before the approval and the review.
 2. Write an automated test for each behavior that the preview shows.
+   To give the work to several workers at the same time (for example subagents of an orchestrator), never make
+   work copies with `git worktree add`: Akasha stops it. Run `akasha split <task> <part> --scope <file patterns>`
+   for each worker, with files that no other part has, and give the worker the work copy and the scope that Akasha
+   prints. When each worker is done, run `akasha join <task>`. When the join stops with a conflict, repair it in the
+   part that it names, and join again. Then continue with the checks.
 3. Run `akasha check <task>` in the background, or with a shell timeout of 600000 ms (10 minutes). Repair each FAIL
    and run it again. NOT_NEEDED is a pass. When the checks pass, Akasha saves the work as a commit and pushes it.
    Only an administrator changes `akasha.toml`, `.github/`, and the paths of `[risk]` (for example the database and

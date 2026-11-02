@@ -29,6 +29,17 @@ def _parser() -> argparse.ArgumentParser:
     start.add_argument("title")
     start.add_argument("--name", default="", help="a short name of the task: a to z, 0 to 9, and -")
     start.add_argument("--scope", nargs="*", default=[], help="the file patterns that the task plans to change")
+    start.add_argument("--quick", action="store_true",
+                       help="a quick task: a small change of existing files that no other area uses")
+    upgrade = commands.add_parser("upgrade", help="make a quick task a full task with a preview and a plan")
+    upgrade.add_argument("task")
+    splitting = commands.add_parser("split", help="make a part of a task for a worker at the same time as others")
+    splitting.add_argument("task")
+    splitting.add_argument("part", help="a short name of the part: a to z, 0 to 9, and -")
+    splitting.add_argument("--scope", nargs="+", required=True, help="the file patterns that only this part changes")
+    joining = commands.add_parser("join", help="merge the parts into the work copy of the task")
+    joining.add_argument("task")
+    joining.add_argument("--keep", action="store_true", help="keep the work copies of the parts")
     preview = commands.add_parser("preview", help="show the preview to the person and wait for the approval")
     preview.add_argument("task")
     preview.add_argument("--text", default="", help="make a plain preview from this text when there is none")
@@ -91,9 +102,11 @@ def _status(root: Path, task_id: str | None) -> int:
     if not tasks:
         print("No task on this computer. `akasha board` shows the open tasks of the team.")
     for task in tasks:
-        plan = flow.review.plan_digest(task)
-        print(f"{task.id} · {task.title} · {task.status}" + (f" · {task.pr}" if task.pr else ""))
-        print(f"  work copy: {task.workcopy} · records: {records(task)}/" + (f" · plan digest: {plan}" if plan else ""))
+        plan = flow.review.subject_digest(task)
+        what = "change digest" if task.kind == "quick" else "plan digest"
+        print(f"{task.id} · {task.title} · {task.status}" + (" · quick" if task.kind == "quick" else "")
+              + (f" · {task.pr}" if task.pr else ""))
+        print(f"  work copy: {task.workcopy} · records: {records(task)}/" + (f" · {what}: {plan}" if plan else ""))
         print(f"  next: {flow.next_step(task)}")
     return 0
 
@@ -132,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{'OK ' if good else 'FIX'} {text}")
         return 0 if all(good for good, _text in found) else 1
     if args.command == "start":
-        task, notes = flow.start(root, args.title, args.name, tuple(args.scope))
+        task, notes = flow.start(root, args.title, args.name, tuple(args.scope), args.quick)
         print(f"Task {task.id}: {task.title}\n  work copy: {task.workcopy}\n  records: {records(task)}/"
               + (f"\n  board: {task.pr}" if task.pr else ""))
         print("\n".join(f"  {line}" for line in notes))
@@ -164,6 +177,21 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT.get(state, 1)
     if args.command == "status":
         return _status(root, args.task)
+    if args.command == "split":
+        part, notes = flow.split(root, args.task, args.part, tuple(args.scope))
+        print(f"Part {part['name']} of task {args.task}\n  work copy: {part['workcopy']}\n  branch: {part['branch']} "
+              f"(on this computer only)\n  scope: {', '.join(part['scope'])}")
+        print("\n".join(f"  {line}" for line in notes))
+        print(f"  next: give the worker the work copy and the scope. When each part is done: akasha join {args.task}")
+        return 0
+    if args.command == "join":
+        joined = flow.join(root, args.task, args.keep)
+        print(f"Joined {', '.join(joined)} into task {args.task}. next: akasha check {args.task}")
+        return 0
+    if args.command == "upgrade":
+        task = flow.upgrade(root, args.task)
+        print(f"Task {task.id} is a full task now. next: {flow.next_step(task)}")
+        return 0
     if args.command == "board":
         if not board.available(root):
             print("origin of this repository is not on GitHub, so there is no board of the team")

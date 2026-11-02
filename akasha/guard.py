@@ -197,7 +197,32 @@ def _other_worktree(path: Path, root: Path, tasks: list[Task]) -> Path | None:
     top, common = Path(lines[0].strip()), Path(lines[1].strip())
     if common.parent.resolve() != root.resolve() or top.resolve() == root.resolve():
         return None
-    return None if any(task.workcopy and Path(task.workcopy).resolve() == top.resolve() for task in tasks) else top
+    copies = [Path(task.workcopy) for task in tasks if task.workcopy]
+    copies += [Path(part["workcopy"]) for task in tasks for part in task.parts if part.get("workcopy")]
+    return None if any(copy.resolve() == top.resolve() for copy in copies) else top
+
+
+def _part_reason(path: Path, task: Task, part: dict, gate: Callable[[Task], str],
+                 locked: tuple[str, ...]) -> str | None:
+    """The reason to stop an edit in a part of a task (`akasha split`), or None. A part has the rules of its task, and
+    changes only the files of its own scope, so that the parts do not conflict when they join."""
+    tree = Path(part["workcopy"])
+    relative = path.resolve().relative_to(tree.resolve()).as_posix()
+    if inside(path, tree / records(task)):
+        return (f"Akasha stopped this edit: the records of task {task.id} change only in its work copy "
+                f"{task.workcopy}, not in the part {part['name']}.")
+    if any(matches(relative, item) for item in locked):
+        return (f"Akasha stopped this edit: only an administrator changes {relative}. Leave it out of task {task.id}, "
+                f"or ask an administrator: `akasha help {task.id} \"<what the task needs there>\"`.")
+    missing = gate(task)
+    if missing:
+        return f"Akasha stopped this edit: task {task.id} is not ready to build. {missing}"
+    scope = part.get("scope") or []
+    if not any(matches(relative, item) for item in scope):
+        return (f"Akasha stopped this edit: {relative} is outside the part {part['name']} of task {task.id} "
+                f"({', '.join(scope)}). Change it in the part whose scope holds it, or in {task.workcopy} after "
+                f"`akasha join {task.id}`.")
+    return None
 
 
 def check_edit(path: Path, root: Path, tasks: list[Task], set_up: bool, gate: Callable[[Task], str],
@@ -214,6 +239,10 @@ def check_edit(path: Path, root: Path, tasks: list[Task], set_up: bool, gate: Ca
     if inside(path, root / STATE_DIR):
         return "Akasha stopped this edit: Akasha writes its state in .akasha/state itself."
     for task in tasks:
+        part = next((item for item in task.parts if item.get("workcopy") and inside(path, Path(item["workcopy"]))),
+                    None)
+        if part is not None:
+            return _part_reason(path, task, part, gate, locked)
         if not task.workcopy or not inside(path, Path(task.workcopy)):
             continue
         if inside(path, Path(task.workcopy) / records(task)):

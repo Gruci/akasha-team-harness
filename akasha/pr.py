@@ -16,6 +16,10 @@ DRAFT_TEXT = ("This task is in progress with Akasha. The person who holds it app
 def meta(task: Task) -> list[str]:
     """The lines that tell how the task was approved, reviewed, and checked."""
     lines = []
+    if task.kind == "quick":
+        lines.append("- Kind: quick change — no preview of the result and no plan. It changes only existing files "
+                     "that no other area uses; the reviewer examined the change with impact.md, and the person "
+                     "approved the change itself")
     if task.approval:
         lines.append(f"- Preview approved by @{task.approval.get('by', '?')} at {task.approval.get('at', '?')} "
                      f"with \"{task.approval.get('words', '')}\" (preview `{task.approval.get('preview_sha', '')}`)")
@@ -23,7 +27,8 @@ def meta(task: Task) -> list[str]:
         lines.append("- Preview: not approved yet")
     if task.review:
         who = "the akasha-reviewer agent" if task.review.get("source") == "reviewer" else "the agent engine itself"
-        lines.append(f"- Plan review: {task.review.get('verdict')} by {who} (round {task.review.get('rounds', 1)})")
+        what = "Change review" if task.kind == "quick" else "Plan review"
+        lines.append(f"- {what}: {task.review.get('verdict')} by {who} (round {task.review.get('rounds', 1)})")
     if task.checks:
         status = ", ".join(f"{name} {value}" for name, value in task.checks.get("status", {}).items())
         lines.append(f"- Checks on this computer: {status}")
@@ -34,7 +39,8 @@ def meta(task: Task) -> list[str]:
         lines.append(f"- Core changes: {', '.join(f'`{name}`' for name in found)} — {state}")
     if task.scope:
         lines.append(f"- Planned files: {', '.join(f'`{item}`' for item in task.scope)}")
-    lines.append(f"- Records: `{records(task)}/` (preview, research, plan, summary)")
+    kept = "impact, preview, summary" if task.kind == "quick" else "preview, research, plan, summary"
+    lines.append(f"- Records: `{records(task)}/` ({kept})")
     return lines
 
 

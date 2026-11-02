@@ -51,6 +51,7 @@ _KEYS: dict[str, set[str] | None] = {
     "server": {"rules"},
     "core": {"paths", "areas", "used_by"},
     "deploy": {"workflow", "verify"},
+    "quick": {"paths"},
 }
 
 
@@ -90,6 +91,7 @@ class Team:
     core_paths: tuple[str, ...] = ()         # an administrator approves a change of existing lines of these files
     core_areas: tuple[str, ...] = ()         # folder patterns of one feature each, for example "domains/*"
     core_used_by: int = 2                    # a file that so many other areas import is core
+    quick_paths: tuple[str, ...] = ()        # files other than code and text that a quick task can change
     unknown: tuple[str, ...] = ()            # settings of a newer Akasha that this one does not know
 
     @property
@@ -264,6 +266,7 @@ def team_from(data: dict) -> Team:
         core_paths=_patterns(core.get("paths", []), "[core] paths"),
         core_areas=tuple(pattern(item.rstrip("/\\")) for item in _strings(core.get("areas", []), "[core] areas")),
         core_used_by=_count(core.get("used_by", 2), "[core] used_by"),
+        quick_paths=_patterns(data.get("quick", {}).get("paths", []), "[quick] paths"),
         unknown=tuple(unknown),
     )
 
