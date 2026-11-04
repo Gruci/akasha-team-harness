@@ -189,7 +189,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
-| **v1.1.0** | Agent accounts (`[team] agents`): a program runs the account, it works from the request of a person without a preview, and that person approves the result before the merge (`akasha result`, the landing result ASK). The review of the plan: nine written items, one row each with its evidence; a PASS mark counts only when each item passed, and `review.md` keeps the answer. Quick tasks (`start --quick`): a small change of existing files that no other area uses, without a preview and a plan. Parts of a task for workers at the same time (`split`, `join`). The core: a teammate adds freely, and an administrator approves only a change of existing lines of code that other areas use. The scope interview in a choice tool. |
+| **v1.1.0** | Agent accounts (`[team] agents`): a program runs the account, it works from the request of a person without a preview, and that person approves the result before the merge (`akasha result`, the landing result ASK). The review of the plan: nine written items, one row each with its evidence; a PASS mark counts only when each item passed, and `review.md` keeps the answer. Tasks that change the same files: before a start, `akasha board --scope` names the open tasks that plan or change those files, and the AI reads what they change before it plans. Quick tasks (`start --quick`): a small change of existing files that no other area uses, without a preview and a plan. Parts of a task for workers at the same time (`split`, `join`). The core: a teammate adds freely, and an administrator approves only a change of existing lines of code that other areas use. The scope interview in a choice tool. |
 | **v1.0.0** | First release. |
 
 * * *
