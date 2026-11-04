@@ -9,9 +9,3 @@
 
 The procedures that the agent engine follows are in [`skills/`](../skills), and the AI that checks the plans is in
 [`agents/`](../agents).
-
-## Run the tests of Akasha
-
-```
-python -m unittest discover -s tests -t .
-```
