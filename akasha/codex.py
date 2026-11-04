@@ -36,8 +36,10 @@ This repository uses Akasha. Each change is an Akasha task. The command is `py -
    `akasha approve <task>`: it records the words of the person that the hook kept. Never approve for the person.
 3. After the approval, do the rest without asking: write research.md and plan.md in the records folder. Ask a
    separate reviewer to review the plan against the preview and the code, and repair the plan until it passes. The
-   reviewer ends with `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES` (`akasha status <task>` shows the
-   digest). Without a reviewer agent, review the plan yourself and run `akasha review <task> --verdict pass`: the
+   reviewer judges each item R1 to R9 of agents/akasha-reviewer.md in the plugin, one row each
+   (`| R1 | PASS | <evidence> |`), and ends with `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES`
+   (`akasha status <task>` shows the digest). A PASS mark without a passed row for each item counts as CHANGES.
+   Without a reviewer agent, review the plan yourself and run `akasha review <task> --verdict pass`: the
    pull request tells that it was a self-review.
 4. Build in the work copy of the task. Write a test for each behavior that the preview shows. Run
    `akasha check <task>` and repair each failure.

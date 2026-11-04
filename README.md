@@ -18,7 +18,7 @@ and approves a preview of it. That is their only step.
 The AI plans, a second AI checks the plan,<br>
 and the AI builds, checks, and lands the change.
 
-<img src="https://img.shields.io/badge/version-1.0.0-7c3aed" alt="Version 1.0.0">
+<img src="https://img.shields.io/badge/version-1.1.0-7c3aed" alt="Version 1.1.0">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -43,11 +43,11 @@ Akasha puts the person there, and puts machines everywhere else.
 | | Without | With Akasha |
 |:--|:--|:--|
 | What the person checks | A technical plan, or nothing | A preview they can see: a mockup or a diagram |
-| The plan | Nobody reads it | A second AI checks it until it passes |
+| The plan | Nobody reads it | A second AI checks nine written items, each with its evidence, until each one passes |
 | The approval | The AI can write "approved" | Only words that the person typed, kept as typed |
 | Many people | Nobody sees the others | The open pull requests are the board |
 | "Done" | A claim | The checks pass on GitHub, then one commit |
-| Months later | Nobody knows why | The preview, plan, and summary stay with it |
+| Months later | Nobody knows why | The preview, plan, review, and summary stay with it |
 
 * * *
 
@@ -77,14 +77,14 @@ Approve it in your own words, in any language, or tell what to change.<br>
 The AI does the rest, and tells you when the change is merged and when it is live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"` in that Python
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.0"` in that Python
 > (on Windows `py -3 -m pip install …`).
 
 * * *
 
 ## How It Works
 
-<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams ask at the same time. Each person only approves a preview. For each task an AI plans, a second AI checks the plan, the AI builds and tests. The tasks of all teams merge into one product one by one.">
+<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams and an agent ask at the same time. Each person only approves a preview; the person who asked the agent approves its result before the merge. For each task an AI plans, a second AI checks the plan, the AI builds and tests. When two tasks plan the same file, each AI reads the other's change first. The tasks merge into one product one by one, and each later one is first updated from main and checked again.">
 
 Each task goes through six steps, and many tasks go through them at once:
 
@@ -115,8 +115,8 @@ Each person, from any team, works on their own task at the same time as the othe
 
 | Situation | What happens |
 |:--|:--|
-| A new task plans the files of open tasks | The board shows those tasks and who holds them |
-| Tasks change the same file | Each AI hears of it, and the later task takes the change |
+| A new task plans the files of open tasks | The board shows those tasks and who holds them, and the AI reads what they change before it plans |
+| Tasks change the same file | Each AI hears of it. Each task keeps its own pull request: the later one takes the change, and its AI resolves a conflict and checks again |
 | Several tasks are ready at once | They merge one by one, each up to date first |
 | A person stops, and another continues | `handoff` frees the task, `resume` continues it anywhere |
 | A task name is in use | The start refuses it, and the AI picks another |
@@ -126,12 +126,13 @@ Each person, from any team, works on their own task at the same time as the othe
 
 ## Who Does What
 
-A team has two roles: the administrators, and the teammates.
+A team has three roles: the administrators, the teammates, and the agent accounts.
 
 | Who | Does | Does not have to |
 |:--|:--|:--|
 | **Administrator** | Sets up and maintains Akasha, the database, and the deployment | Review any task |
 | **Teammate** | Says what to make, and approves the preview | Read code or review plans |
+| **Agent account** | A program runs it, for example an operations agent: it works from the request of a person, and that person approves the result before the merge | Make a preview |
 
 Each person keeps their own agent settings (`.claude/settings.local.json`, `CLAUDE.local.md`) out of git, so each
 person can tune the harness freely.
@@ -188,6 +189,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
+| **v1.1.0** | Agent accounts (`[team] agents`): a program runs the account, it works from the request of a person without a preview, and that person approves the result before the merge (`akasha result`, the landing result ASK). The review of the plan: nine written items, one row each with its evidence; a PASS mark counts only when each item passed, and `review.md` keeps the answer. Quick tasks (`start --quick`): a small change of existing files that no other area uses, without a preview and a plan. Parts of a task for workers at the same time (`split`, `join`). The core: a teammate adds freely, and an administrator approves only a change of existing lines of code that other areas use. The scope interview in a choice tool. |
 | **v1.0.0** | First release. |
 
 * * *

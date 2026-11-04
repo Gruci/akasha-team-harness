@@ -1,9 +1,11 @@
 """The parts around the task: the board, the review mark, the files of Codex and Claude Code,
 the GitHub files, and the watch."""
 
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -72,6 +74,22 @@ class BoardTests(unittest.TestCase):
         other = Task(id="new", title="New", scope=["web/**"])
         self.assertEqual(board.overlaps(other, ["billing/tax.py"], entries)[0][:2], "#3")
         self.assertEqual(board.overlaps(other, ["web/a.py"], entries), [])
+
+    def test_overlaps_with_a_file_that_another_task_changed_outside_its_plan(self):
+        """The other task planned billing/**, but it changed lib/shared.py too: a new plan of lib/** meets it."""
+        items = [{**self.items[0], "files": [{"path": "lib/shared.py"}]}]
+        found = board.overlaps(Task(id="new", title="New", scope=["lib/**"]), [], board._entries(items))
+        self.assertEqual(found, ["#3 Tax (@kim, draft): lib/shared.py"])
+
+    def test_the_board_of_a_scope_names_the_tasks_before_a_start(self):
+        from akasha import __main__ as akasha_main
+        for scope, expected in (("billing/invoice.py", "#3 Tax (@kim, draft)"),
+                                ("web/**", "No open task plans or changes these files.")):
+            out = io.StringIO()
+            with self.subTest(scope=scope), patch("akasha.board.available", return_value=True), \
+                    patch("akasha.board.read", return_value=board._entries(self.items)), redirect_stdout(out):
+                self.assertEqual(akasha_main.main(["board", "--scope", scope]), 0)
+                self.assertIn(expected, out.getvalue())
 
 
 class ReviewMarkTests(unittest.TestCase):

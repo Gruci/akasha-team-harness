@@ -31,13 +31,16 @@ a task of yours, do its next step first.
    always lets the person type another answer. Without a choice tool, ask one question at a time in the chat.
    The choice tool is only for these questions. The approval of the preview (step 2) is always a message that the
    person types.
-2. Run `akasha board`. If another open task changes the same screen or feature, tell the person who holds it.
-3. Read the files of `[guides] build`: they can name shared files that many tasks change, for example a list of
-   routes or menus. Find the files that the change will probably touch, without those shared files. Run
-   `akasha start "<title in the words of the person>" --name <short-name> --scope <file patterns>` with a shell
-   timeout of 600000 ms. It makes the work copy, and a draft pull request on the board. When Akasha shows an overlap
-   with another task, tell the person, and continue unless they want to wait. When it says that the plan needs a
-   review, tell the person who will review. If the name is in use, give another name.
+2. Read the files of `[guides] build`: they can name shared files that many tasks change, for example a list of
+   routes or menus. Find the files that the change will probably touch, without those shared files.
+3. Run `akasha board --scope <file patterns>`. When it names an open task that plans or changes the same files, read
+   what it changes (`gh pr view <number>` and `gh pr diff <number>`), write it into `research.md` later, keep your
+   change clear of its lines where the request allows it, and name it in `summary.md`. Do not ask the person to wait
+   or to choose: both tasks go on, the task that merges later takes the earlier change, and its AI resolves a conflict
+   and checks again before its merge (step 5).
+4. Run `akasha start "<title in the words of the person>" --name <short-name> --scope <file patterns>` with a shell
+   timeout of 600000 ms. It makes the work copy, and a draft pull request on the board. When it says that the plan
+   needs a review, tell the person who will review. If the name is in use, give another name.
 
 ## A quick task: a typo or one setting
 
@@ -46,8 +49,9 @@ area uses, for example a typo, a text, or one setting. Akasha decides from what 
 size: one line of a button that many screens use is not a quick change, and a quick change adds and deletes no file.
 Skip the questions of step 1 that the request already answers.
 
-1. `akasha start "<title in the words of the person>" --name <short-name> --scope <file patterns> --quick`. When it
-   says "not quick", run `akasha upgrade <task>` and follow the full steps from step 1.
+1. Do steps 1.2 and 1.3 (the files, and the open tasks of the same files). Then run `akasha start "<title in the words
+   of the person>" --name <short-name> --scope <file patterns> --quick`. When it says "not quick", run
+   `akasha upgrade <task>` and follow the full steps from step 1.
 2. Make the change in the work copy (step 4.1 tells how to move into it).
 3. Write `impact.md` in the records folder, in the language of the person: each changed file, which screens use it
    (search for its imports, setting keys, CSS classes, and text keys), and why no other screen changes.
@@ -60,6 +64,30 @@ Skip the questions of step 1 that the request already answers.
    then run `akasha approve <task>`.
 6. Continue with step 4.3 (check) and step 5 (land). A change of the code after the review or the approval needs both
    again. When a check named `quick` fails, the change is not a quick change: run `akasha upgrade <task>`.
+
+## An agent task: when the session start notice says that this account is an agent
+
+A program (the relay) runs this session. Each prompt is the words of a person: first their request, for example the
+diagnosis of a failed job and what to change, later their answer. The person does not see this session: only your last
+answer of each turn reaches them. The request decides what to make, so there is no preview and no question of step 1.
+The person approves the result before the merge. That is their only step.
+
+1. Run `akasha start "<title>" --name <short-name> --scope <file patterns>` at once, in the same turn as the request:
+   Akasha writes the prompt into `request.md` in the records folder. When it says that it found no request, end the
+   turn and ask the person to send the request again. When it names an overlap with another task, read what that task
+   changes as in step 1.3, go on, and name it in `summary.md`, under what other areas the change reaches.
+2. Do step 3 (the plan and its review). Read `request.md` in place of a preview. When the request cannot work as it
+   says, end the turn with a short question to the person, in their language.
+3. Do step 4 (build and check).
+4. Write `summary.md` in the language of the request, in five short sections: the problem, the cause, what changed,
+   what other areas it reaches, and how to undo it.
+5. Run `akasha check <task>`, then `akasha land <task> --wait 540` with a shell timeout of 600000 ms. When it says ASK
+   (exit code 4), run `akasha result <task>`. Give its text as your whole answer, without other words, and end the
+   turn: the relay sends it to the person.
+6. The next prompt is the answer of the person. When it approves the result as it is, run `akasha approve <task>`,
+   then `akasha land <task> --wait 540`, and give the end of step 5 in simple words (MERGED, DEPLOYED, …). When it
+   asks for a change, change the work, run `akasha check <task>`, and land again: the landing asks again. Never
+   approve without a prompt of the person.
 
 ## 2. The preview: the decision of the person
 
@@ -94,8 +122,9 @@ Skip the questions of step 1 that the request already answers.
    example a new secret value on the server or a first run of a job; `summary.md` repeats them.
 3. Run `akasha status <task>` for the plan digest. Ask the akasha-reviewer agent: "Review the plan of Akasha task
    <task>. Work copy: <path>. Plan digest: <digest>. Akasha command: <the command of the session start notice>." It
-   ends with a review mark, and Akasha records it. Only the akasha-reviewer agent counts. Repair the plan, and ask
-   again with the new digest, until the mark is PASS.
+   judges nine items, one row each, ends with a review mark, and Akasha records it with the answer in `review.md`.
+   Only the akasha-reviewer agent counts. Repair each item that failed, and ask again with the new digest, until the
+   mark is PASS. When the next step says that a PASS mark did not count, an item had no row: ask again.
 4. If the review shows that the result must differ from the approved preview, change the preview and get a new
    approval from the person (step 2.3). Else do not ask the person anything.
 5. Only an agent app without the akasha-reviewer agent (for example Codex) reviews the plan itself, as strictly as
@@ -137,6 +166,7 @@ Skip the questions of step 1 that the request already answers.
      it names a check that did not run, or a check that waits long for a runner, run `akasha help <task>` and tell
      the person.
    - FAILED: a check failed on GitHub. Repair it, run `akasha check <task>`, then land again.
+   - ASK (exit code 4): only an agent task. Do step 5 of "An agent task".
    - CONFLICT: Akasha names the files. Merge the default branch in the work copy as it tells, and keep the changes of
      both sides when they add different things (for example two new rows of a list). If `[guides] build` tells how to
      merge a shared file, do as it tells. Check, and land again.

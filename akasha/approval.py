@@ -9,12 +9,17 @@ The person approves in their own words, in any language. Two parts make it an ap
 - The agent engine reads the message. When it approves the preview as it is, the agent engine runs `akasha approve`,
   which records the approval with the exact words of the person and the digest of the preview that they saw.
 
-When the preview changes after the approval, the task needs a new approval."""
+When the preview changes after the approval, the task needs a new approval.
+
+An agent task (agent.py) has no preview: the person approves its result before the merge, in the same way. The
+approval holds the digest of the change and of summary.md, and the relay can name the person on the first line of the
+prompt: `[akasha-from: <name>]`."""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import sys
 import time
@@ -30,6 +35,8 @@ AUTOMATIC = ("<task-notification>",)
 WORDS_KEPT = 200             # the characters of the message that the approval keeps
 SESSION = STATE_DIR / "session.json"     # the session of the last Akasha command, as its hook saw it
 SESSION_SECONDS = 120
+# The relay of an agent session names the person whose words the prompt carries. Only the relay writes prompts
+FROM = re.compile(r"^\[akasha-from:\s*([^\]\n]{1,80}?)\s*\]")
 
 
 def note_session(root: Path, session: str, line: str) -> None:
@@ -59,12 +66,17 @@ def session(root: Path) -> str:
     return os.environ.get("CLAUDE_CODE_SESSION_ID", "")
 
 
+def _wanted(task: Task) -> str:
+    """The status of a task that waits for the person: the preview, or the result of an agent task (agent.py)."""
+    return "landing" if task.kind == "agent" else "preview"
+
+
 def waiting(root: Path) -> list[Task]:
-    """The tasks on this computer whose preview the person saw in the last day and did not approve yet, the newest
-    first."""
+    """The tasks on this computer whose preview (or result) the person saw in the last day and did not approve yet,
+    the newest first."""
     now = time.time()
     found = [task for task in all_local(root)
-             if task.status == "preview" and task.shown_at and task.workcopy and now - task.shown_at < MAX_AGE]
+             if task.status == _wanted(task) and task.shown_at and task.workcopy and now - task.shown_at < MAX_AGE]
     return sorted(found, key=lambda task: -task.shown_at)
 
 
@@ -86,11 +98,23 @@ def on_prompt(root: Path, cwd: Path, prompt: str, session: str = "") -> str:
         return ""
     task = _target(waiting(root), cwd, session)
     if task is None:
-        old = [item for item in all_local(root) if item.status == "preview" and session and item.shown_in == session]
-        return (f"[AKASHA] The preview of task {old[0].id} is more than a day old. If the person answers it, show it "
-                f"again with `akasha preview {old[0].id}` and ask again." if old else "")
-    task.heard = {"words": prompt.strip()[:WORDS_KEPT], "at": time.time(), "session": session}
+        old = [item for item in all_local(root) if item.status == _wanted(item) and session and item.shown_in == session]
+        if not old:
+            return ""
+        what, again = _shown(old[0])
+        return (f"[AKASHA] The {what} of task {old[0].id} is more than a day old. If the person answers it, show it "
+                f"again with `{again}` and ask again.")
+    named = FROM.match(prompt.strip())
+    task.heard = {"words": prompt.strip()[:WORDS_KEPT], "at": time.time(), "session": session,
+                  **({"from": named.group(1)} if named else {})}
     save(root, task)
+    if task.kind == "agent":
+        return (f"[AKASHA] Task {task.id} ({task.title}) waits for the approval of its result before the merge. If "
+                f"this message of the person approves the result as it is, in any language and without asking for a "
+                f"change, run `akasha approve {task.id}`, then `akasha land {task.id} --wait 540`. If it asks for a "
+                f"change or asks a question, it is feedback: change the work, run `akasha check {task.id}`, and land "
+                "again, which asks the person again. When you cannot tell, ask the person in your answer. Never "
+                "approve for the person.")
     return (f"[AKASHA] Task {task.id} ({task.title}) waits for the approval of its preview. If this message of the "
             f"person approves the preview as it is, in any language and without asking for a change, run `akasha "
             f"approve {task.id}`. If it asks for a change or asks a question, it is feedback: change the preview, show "
@@ -98,24 +122,39 @@ def on_prompt(root: Path, cwd: Path, prompt: str, session: str = "") -> str:
             "approve for the person.")
 
 
-def approve(root: Path, task: Task, session: str) -> str:
-    """Record the approval from the last message of the person. Return what is missing, or ""."""
+def _shown(task: Task) -> tuple[str, str]:
+    """What the person approves, and the command that shows it again."""
+    if task.kind == "agent":
+        return "result", f"akasha result {task.id}"
+    return "preview", f"akasha preview {task.id}"
+
+
+def approve(root: Path, task: Task, session: str, current: str = "") -> str:
+    """Record the approval from the last message of the person. `current` is the digest of what the person approves
+    now: the result of an agent task, else the preview file. Return what is missing, or ""."""
     heard = task.heard or {}
-    if task.status != "preview" or not task.shown_at:
-        return f"task {task.id} does not wait for an approval of its preview"
+    what, again = _shown(task)
+    if task.status != _wanted(task) or not task.shown_at:
+        return f"task {task.id} does not wait for an approval of its {what}"
     if time.time() - task.shown_at > MAX_AGE:
-        return f"the person saw the preview more than a day ago. Show it again with `akasha preview {task.id}`"
+        return f"the person saw the {what} more than a day ago. Show it again with `{again}`"
     if task.shown_in and session != task.shown_in:
-        return f"another session showed the preview. Show it here with `akasha preview {task.id}` and ask again"
+        return f"another session showed the {what}. Show it here with `{again}` and ask again"
     # Without a session (the agent engine gave none), the hook kept the message only for the one waiting task
     if not heard or float(heard.get("at") or 0) < task.shown_at or (task.shown_in and heard.get("session") != session):
-        return ("the person wrote nothing in this session after the preview was shown. Ask the person in the chat, "
+        return (f"the person wrote nothing in this session after the {what} was shown. Ask the person in the chat, "
                 "and run this command only after their own message approves it")
-    now = digest(record(task, PREVIEW))
+    now = current or digest(record(task, PREVIEW))
     if now != task.preview_sha:
-        return f"the preview changed after it was shown. Show it again with `akasha preview {task.id}` and ask again"
-    task.approval = {"by": repo.person(root), "at": time.strftime("%Y-%m-%d %H:%M"), "preview_sha": now,
-                     "words": str(heard.get("words") or ""), "source": "prompt"}
-    task.status, task.heard = "approved", {}
+        return f"the {what} changed after it was shown. Show it again with `{again}` and ask again"
+    me, words, at = repo.person(root), str(heard.get("words") or ""), time.strftime("%Y-%m-%d %H:%M")
+    if task.kind == "agent":
+        # The landing merges next, so the task stays in landing
+        task.approval = {"by": str(heard.get("from") or me), "through": me, "at": at, "change_sha": now,
+                         "words": words, "source": "result"}
+    else:
+        task.approval = {"by": me, "at": at, "preview_sha": now, "words": words, "source": "prompt"}
+        task.status = "approved"
+    task.heard = {}
     save(root, task)
     return ""

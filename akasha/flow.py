@@ -9,7 +9,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from akasha import approval, board, checks, config, core, pr, quick, repo, review, trace, work
+from akasha import agent, approval, board, checks, config, core, pr, quick, repo, review, trace, work
 from akasha.config import Team
 from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id, record,
                          records, save)
@@ -26,7 +26,17 @@ def rules(root: Path) -> Team:
 
 def gate(task: Task) -> str:
     """What the task still needs before its code can change, or "" when it is ready to build. A quick task changes
-    its code first: its review and its approval come after the change (quick.missing)."""
+    its code first: its review and its approval come after the change (quick.missing). An agent task has no preview:
+    the request of the person decides what to make, and the person approves the result before the merge (agent.py)."""
+    if agent.is_agent(task):
+        if not record(task, agent.REQUEST).is_file():
+            return (f"The request of the person is missing: {records(task)}/{agent.REQUEST}. Cancel the task, and "
+                    "start it again right after the prompt of the request.")
+        if not review.passed(task):
+            return (f"The plan did not pass the review. Write research.md and plan.md in {records(task)}/, ask the "
+                    f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes."
+                    + review.told(task))
+        return ""
     if quick.is_quick(task):
         return ""
     if task.status == "preview" or not task.approval:
@@ -38,7 +48,8 @@ def gate(task: Task) -> str:
         return f"The preview changed after the approval. Show it again with `akasha preview {task.id}`."
     if not review.passed(task):
         return (f"The plan did not pass the review. Write research.md and plan.md in {records(task)}/, ask the "
-                f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes.")
+                f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes."
+                + review.told(task))
     return ""
 
 
@@ -49,7 +60,8 @@ def next_step(task: Task) -> str:
     if task.status in ("merged", "closed"):
         return f"The task is {task.status}."
     if task.status == "landing":
-        return f"Wait for the merge: `akasha land {task.id} --wait 540` (shell timeout 600000 ms)."
+        return _agent_landing(task) if agent.is_agent(task) else \
+            f"Wait for the merge: `akasha land {task.id} --wait 540` (shell timeout 600000 ms)."
     if quick.is_quick(task):
         return _quick_step(task)
     if task.status == "preview":
@@ -73,9 +85,24 @@ def next_step(task: Task) -> str:
     if work.dirty(tree) or task.checks.get("commit") != work.head(tree):
         return f"Build the change in {task.workcopy}, then run `akasha check {task.id}`."
     if not record(task, SUMMARY).is_file():
-        return (f"Write {records(task)}/{SUMMARY} (why, what changed, how to undo it), run `akasha check "
-                f"{task.id}` again, then `akasha land {task.id}`.")
+        what = ("the problem, the cause, what changed, what other areas it reaches, and how to undo it"
+                if agent.is_agent(task) else "why, what changed, how to undo it")
+        return (f"Write {records(task)}/{SUMMARY} ({what}), run `akasha check {task.id}` again, then `akasha land "
+                f"{task.id}`.")
     return f"Land the task: `akasha land {task.id} --wait 540` (shell timeout 600000 ms)."
+
+
+def _agent_landing(task: Task) -> str:
+    """The next step of an agent task in its landing: the merge waits for the approval of the result."""
+    now = agent.digest(task)
+    land_again = f"`akasha land {task.id} --wait 540` (shell timeout 600000 ms)"
+    if not agent.missing(task):
+        return f"Land the task: {land_again}."
+    if task.shown_at and task.preview_sha == now:
+        return (f"Wait for the message of the person: the relay gives it as the next prompt. When it approves the "
+                f"result, run `akasha approve {task.id}`, then {land_again}; else change the work as the person tells.")
+    return (f"Wait for the checks and the merge: {land_again}. When it says ASK, run `akasha result {task.id}`, give "
+            "its text as your whole answer, and end the turn.")
 
 
 def _quick_step(task: Task) -> str:
@@ -89,7 +116,7 @@ def _quick_step(task: Task) -> str:
                 "screen changes.")
     if task.review.get("verdict") != "PASS" or task.review.get("plan_sha") != now:
         return (f"Ask the akasha-reviewer agent to review the change of the quick task {task.id} (change digest "
-                f"{now}), and repair the change until it passes.")
+                f"{now}), and repair the change until it passes." + review.told(task))
     if not task.approval or task.approval.get("change_sha") != now:
         if task.status == "preview" and task.shown_at and quick.shown_change(task) == now:
             return (f"Wait for the message of the person. When it approves the change, run `akasha approve "
@@ -118,25 +145,32 @@ def _name_taken(root: Path, task: Task, branch: str, entries: list[board.Entry],
 def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
           fast: bool = False) -> tuple[Task, list[str]]:
     """Record a new task: a work copy on a new branch from the latest default branch, and a draft pull request on
-    the board. Return the task and the other tasks that plan the same files. `fast` makes a quick task."""
+    the board. Return the task and the other tasks that plan the same files. `fast` makes a quick task. An agent
+    account always makes an agent task, from the last prompt of its session (agent.py)."""
     team, branch = rules(root), repo.default_branch(root)
     online = board.available(root)
     if online and repo.fetch(root, branch).returncode:
         raise RuntimeError(f"git cannot fetch {branch} from origin. Examine the network and the GitHub login of git")
+    owner = (repo.me(root) if online else "") or repo.person(root, kept=False)
+    request = _request(root, team, owner, fast)
     task = Task(id=new_id(title, name), title=title.strip(), scope=[config.pattern(item) for item in scope],
-                records_dir=team.records_dir, kind="quick" if fast else "full")
+                records_dir=team.records_dir, kind="agent" if request else "quick" if fast else "full")
     task.branch = team.branch_prefix + task.id
     entries = board.read(root) if online else []
     if entries is None:
         raise RuntimeError("gh cannot read the board. Log in to GitHub: gh auth login. Then do the step again")
     if _name_taken(root, task, branch, entries, online):
         raise ValueError(f"the name {task.id} is in use by another task, now or before. Give another name with --name")
-    task.owner = (repo.me(root) if online else "") or repo.person(root, kept=False)
+    task.owner = owner
+    if request:
+        task.status = "approved"                      # no preview: the request decides what to make
     path = root / team.work_dir / task.id
     work.exclude(root, team.work_dir)
     task.base = work.create(root, path, task.branch, f"origin/{branch}" if online else "HEAD")
     task.workcopy = str(path)
     record(task, PREVIEW).parent.mkdir(parents=True, exist_ok=True)
+    if request:
+        agent.write_request(task, request)
     save(root, task)
     notes = [f"overlap — {line}" for line in board.overlaps(task, [], entries)]
     locked = checks.touches(task.scope, checks.locked(team, task.owner))
@@ -174,6 +208,20 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
         pr.update(root, task)
         board.forget(root)
     return task, notes + _prepare(team, path)        # after the pull request: a slow setup does not lose the task
+
+
+def _request(root: Path, team: Team, owner: str, fast: bool) -> str:
+    """The request of the person for an agent account, or "" for a person. A person cannot make an agent task, and
+    an agent account cannot make a task with a preview or a quick task: the GitHub name decides."""
+    if not agent.account(team, owner):
+        return ""
+    if fast:
+        raise ValueError("an agent account makes agent tasks only: start it without --quick")
+    request = agent.kept_request(root, approval.session(root))
+    if not request:
+        raise ValueError("an agent task starts from the request of a person: the last prompt of this session, in the "
+                         "last ten minutes. Akasha found none. Start the task right after the prompt of the request")
+    return request
 
 
 def _prepare(team: Team, path: Path) -> list[str]:
@@ -258,7 +306,8 @@ def approve(root: Path, task_id: str) -> tuple[Task, str]:
     if quick.is_quick(task) and (not change or quick.shown_change(task) != change):
         raise ValueError(f"the change moved after the person saw it. Show it again with `akasha preview {task.id}` "
                          "and ask again")
-    problem = approval.approve(root, task, approval.session(root))
+    outcome = agent.digest(task) if agent.is_agent(task) else ""
+    problem = approval.approve(root, task, approval.session(root), outcome)
     if problem:
         raise ValueError(problem)
     if change:
@@ -266,6 +315,10 @@ def approve(root: Path, task_id: str) -> tuple[Task, str]:
         save(root, task)
     if board.available(root) and task.number:
         pr.update(root, task)
+    if outcome:
+        return task, (f"Recorded the approval of {task.approval['by']}: \"{task.approval['words']}\". Next, without "
+                      f"stopping: run `akasha land {task.id} --wait 540` (shell timeout 600000 ms). A change of the "
+                      "code or of summary.md after now needs a new approval.")
     if change:
         return task, (f"Recorded the approval of {task.approval['by']}: \"{task.approval['words']}\". Next, without "
                       f"stopping: run `akasha check {task.id}`, write summary.md, check again, and run `akasha land`. "
@@ -274,6 +327,24 @@ def approve(root: Path, task_id: str) -> tuple[Task, str]:
                   "anything more unless the plan must change what they approved. Next, without stopping: write "
                   "research.md and plan.md in the records folder of the task, ask the akasha-reviewer agent to review "
                   "the plan until it passes, then build, run `akasha check`, write summary.md, and run `akasha land`.")
+
+
+def result(root: Path, task_id: str) -> str:
+    """The text of the result of an agent task for the person, when the landing asked for it (ASK): the checks of
+    GitHub passed on this work. Only a message of this session, after now, approves it."""
+    task = load(root, task_id)
+    if not agent.is_agent(task):
+        raise ValueError(f"task {task.id} is not an agent task: its person approves a preview (`akasha preview "
+                         f"{task.id}`)")
+    tree = Path(task.workcopy)
+    if task.status != "landing" or task.checks.get("asked") != work.head(tree) or work.dirty(tree):
+        raise ValueError(f"the landing did not ask for this work yet. Run `akasha land {task.id} --wait 540`: it asks "
+                         "when the checks of GitHub passed")
+    text = agent.show(root, task, approval.session(root))
+    save(root, task)
+    if board.available(root) and task.number:
+        pr.update(root, task)
+    return text
 
 
 def self_review(root: Path, task_id: str, verdict: str) -> Task:

@@ -7,9 +7,10 @@ import sys
 from pathlib import Path
 
 from akasha import VERSION, board, checks, config, flow, land, repo, retro, setup
-from akasha.task import all_local, load, records
+from akasha.task import Task, all_local, load, records
 
-EXIT = {land.MERGED: 0, land.CLOSED: 0, land.DEPLOYED: 0, land.WAITING: 3, land.DEPLOYING: 3}
+# 3: run the same landing again. 4: an agent task waits for the person (`akasha result`, then end the turn)
+EXIT = {land.MERGED: 0, land.CLOSED: 0, land.DEPLOYED: 0, land.WAITING: 3, land.DEPLOYING: 3, land.ASK: 4}
 
 
 def _root() -> Path:
@@ -59,9 +60,13 @@ def _parser() -> argparse.ArgumentParser:
     landing = commands.add_parser("land", help="make the pull request ready and merge it when the checks pass")
     landing.add_argument("task")
     landing.add_argument("--wait", type=float, default=0, help="seconds to wait for the merge and the deployment")
+    shown = commands.add_parser("result", help="an agent task: the result for the person, before the merge")
+    shown.add_argument("task")
     status = commands.add_parser("status", help="the tasks on this computer and the next step of each")
     status.add_argument("task", nargs="?")
-    commands.add_parser("board", help="the open tasks of the team")
+    shown_board = commands.add_parser("board", help="the open tasks of the team")
+    shown_board.add_argument("--scope", nargs="*", default=[],
+                             help="only the open tasks that plan or change files of these patterns, before a start")
     resume = commands.add_parser("resume", help="continue a task of the board on this computer")
     resume.add_argument("task", help="the task name or the number of its pull request")
     resume.add_argument("--force", action="store_true", help="the person who holds it agrees or is gone")
@@ -104,7 +109,7 @@ def _status(root: Path, task_id: str | None) -> int:
     for task in tasks:
         plan = flow.review.subject_digest(task)
         what = "change digest" if task.kind == "quick" else "plan digest"
-        print(f"{task.id} · {task.title} · {task.status}" + (" · quick" if task.kind == "quick" else "")
+        print(f"{task.id} · {task.title} · {task.status}" + (f" · {task.kind}" if task.kind != "full" else "")
               + (f" · {task.pr}" if task.pr else ""))
         print(f"  work copy: {task.workcopy} · records: {records(task)}/" + (f" · {what}: {plan}" if plan else ""))
         print(f"  next: {flow.next_step(task)}")
@@ -175,6 +180,9 @@ def main(argv: list[str] | None = None) -> int:
         print(state)
         print("\n".join(f"  {line}" for line in lines))
         return EXIT.get(state, 1)
+    if args.command == "result":
+        print(flow.result(root, args.task))
+        return 0
     if args.command == "status":
         return _status(root, args.task)
     if args.command == "split":
@@ -199,6 +207,10 @@ def main(argv: list[str] | None = None) -> int:
         entries = board.read(root)
         if entries is None:
             raise RuntimeError("gh cannot read the board. Log in to GitHub: gh auth login")
+        if args.scope:
+            planned = Task(id="", title="", scope=[config.pattern(item) for item in args.scope])
+            print("\n".join(board.overlaps(planned, [], entries)) or "No open task plans or changes these files.")
+            return 0
         print("\n".join(board.lines(entries, repo.me(root))) or "No open task.")
         return 0
     if args.command == "resume":

@@ -6,10 +6,12 @@ The person who asks for a change decides what to make. They decide it once, at t
 see: a mockup of the screen, or a diagram of the flow and the data. The AI does everything after that, and another AI
 checks its plan in place of a person. Machines check the result. GitHub merges it.
 
-A team has two roles. A teammate asks for changes and approves their previews, and never reads code. An
+A team has three roles. A teammate asks for changes and approves their previews, and never reads code. An
 administrator sets up and maintains Akasha and the few risky parts (the database, the deployment), and helps when an
-AI is stuck. Nobody reviews a task, except one kind of change: when a task changes existing lines of the core (code
-that other areas use), an administrator approves it on GitHub before it lands.
+AI is stuck. An agent account works from the requests of people that a program gives it, for example the diagnosis
+of a failed job: the person approves its result before the merge (see "An agent task"). Nobody reviews a task, except
+one kind of change: when a task changes existing lines of the core (code that other areas use), an administrator
+approves it on GitHub before it lands.
 
 | Step | Who | What happens |
 |:--|:--|:--|
@@ -63,11 +65,31 @@ Another AI reviews the plan, in place of a person who reads it.
 
 - The agent engine writes `research.md` and `plan.md`, and asks the akasha-reviewer agent for a review, with the plan
   digest from `akasha status`.
-- This AI reads the preview, the plan, the code, and the rules of the team (`[guides]`). It ends its answer with
-  `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES`.
+- This AI reads the preview, the plan, the code, and the rules of the team (`[guides]`). It judges nine written items,
+  one row each with its evidence, and ends its answer with `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES`.
 - The hook at the end of a subagent (`SubagentStop`) reads the mark and records it for that version of the plan. A
   change of the plan after a pass needs a new review. In Claude Code only the akasha-reviewer agent counts: a mark in
   the answer of another subagent does nothing.
+- A PASS mark counts only when each item has a row that is PASS, or N/A where it may be. Else Akasha records CHANGES
+  and the next step tells why. The whole answer goes into `review.md` in the records, and the pull request shows the
+  verdict of the items, so each change keeps why its plan passed.
+
+| Item | It passes when |
+|:--|:--|
+| R1 Preview | Each behavior of the preview has a step, and no step builds what the person did not see (an agent task: what `request.md` asks, and nothing more) |
+| R2 Exact | Each step names the exact file and the change: no "TBD", "later", or "as above" |
+| R3 Real | Each file, function, table, and caller that the plan names is in the code as the plan tells |
+| R4 Reach | The plan names each other feature, table, API, and caller that the change touches, and keeps each one working |
+| R5 Tests | A test for each behavior. N/A only for a change without a behavior, for example a text |
+| R6 Undo | The plan tells how to undo the change |
+| R7 Rules | The plan follows the rules of the team (`[guides] plan`, `[guides] review`) |
+| R8 Decisions | The plan keeps each decision of the box at the top of the preview (an agent task: the cause — the code and the data confirm it, and the plan repairs it, not only the symptom) |
+| R9 Core | New code goes beside code that other areas use; an existing line there changes only when the request needs it, with the reason. N/A when the plan changes no such code |
+
+An item fails when the result, built as the plan says, would be wrong, would break a feature, or would miss a
+behavior, or when the plan alone is not enough to build it. A point that does not change the result (a name, a
+sentence, a better way) is a note, and fails nothing. A quick task has three items in place of these: Q1 Title (it
+does what the title says, and nothing more), Q2 Reach (it reaches no other screen), and Q3 Safe (it breaks nothing).
 - Only where the agent engine has no akasha-reviewer agent (Codex), the agent engine reviews the plan itself and runs
   `akasha review <task> --verdict pass`. The pull request tells that it was a self-review. Akasha refuses it in
   Claude Code, and a self-review never replaces a CHANGES of the akasha-reviewer agent for the same plan.
@@ -87,6 +109,29 @@ and keeps the review of another AI, the approval of the person, the checks, and 
 | A later change | A change of the code after the review or the approval needs both again. The landing stops until they hold for the current change |
 | Not quick | `akasha check` fails the check `quick`, and the landing stops. `akasha upgrade <task>` makes it a full task: the change stays, and the person approves a preview first |
 | On GitHub | The server check runs the same rules for each pull request whose records have `impact.md`, and fails the check `quick` when the change is not a quick change. A team with its own CI runs `akasha check --ci` in it for this (`[ci] required`) |
+
+## An agent task
+
+An agent account (`[team] agents`) has no person in its session. A program, the relay, runs the session: it gives the
+request of a person as a prompt, for example the diagnosis of a failed job and what to change, and it sends the answers
+of the session to that person. The request decides what to make, so an agent task has no preview. The person decides
+once, at the end, on the result.
+
+| Part | How it works |
+|:--|:--|
+| Who | The GitHub name decides. Each task of an agent account is an agent task; a person cannot make one, and an agent account makes no other kind |
+| The request | The hook of the prompt keeps each prompt of an agent session. `akasha start` writes the last prompt of the session, of the last ten minutes, into `request.md` in the records, word for word. The agent engine cannot make one up |
+| The plan | As for each task: research, plan, and the akasha-reviewer agent, which reads `request.md` in place of a preview. No code changes before the review passes |
+| The summary | `summary.md` tells the problem, the cause, what changed, what other areas it reaches, and how to undo it |
+| The landing | When the checks of GitHub passed and the branch is up to date, `akasha land` stops with ASK (exit code 4) and does not merge. Where GitHub merges with its auto-merge, Akasha turns it on only after the approval |
+| The result | `akasha result <task>` gives the text for the person: the summary, a link to the change between two fixed commits, and the changed files. It writes nothing into the work copy, so the checks do not run again |
+| The approval | The answer of the person is the next prompt. When it approves the result, `akasha approve <task>` records it with the digest of the change and of `summary.md`. The relay can name the person on the first line: `[akasha-from: <name>]` |
+| A later change | A change of the code or of `summary.md` after the approval needs a new one. A merge of the default branch keeps it: the change starts where the task meets the default branch |
+| The rules | As for a teammate: the locked files and the core approval of an administrator hold |
+| On GitHub | The watch reports an agent task of a person, a task of an agent account that is not an agent task, and an agent task without an approved result |
+
+Akasha trusts the relay to give only the words of a person as prompts. The relay keeps the GitHub key and the last
+word on the merge; the hooks keep a cooperative agent engine on the procedure.
 
 ## What Akasha stops
 
@@ -110,8 +155,10 @@ its tasks (their own work copies, edits in the main checkout, their merges). For
 comes first, and the session start and each prompt say so. The rules on pushes, force pushes, `.env`, and
 `.akasha/state` hold for everyone.
 
-After an edit, Akasha also tells the agent engine when another open task plans or changes the same file. It does not
-stop the work: the task that lands later takes the earlier change.
+Before a start, `akasha board --scope <patterns>` names each open task that plans or already changes the same files,
+and the AI reads what it changes before it plans. Nobody waits, and the person decides nothing more. After an edit,
+Akasha also tells the agent engine when another open task plans or changes the same file. It does not stop the work:
+each task keeps its own pull request, and the task that lands later takes the earlier change.
 
 Where no Python 3.11 or higher is on the computer, the hooks cannot run. Then the session start and each prompt tell
 it to the agent engine, and each edit in a repository that uses Akasha stops, so that no step goes around Akasha
@@ -197,7 +244,7 @@ Each person, from any team, holds their own tasks. Any number of tasks can be op
 | Situation | What happens |
 |:--|:--|
 | A new task plans files that open tasks already plan | `akasha start` and the board show those tasks and their holders |
-| Tasks change the same file | The hook tells each of them after the edit. A task that lands later takes the earlier changes, or stops with CONFLICT |
+| Tasks change the same file | Before the start, the AI reads what the other task changes. The hook tells each task after the edit. Each keeps its own pull request: a task that lands later takes the earlier changes, or stops with CONFLICT, and its AI keeps the changes of both sides, checks again, and lands |
 | Several tasks are ready at once | They merge one by one. Each later one is behind: Akasha brings it up to date, and it merges after its checks pass again |
 | A person stops, and another person or computer continues | `akasha handoff <task>` saves the work and frees the task. `akasha resume <task>` continues it anywhere |
 | Another person took a task with `akasha resume --force` | The old computer stops pushing, landing, and closing it, and removes its copy at the next session start |

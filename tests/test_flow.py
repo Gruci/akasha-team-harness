@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from akasha import approval, checks, flow, land, review
 from akasha.task import load, save
-from tests.helpers import Repository, run
+from tests.helpers import Repository, rows, run
 
 
 def box(text: str) -> str:
@@ -46,7 +46,7 @@ class FlowTests(unittest.TestCase):
     def reviewed(self):
         task, records = self.approved()
         (records / "plan.md").write_text("# Plan\n- change app.py\n", encoding="utf-8")
-        self.mark(f"No problems\nAKASHA-REVIEW: {task.id} {review.plan_digest(task)} PASS")
+        self.mark(f"{rows()}\nNo problems\nAKASHA-REVIEW: {task.id} {review.plan_digest(task)} PASS")
         return load(self.root, task.id), records
 
     def mark(self, text: str) -> str:
@@ -145,7 +145,7 @@ class FlowTests(unittest.TestCase):
         self.assertIn("another version", self.mark(f"AKASHA-REVIEW: {task.id} {old} PASS"))
         task, _records = load(self.root, task.id), None
         new = review.plan_digest(task)
-        self.mark(f"AKASHA-REVIEW: {task.id} {new} PASS\nAKASHA-REVIEW: {task.id} {new} PASS")
+        self.mark(f"{rows()}\nAKASHA-REVIEW: {task.id} {new} PASS\nAKASHA-REVIEW: {task.id} {new} PASS")
         task = load(self.root, task.id)
         self.assertEqual(flow.gate(task), "")
         self.assertEqual(task.review["rounds"], 2)
@@ -269,7 +269,7 @@ class FlowTests(unittest.TestCase):
         approval.on_prompt(self.root, tree, "approve")
         flow.approve(self.root, task.id)
         (records / "plan.md").write_text("plan", encoding="utf-8")
-        self.mark(f"AKASHA-REVIEW: {task.id} {review.plan_digest(load(self.root, task.id))} PASS")
+        self.mark(f"{rows()}\nAKASHA-REVIEW: {task.id} {review.plan_digest(load(self.root, task.id))} PASS")
         (tree / "new.py").write_text("x = 1\n", encoding="utf-8")
         result, _notes = flow.check(self.root, task.id)
         self.assertEqual(result.status, {"tests": "PASS"})

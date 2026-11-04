@@ -10,6 +10,7 @@ in any language. This page tells what happens, for the person who must understan
 | Question | Where it goes |
 |:--|:--|
 | Who are the administrators? Each other person with write access is a teammate | `[team] admins` |
+| Does a program run an agent that changes the code for people? Its GitHub account | `[team] agents` |
 | Which parts are risky, for example the database and the deployment? Only an administrator changes them | `[risk] paths` |
 | Which folders hold one feature each? The AI proposes them from the folders of the repository. A file that two or more other areas import is core | `[core] areas`, `[core] used_by` |
 | Which files must an administrator approve before a change of their existing lines, for example the definitions of the database? | `[core] paths` |
@@ -123,8 +124,26 @@ Each teammate installs the plugin once (`/plugin marketplace add Gruci/akasha-te
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"`, elsewhere `python3 -m pip install …`.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.0"`, elsewhere `python3 -m pip install …`.
 Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
+
+## Agent accounts
+
+An agent account is a GitHub account that a program, the relay, runs: for example an operations agent that diagnoses
+a failed job and fixes it when a person asks. Its tasks have no preview, and the person approves the result before the
+merge (see "An agent task" in [how it works](how-it-works.md)).
+
+1. Make a GitHub account for the agent, invite it to this repository only, and give the relay its key. A change of the
+   agent then shows under its own name, and a removal from the collaborators stops it.
+2. Add its name to `[team] agents` with a task of an administrator.
+3. The relay runs the agent engine with the plugin of Akasha, and keeps these duties:
+   - Each prompt carries the words of a person, as they wrote them: first the request, later their answer to the
+     result. It can name the person on the first line: `[akasha-from: <name>]`.
+   - After `akasha land` says ASK (exit code 4), the session ends its turn with the text of `akasha result`. The relay
+     sends that text to the person, and gives their answer as the next prompt.
+   - The relay keeps the last word on the merge. The hooks keep a cooperative agent engine on the procedure; they are
+     not a sandbox. A relay that holds the GitHub key outside the session and examines each merge stops an agent
+     engine that does not cooperate.
 
 ## The retro: grow the rules from the problems
 

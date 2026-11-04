@@ -113,16 +113,20 @@ def touches(first: list[str], second: list[str]) -> list[str]:
 
 
 def overlaps(task: Task, changed: list[str], entries: list[Entry]) -> list[str]:
-    """One line for each other open task that plans or changes the same files."""
+    """One line for each other open task that plans or changes the same files: its plan against this plan, and the
+    files that it changed already against this plan and against the files that this task changed."""
     lines = []
     for entry in entries:
         other = entry.task
         if other.id == task.id or (task.number and entry.number == task.number):
             continue
         hits = touches(task.scope, other.scope)
+        hits += [path for path in entry.files if any(matches(path, item) for item in task.scope)]
         hits += [path for path in changed if path in entry.files or any(matches(path, item) for item in other.scope)]
         if hits:
-            lines.append(f"#{entry.number} {other.title} (@{entry.person}): {', '.join(dict.fromkeys(hits))[:300]}")
+            step = "draft" if entry.draft else "landing"
+            lines.append(f"#{entry.number} {other.title} (@{entry.person}, {step}): "
+                         f"{', '.join(dict.fromkeys(hits))[:300]}")
     return lines
 
 

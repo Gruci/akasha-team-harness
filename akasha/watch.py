@@ -1,8 +1,9 @@
 """The watch: where GitHub cannot protect the default branch, a workflow examines each new commit after a push and
 reports each problem to the administrators: a commit that no merged pull request brought, a merge before the required
-checks passed, a pull request that was not an Akasha task or had no approved preview or no passed plan review, and a
-change by a teammate of a file that only an administrator changes, or of existing lines of core code without an
-approval of an administrator. It changes no code: a revert would start a
+checks passed, a pull request that was not an Akasha task or had no approved preview or no passed plan review, an
+agent task of a person or without an approved result, and a change by a teammate or an agent account of a file that
+only an administrator changes, or of existing lines of core code without an approval of an administrator. It changes
+no code: a revert would start a
 deployment that nobody asked for, and the administrators decide."""
 
 from __future__ import annotations
@@ -62,6 +63,12 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
     task = parse_block(pull.get("body") or "")
     if task is None:
         return f"pull request #{pull['number']} was not an Akasha task"
+    if task.kind == "agent" and author not in team.agents:
+        return f"pull request #{pull['number']} is marked as an agent task, but @{author} is not an agent account"
+    if author in team.agents and task.kind != "agent":
+        return f"pull request #{pull['number']} of the agent account @{author} was not an agent task"
+    if task.kind == "agent" and task.approval.get("source") != "result":
+        return f"pull request #{pull['number']} merged without an approved result"
     if not task.approval:
         return f"pull request #{pull['number']} merged without an approved preview"
     if task.review.get("verdict") != "PASS":

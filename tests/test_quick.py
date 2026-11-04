@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from akasha import approval, config, flow, land, quick, review
 from akasha.task import load
-from tests.helpers import Repository, run
+from tests.helpers import Repository, rows, run
 
 SHARED = {"lib/button.js": "export const label = 'Save';\n",
           "pages/a/view.js": "import { label } from '../../lib/button';\n",
@@ -52,7 +52,8 @@ class QuickTests(unittest.TestCase):
     def mark(self, task, verdict="PASS"):
         return review.on_subagent_stop(self.root, {
             "agent_type": "akasha-reviewer",
-            "last_assistant_message": f"AKASHA-REVIEW: {task.id} {quick.digest(load(self.root, task.id))} {verdict}"})
+            "last_assistant_message": f"{rows('quick')}\n"
+                                      f"AKASHA-REVIEW: {task.id} {quick.digest(load(self.root, task.id))} {verdict}"})
 
     def problems(self, task, team=None):
         tree = Path(task.workcopy)

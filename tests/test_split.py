@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from akasha import approval, flow, guard, land, review
 from akasha.task import all_local, load
-from tests.helpers import Repository, run
+from tests.helpers import Repository, rows, run
 
 QUIET = {key: "" for key in ("CLAUDE_CODE_SESSION_ID", "CLAUDECODE")}
 
@@ -46,7 +46,7 @@ class SplitTests(unittest.TestCase):
         (records / "plan.md").write_text("# Plan\n", encoding="utf-8")
         task = load(self.root, task.id)
         review.on_subagent_stop(self.root, {"agent_type": "akasha-reviewer", "last_assistant_message":
-                                            f"AKASHA-REVIEW: {task.id} {review.plan_digest(task)} PASS"})
+                                            f"{rows()}\nAKASHA-REVIEW: {task.id} {review.plan_digest(task)} PASS"})
         return load(self.root, task.id)
 
     def two_parts(self):

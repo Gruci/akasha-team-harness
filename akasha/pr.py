@@ -20,7 +20,11 @@ def meta(task: Task) -> list[str]:
         lines.append("- Kind: quick change — no preview of the result and no plan. It changes only existing files "
                      "that no other area uses; the reviewer examined the change with impact.md, and the person "
                      "approved the change itself")
-    if task.approval:
+    if task.kind == "agent":
+        lines.append("- Kind: agent task — an agent account worked from the request of a person (request.md), "
+                     "without a preview. The person approves the result before the merge")
+        lines.append(_result_line(task))
+    elif task.approval:
         lines.append(f"- Preview approved by @{task.approval.get('by', '?')} at {task.approval.get('at', '?')} "
                      f"with \"{task.approval.get('words', '')}\" (preview `{task.approval.get('preview_sha', '')}`)")
     else:
@@ -28,7 +32,8 @@ def meta(task: Task) -> list[str]:
     if task.review:
         who = "the akasha-reviewer agent" if task.review.get("source") == "reviewer" else "the agent engine itself"
         what = "Change review" if task.kind == "quick" else "Plan review"
-        lines.append(f"- {what}: {task.review.get('verdict')} by {who} (round {task.review.get('rounds', 1)})")
+        lines.append(f"- {what}: {task.review.get('verdict')} by {who} (round {task.review.get('rounds', 1)})"
+                     + _items(task.review))
     if task.checks:
         status = ", ".join(f"{name} {value}" for name, value in task.checks.get("status", {}).items())
         lines.append(f"- Checks on this computer: {status}")
@@ -39,9 +44,37 @@ def meta(task: Task) -> list[str]:
         lines.append(f"- Core changes: {', '.join(f'`{name}`' for name in found)} — {state}")
     if task.scope:
         lines.append(f"- Planned files: {', '.join(f'`{item}`' for item in task.scope)}")
-    kept = "impact, preview, summary" if task.kind == "quick" else "preview, research, plan, summary"
+    kept = {"quick": "impact, preview, review, summary", "agent": "request, research, plan, review, summary"}.get(
+        task.kind, "preview, research, plan, review, summary")
     lines.append(f"- Records: `{records(task)}/` ({kept})")
     return lines
+
+
+def _items(review: dict) -> str:
+    """The verdict of each item of the review, in short: 'R1–R9 PASS (N/A R9)', or why a PASS mark did not count."""
+    found = review.get("items") or {}
+    if review.get("problem"):
+        return f" — the PASS mark did not count: {review['problem']}"
+    if not found:
+        return ""
+    if review.get("verdict") != "PASS":
+        failed = sorted(name for name, verdict in found.items() if verdict == "FAIL")
+        return f" — failed: {', '.join(failed)}, see review.md" if failed else ""
+    names = sorted(found)
+    span = f"{names[0]}–{names[-1]}" if len(names) > 1 else names[0]
+    unused = [name for name, verdict in found.items() if verdict == "N/A"]
+    return f" — {span} PASS" + (f" (N/A {', '.join(unused)})" if unused else "") + ", see review.md"
+
+
+def _result_line(task: Task) -> str:
+    """Who approved the result of an agent task. The relay names the person; else it is the agent account."""
+    found = task.approval
+    if found.get("source") != "result":
+        return "- Result: not approved yet"
+    through = str(found.get("through") or "?")
+    who = f"@{through}" if found.get("by") == through else f"{found.get('by')} through @{through}"
+    return (f"- Result approved by {who} at {found.get('at', '?')} with \"{found.get('words', '')}\" (change "
+            f"`{found.get('change_sha', '')}`)")
 
 
 def summary(task: Task) -> str:

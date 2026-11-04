@@ -21,6 +21,12 @@ command = "python -c \\"import sys; sys.exit(0)\\""
 """
 
 
+def rows(kind: str = "plan", **verdicts: str) -> str:
+    """The table of a review that passes each item, with other verdicts by item: rows(R4="FAIL")."""
+    from akasha.review import ITEMS
+    return "\n".join(f"| {item} | {verdicts.get(item, 'PASS')} | read it |" for item in ITEMS[kind])
+
+
 def run(cwd: Path, *args: str) -> str:
     done = subprocess.run(list(args), cwd=cwd, capture_output=True, text=True, encoding="utf-8")
     if done.returncode:

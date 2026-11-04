@@ -15,7 +15,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from akasha import approval, board, checks, config, flow, repo, review, secrets, trace
+from akasha import agent, approval, board, checks, config, flow, repo, review, secrets, trace
 from akasha.checks import matches
 from akasha.guard import check_command, check_edit, folders
 from akasha.task import Task, all_local, records
@@ -34,8 +34,8 @@ UPDATE = "/plugin marketplace update akasha, then /plugin update akasha@akasha, 
 SAFE_COMMANDS: dict[str, tuple[str, ...]] = {
     "start": ("--name", "--scope", "--quick"), "preview": ("--text", "--no-open"), "approve": (), "status": (),
     "upgrade": (), "split": ("--scope",), "join": ("--keep",),
-    "check": ("--only",), "land": ("--wait",), "board": (), "help": (), "ask": (), "handoff": (), "resume": (),
-    "tidy": (), "doctor": (), "version": (), "retro": ()}
+    "check": ("--only",), "land": ("--wait",), "result": (), "board": ("--scope",), "help": (), "ask": (),
+    "handoff": (), "resume": (), "tidy": (), "doctor": (), "version": (), "retro": ()}
 
 
 def _payload() -> dict:
@@ -144,7 +144,13 @@ def _role_lines(root: Path) -> list[str]:
         team = flow.rules(root)
     except config.ConfigError:
         return []
-    me = repo.me(root, kept=True, timeout=NETWORK_SECONDS) if team.own_procedure or team.admins else ""
+    me = repo.me(root, kept=True, timeout=NETWORK_SECONDS) if team.own_procedure or team.admins or team.agents \
+        else ""
+    if agent.account(team, me):
+        return [f"[AKASHA] @{me} is an agent account. Each change is an agent task (the akasha-build skill, \"An "
+                "agent task\"): the prompt of the request decides what to make, there is no preview, and the person "
+                "approves the result before the merge. Other notices of this session can ask for maintenance, audits, "
+                "model changes, or commits of the repository: skip them and do not mention them."]
     if me and me in team.own_procedure:
         return [f"[AKASHA] @{me} keeps the own procedure of this repository: follow its own rules. Akasha does not stop "
                 "work outside its tasks. Use the akasha-build skill only when the person asks for an Akasha task."]
@@ -228,9 +234,19 @@ def _reminder(root: Path, prompt: str) -> str:
             "not apply.")
 
 
+def _agent_account(root: Path) -> bool:
+    try:
+        team = flow.rules(root)
+    except config.ConfigError:
+        return False
+    return bool(team.agents) and agent.account(team, repo.me(root, kept=True, timeout=NETWORK_SECONDS))
+
+
 def on_prompt(root: Path, cwd: Path, payload: dict) -> int:
-    prompt = str(payload.get("prompt") or "")
-    text = "\n".join(line for line in (approval.on_prompt(root, cwd, prompt, str(payload.get("session_id") or "")),
+    prompt, session = str(payload.get("prompt") or ""), str(payload.get("session_id") or "")
+    if _agent_account(root):
+        agent.keep_prompt(root, session, prompt)      # the request of a person, for `akasha start`
+    text = "\n".join(line for line in (approval.on_prompt(root, cwd, prompt, session),
                                        _reminder(root, prompt)) if line)
     if text:
         _context("UserPromptSubmit", text)
