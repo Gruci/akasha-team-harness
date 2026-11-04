@@ -18,7 +18,7 @@ and approves a preview of it. That is their only step.
 The AI plans, a second AI checks the plan,<br>
 and the AI builds, checks, and lands the change.
 
-<img src="https://img.shields.io/badge/version-1.0.0-7c3aed" alt="Version 1.0.0">
+<img src="https://img.shields.io/badge/version-1.1.0-7c3aed" alt="Version 1.1.0">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -77,7 +77,7 @@ Approve it in your own words, in any language, or tell what to change.<br>
 The AI does the rest, and tells you when the change is merged and when it is live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.0.0"` in that Python
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.0"` in that Python
 > (on Windows `py -3 -m pip install …`).
 
 * * *
@@ -189,6 +189,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
+| **v1.1.0** | Agent accounts (`[team] agents`): a program runs the account, it works from the request of a person without a preview, and that person approves the result before the merge (`akasha result`, the landing result ASK). The review of the plan: nine written items, one row each with its evidence; a PASS mark counts only when each item passed, and `review.md` keeps the answer. Quick tasks (`start --quick`): a small change of existing files that no other area uses, without a preview and a plan. Parts of a task for workers at the same time (`split`, `join`). The core: a teammate adds freely, and an administrator approves only a change of existing lines of code that other areas use. The scope interview in a choice tool. |
 | **v1.0.0** | First release. |
 
 * * *
