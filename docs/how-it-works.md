@@ -65,11 +65,31 @@ Another AI reviews the plan, in place of a person who reads it.
 
 - The agent engine writes `research.md` and `plan.md`, and asks the akasha-reviewer agent for a review, with the plan
   digest from `akasha status`.
-- This AI reads the preview, the plan, the code, and the rules of the team (`[guides]`). It ends its answer with
-  `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES`.
+- This AI reads the preview, the plan, the code, and the rules of the team (`[guides]`). It judges nine written items,
+  one row each with its evidence, and ends its answer with `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES`.
 - The hook at the end of a subagent (`SubagentStop`) reads the mark and records it for that version of the plan. A
   change of the plan after a pass needs a new review. In Claude Code only the akasha-reviewer agent counts: a mark in
   the answer of another subagent does nothing.
+- A PASS mark counts only when each item has a row that is PASS, or N/A where it may be. Else Akasha records CHANGES
+  and the next step tells why. The whole answer goes into `review.md` in the records, and the pull request shows the
+  verdict of the items, so each change keeps why its plan passed.
+
+| Item | It passes when |
+|:--|:--|
+| R1 Preview | Each behavior of the preview has a step, and no step builds what the person did not see (an agent task: what `request.md` asks, and nothing more) |
+| R2 Exact | Each step names the exact file and the change: no "TBD", "later", or "as above" |
+| R3 Real | Each file, function, table, and caller that the plan names is in the code as the plan tells |
+| R4 Reach | The plan names each other feature, table, API, and caller that the change touches, and keeps each one working |
+| R5 Tests | A test for each behavior. N/A only for a change without a behavior, for example a text |
+| R6 Undo | The plan tells how to undo the change |
+| R7 Rules | The plan follows the rules of the team (`[guides] plan`, `[guides] review`) |
+| R8 Decisions | The plan keeps each decision of the box at the top of the preview (an agent task: the cause — the code and the data confirm it, and the plan repairs it, not only the symptom) |
+| R9 Core | New code goes beside code that other areas use; an existing line there changes only when the request needs it, with the reason. N/A when the plan changes no such code |
+
+An item fails when the result, built as the plan says, would be wrong, would break a feature, or would miss a
+behavior, or when the plan alone is not enough to build it. A point that does not change the result (a name, a
+sentence, a better way) is a note, and fails nothing. A quick task has three items in place of these: Q1 Title (it
+does what the title says, and nothing more), Q2 Reach (it reaches no other screen), and Q3 Safe (it breaks nothing).
 - Only where the agent engine has no akasha-reviewer agent (Codex), the agent engine reviews the plan itself and runs
   `akasha review <task> --verdict pass`. The pull request tells that it was a self-review. Akasha refuses it in
   Claude Code, and a self-review never replaces a CHANGES of the akasha-reviewer agent for the same plan.

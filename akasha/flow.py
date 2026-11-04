@@ -34,7 +34,8 @@ def gate(task: Task) -> str:
                     "start it again right after the prompt of the request.")
         if not review.passed(task):
             return (f"The plan did not pass the review. Write research.md and plan.md in {records(task)}/, ask the "
-                    f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes.")
+                    f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes."
+                    + review.told(task))
         return ""
     if quick.is_quick(task):
         return ""
@@ -47,7 +48,8 @@ def gate(task: Task) -> str:
         return f"The preview changed after the approval. Show it again with `akasha preview {task.id}`."
     if not review.passed(task):
         return (f"The plan did not pass the review. Write research.md and plan.md in {records(task)}/, ask the "
-                f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes.")
+                f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes."
+                + review.told(task))
     return ""
 
 
@@ -114,7 +116,7 @@ def _quick_step(task: Task) -> str:
                 "screen changes.")
     if task.review.get("verdict") != "PASS" or task.review.get("plan_sha") != now:
         return (f"Ask the akasha-reviewer agent to review the change of the quick task {task.id} (change digest "
-                f"{now}), and repair the change until it passes.")
+                f"{now}), and repair the change until it passes." + review.told(task))
     if not task.approval or task.approval.get("change_sha") != now:
         if task.status == "preview" and task.shown_at and quick.shown_change(task) == now:
             return (f"Wait for the message of the person. When it approves the change, run `akasha approve "

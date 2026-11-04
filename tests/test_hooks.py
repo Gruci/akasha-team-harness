@@ -13,7 +13,7 @@ from unittest.mock import patch
 from akasha import __main__ as akasha_main
 from akasha import flow, hooks, setup
 from akasha.task import load
-from tests.helpers import TEAM, Repository
+from tests.helpers import TEAM, Repository, rows
 
 PREVIEW = '<html><section id="akasha-decisions">x</section></html>'      # with the box of the decisions
 
@@ -103,7 +103,7 @@ class HookTests(unittest.TestCase):
         self.hook("UserPromptSubmit", {"prompt": "approve"})
         flow.approve(self.root, task.id)
         (records / "plan.md").write_text("plan", encoding="utf-8")
-        mark = f"AKASHA-REVIEW: t5 {flow.review.plan_digest(load(self.root, 't5'))} PASS"
+        mark = f"{rows()}\nAKASHA-REVIEW: t5 {flow.review.plan_digest(load(self.root, 't5'))} PASS"
         self.hook("SubagentStop", {"agent_type": "general-purpose", "last_assistant_message": mark})
         self.assertFalse(load(self.root, "t5").review)
         self.hook("SubagentStop", {"agent_type": "akasha:akasha-reviewer", "last_assistant_message": mark})

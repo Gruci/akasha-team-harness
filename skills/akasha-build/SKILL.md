@@ -117,8 +117,9 @@ The person approves the result before the merge. That is their only step.
    example a new secret value on the server or a first run of a job; `summary.md` repeats them.
 3. Run `akasha status <task>` for the plan digest. Ask the akasha-reviewer agent: "Review the plan of Akasha task
    <task>. Work copy: <path>. Plan digest: <digest>. Akasha command: <the command of the session start notice>." It
-   ends with a review mark, and Akasha records it. Only the akasha-reviewer agent counts. Repair the plan, and ask
-   again with the new digest, until the mark is PASS.
+   judges nine items, one row each, ends with a review mark, and Akasha records it with the answer in `review.md`.
+   Only the akasha-reviewer agent counts. Repair each item that failed, and ask again with the new digest, until the
+   mark is PASS. When the next step says that a PASS mark did not count, an item had no row: ask again.
 4. If the review shows that the result must differ from the approved preview, change the preview and get a new
    approval from the person (step 2.3). Else do not ask the person anything.
 5. Only an agent app without the akasha-reviewer agent (for example Codex) reviews the plan itself, as strictly as

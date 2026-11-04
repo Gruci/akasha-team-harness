@@ -32,7 +32,8 @@ def meta(task: Task) -> list[str]:
     if task.review:
         who = "the akasha-reviewer agent" if task.review.get("source") == "reviewer" else "the agent engine itself"
         what = "Change review" if task.kind == "quick" else "Plan review"
-        lines.append(f"- {what}: {task.review.get('verdict')} by {who} (round {task.review.get('rounds', 1)})")
+        lines.append(f"- {what}: {task.review.get('verdict')} by {who} (round {task.review.get('rounds', 1)})"
+                     + _items(task.review))
     if task.checks:
         status = ", ".join(f"{name} {value}" for name, value in task.checks.get("status", {}).items())
         lines.append(f"- Checks on this computer: {status}")
@@ -43,10 +44,26 @@ def meta(task: Task) -> list[str]:
         lines.append(f"- Core changes: {', '.join(f'`{name}`' for name in found)} — {state}")
     if task.scope:
         lines.append(f"- Planned files: {', '.join(f'`{item}`' for item in task.scope)}")
-    kept = {"quick": "impact, preview, summary", "agent": "request, research, plan, summary"}.get(
-        task.kind, "preview, research, plan, summary")
+    kept = {"quick": "impact, preview, review, summary", "agent": "request, research, plan, review, summary"}.get(
+        task.kind, "preview, research, plan, review, summary")
     lines.append(f"- Records: `{records(task)}/` ({kept})")
     return lines
+
+
+def _items(review: dict) -> str:
+    """The verdict of each item of the review, in short: 'R1–R9 PASS (N/A R9)', or why a PASS mark did not count."""
+    found = review.get("items") or {}
+    if review.get("problem"):
+        return f" — the PASS mark did not count: {review['problem']}"
+    if not found:
+        return ""
+    if review.get("verdict") != "PASS":
+        failed = sorted(name for name, verdict in found.items() if verdict == "FAIL")
+        return f" — failed: {', '.join(failed)}, see review.md" if failed else ""
+    names = sorted(found)
+    span = f"{names[0]}–{names[-1]}" if len(names) > 1 else names[0]
+    unused = [name for name, verdict in found.items() if verdict == "N/A"]
+    return f" — {span} PASS" + (f" (N/A {', '.join(unused)})" if unused else "") + ", see review.md"
 
 
 def _result_line(task: Task) -> str:

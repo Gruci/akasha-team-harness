@@ -43,11 +43,11 @@ Akasha puts the person there, and puts machines everywhere else.
 | | Without | With Akasha |
 |:--|:--|:--|
 | What the person checks | A technical plan, or nothing | A preview they can see: a mockup or a diagram |
-| The plan | Nobody reads it | A second AI checks it until it passes |
+| The plan | Nobody reads it | A second AI checks nine written items, each with its evidence, until each one passes |
 | The approval | The AI can write "approved" | Only words that the person typed, kept as typed |
 | Many people | Nobody sees the others | The open pull requests are the board |
 | "Done" | A claim | The checks pass on GitHub, then one commit |
-| Months later | Nobody knows why | The preview, plan, and summary stay with it |
+| Months later | Nobody knows why | The preview, plan, review, and summary stay with it |
 
 * * *
 
@@ -84,7 +84,7 @@ The AI does the rest, and tells you when the change is merged and when it is liv
 
 ## How It Works
 
-<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams ask at the same time. Each person only approves a preview. For each task an AI plans, a second AI checks the plan, the AI builds and tests. The tasks of all teams merge into one product one by one.">
+<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams and an agent ask at the same time. Each person only approves a preview; the person who asked the agent approves its result before the merge. For each task an AI plans, a second AI checks the plan, the AI builds and tests. The board tells two tasks that change the same file. The tasks merge into one product one by one, and a later one is first brought up to date.">
 
 Each task goes through six steps, and many tasks go through them at once:
 
