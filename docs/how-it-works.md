@@ -6,10 +6,12 @@ The person who asks for a change decides what to make. They decide it once, at t
 see: a mockup of the screen, or a diagram of the flow and the data. The AI does everything after that, and another AI
 checks its plan in place of a person. Machines check the result. GitHub merges it.
 
-A team has two roles. A teammate asks for changes and approves their previews, and never reads code. An
+A team has three roles. A teammate asks for changes and approves their previews, and never reads code. An
 administrator sets up and maintains Akasha and the few risky parts (the database, the deployment), and helps when an
-AI is stuck. Nobody reviews a task, except one kind of change: when a task changes existing lines of the core (code
-that other areas use), an administrator approves it on GitHub before it lands.
+AI is stuck. An agent account works from the requests of people that a program gives it, for example the diagnosis
+of a failed job: the person approves its result before the merge (see "An agent task"). Nobody reviews a task, except
+one kind of change: when a task changes existing lines of the core (code that other areas use), an administrator
+approves it on GitHub before it lands.
 
 | Step | Who | What happens |
 |:--|:--|:--|
@@ -87,6 +89,29 @@ and keeps the review of another AI, the approval of the person, the checks, and 
 | A later change | A change of the code after the review or the approval needs both again. The landing stops until they hold for the current change |
 | Not quick | `akasha check` fails the check `quick`, and the landing stops. `akasha upgrade <task>` makes it a full task: the change stays, and the person approves a preview first |
 | On GitHub | The server check runs the same rules for each pull request whose records have `impact.md`, and fails the check `quick` when the change is not a quick change. A team with its own CI runs `akasha check --ci` in it for this (`[ci] required`) |
+
+## An agent task
+
+An agent account (`[team] agents`) has no person in its session. A program, the relay, runs the session: it gives the
+request of a person as a prompt, for example the diagnosis of a failed job and what to change, and it sends the answers
+of the session to that person. The request decides what to make, so an agent task has no preview. The person decides
+once, at the end, on the result.
+
+| Part | How it works |
+|:--|:--|
+| Who | The GitHub name decides. Each task of an agent account is an agent task; a person cannot make one, and an agent account makes no other kind |
+| The request | The hook of the prompt keeps each prompt of an agent session. `akasha start` writes the last prompt of the session, of the last ten minutes, into `request.md` in the records, word for word. The agent engine cannot make one up |
+| The plan | As for each task: research, plan, and the akasha-reviewer agent, which reads `request.md` in place of a preview. No code changes before the review passes |
+| The summary | `summary.md` tells the problem, the cause, what changed, what other areas it reaches, and how to undo it |
+| The landing | When the checks of GitHub passed and the branch is up to date, `akasha land` stops with ASK (exit code 4) and does not merge. Where GitHub merges with its auto-merge, Akasha turns it on only after the approval |
+| The result | `akasha result <task>` gives the text for the person: the summary, a link to the change between two fixed commits, and the changed files. It writes nothing into the work copy, so the checks do not run again |
+| The approval | The answer of the person is the next prompt. When it approves the result, `akasha approve <task>` records it with the digest of the change and of `summary.md`. The relay can name the person on the first line: `[akasha-from: <name>]` |
+| A later change | A change of the code or of `summary.md` after the approval needs a new one. A merge of the default branch keeps it: the change starts where the task meets the default branch |
+| The rules | As for a teammate: the locked files and the core approval of an administrator hold |
+| On GitHub | The watch reports an agent task of a person, a task of an agent account that is not an agent task, and an agent task without an approved result |
+
+Akasha trusts the relay to give only the words of a person as prompts. The relay keeps the GitHub key and the last
+word on the merge; the hooks keep a cooperative agent engine on the procedure.
 
 ## What Akasha stops
 

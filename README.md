@@ -126,12 +126,13 @@ Each person, from any team, works on their own task at the same time as the othe
 
 ## Who Does What
 
-A team has two roles: the administrators, and the teammates.
+A team has three roles: the administrators, the teammates, and the agent accounts.
 
 | Who | Does | Does not have to |
 |:--|:--|:--|
 | **Administrator** | Sets up and maintains Akasha, the database, and the deployment | Review any task |
 | **Teammate** | Says what to make, and approves the preview | Read code or review plans |
+| **Agent account** | A program runs it, for example an operations agent: it works from the request of a person, and that person approves the result before the merge | Make a preview |
 
 Each person keeps their own agent settings (`.claude/settings.local.json`, `CLAUDE.local.md`) out of git, so each
 person can tune the harness freely.

@@ -42,7 +42,7 @@ PYTHON_VERSION = re.compile(r"(\d+)\.(\d+)(?:\.\d+)?")
 AKASHA_CHECK = "akasha"                      # the name of the check of .github/workflows/akasha.yml
 
 _KEYS: dict[str, set[str] | None] = {
-    "team": {"admins", "own_procedure"},
+    "team": {"admins", "own_procedure", "agents"},
     "risk": {"paths"},
     "checks": None,                          # the team names its checks
     "ci": {"required", "runs-on", "python"},
@@ -73,6 +73,9 @@ class Check:
 class Team:
     admins: tuple[str, ...] = ()             # GitHub names, in lower case, without @
     own_procedure: tuple[str, ...] = ()      # GitHub names that keep the own procedure of the repository
+    # GitHub names of agent accounts: they work from the request of a person, without a preview, and that person
+    # approves the result before the merge (agent.py)
+    agents: tuple[str, ...] = ()
     risk_paths: tuple[str, ...] = ()         # only an administrator changes these files, for example the database
     required_checks: tuple[str, ...] = ("secrets",)
     checks: dict[str, Check] = field(default_factory=dict)
@@ -244,9 +247,18 @@ def team_from(data: dict) -> Team:
         named[name] = _check(name, value, unknown)
     work_dir = _folder(work.get("folder", WORK_DIR), "folder", WORK_DIR, ())
     deploy, core = data.get("deploy", {}), data.get("core", {})
+    admins = _names(team.get("admins", []), "[team] admins")
+    own = _names(team.get("own_procedure", []), "[team] own_procedure")
+    agents = _names(team.get("agents", []), "[team] agents")
+    both = sorted(set(agents) & set(admins + own))
+    if both:
+        # An administrator is free of the locked files and of the core approval: an agent account never is
+        raise ConfigError(f"{CONFIG_FILE}: @{both[0]} is in [team] agents and also in [team] admins or "
+                          "own_procedure. An agent account has the rules of a teammate")
     return Team(
-        admins=_names(team.get("admins", []), "[team] admins"),
-        own_procedure=_names(team.get("own_procedure", []), "[team] own_procedure"),
+        admins=admins,
+        own_procedure=own,
+        agents=agents,
         risk_paths=_patterns(risk.get("paths", []), "[risk] paths"),
         required_checks=_strings(checks.get("required", ["secrets"]), "[checks] required") or ("secrets",),
         checks=named,

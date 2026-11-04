@@ -10,6 +10,7 @@ the merged rules, also when its checkout is old.
 ```toml
 [team]
 admins = ["lead", "dba"]           # GitHub names: they set up and maintain Akasha, and help when the AI is stuck
+agents = ["ops-bot"]               # GitHub names of agent accounts: a person approves their result before the merge
 
 [risk]
 paths = ["db/**", "**/migrations/**", "deploy/**"]     # only an administrator changes them
@@ -57,15 +58,17 @@ rules = "akasha"                   # setup writes it
 
 ## `[team]`
 
-A team has two roles: the administrators, named here, and the teammates, who are each other person with write access.
-Nobody reviews a task, except a change of existing lines of the core (`[core]`): an administrator approves it on
-GitHub. The administrators set up and maintain Akasha and the risky parts; a teammate approves the preview of their
-own request.
+A team has three roles: the administrators and the agent accounts, named here, and the teammates, who are each other
+person with write access. Nobody reviews a task, except a change of existing lines of the core (`[core]`): an
+administrator approves it on GitHub. The administrators set up and maintain Akasha and the risky parts; a teammate
+approves the preview of their own request; the person who asked an agent account approves its result before the merge
+(see "An agent task" in [how it works](how-it-works.md)).
 
 | Key | Value |
 |:--|:--|
 | `admins` | The GitHub names of the administrators. Only they change `akasha.toml`, `.github/`, CODEOWNERS, and the paths of `[risk]`. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch |
 | `own_procedure` | The GitHub names of the people who keep the own procedure of the repository outside Akasha, for example the administrator who built it. Akasha does not stop their work outside its tasks (their own work copies, edits in the main checkout, their merges), and the watch accepts their pull requests when the checks passed. The other rules (a force push, a push to the default branch, `.env`) stay |
+| `agents` | The GitHub names of agent accounts: a program (the relay) runs their sessions and gives them the requests of people. Each task of such an account is an agent task, without a preview: the person approves the result before the merge. An agent account has the rules of a teammate, so it cannot also be in `admins` or `own_procedure`. An older Akasha does not know this key: it treats an agent account as a teammate, which needs a preview |
 
 ## `[risk]`
 

@@ -8,7 +8,10 @@ checks passed on the current head, and the branch is up to date. The preview app
 guard a task; an administrator approves only a change of existing lines of core code. Akasha asks GitHub before
 each landing whether it protects the branch, so a missing or old [server] rules never sends a merge to an auto-merge
 that nothing stops. In both cases Akasha brings a pull request that is behind up to date, because GitHub does not do
-it. With [deploy] workflow, the landing then waits for that deployment, because the change is live only after it."""
+it. With [deploy] workflow, the landing then waits for that deployment, because the change is live only after it.
+
+An agent task (agent.py) stops before the merge with ASK when its checks passed, until the person approved its
+result. Then the next landing merges it."""
 
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ import re
 import time
 from pathlib import Path
 
-from akasha import board, checks, core, github, pr, quick, repo, trace, work
+from akasha import agent, board, checks, core, github, pr, quick, repo, trace, work
 from akasha.config import Team
 from akasha.flow import ask_help, drop, gate, rules, taken
 from akasha.task import SUMMARY, Task, load, record, records, save
@@ -32,6 +35,8 @@ _RUN = re.compile(r"/actions/runs/(\d+)")
 MERGED, CLOSED, WAITING, FAILED_CHECK, CONFLICT, BLOCKED = (
     "MERGED", "CLOSED", "WAITING", "FAILED", "CONFLICT", "BLOCKED")
 DEPLOYED, DEPLOY_FAILED, DEPLOYING, VERIFY_FAILED = "DEPLOYED", "DEPLOY_FAILED", "DEPLOYING", "VERIFY_FAILED"
+# An agent task whose checks passed waits for the person: `akasha result`, and the answer of the person (agent.py)
+ASK = "ASK"
 AGAIN = "Run `akasha land {task} --wait 540` again (shell timeout 600000 ms)"
 
 
@@ -132,7 +137,8 @@ def _hand_over(root: Path, task: Task, akasha_merges: bool) -> tuple[str, list[s
     task.checks["landed"] = work.head(tree)
     save(root, task)
     pr.update(root, task)
-    lines = [] if akasha_merges else _auto_merge(root, task)
+    # An auto-merge of GitHub would merge an agent task before the person approved its result: follow turns it on
+    lines = [] if akasha_merges or agent.is_agent(task) else _auto_merge(root, task)
     board.forget(root)
     return "", lines
 
@@ -274,6 +280,10 @@ def follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: b
                 task.checks["updates"] = int(task.checks.get("updates") or 0) + 1
                 save(root, task)
             elif behind == 0 and all(value == "PASS" for value in states.values()):
+                if agent.is_agent(task) and (missing := agent.missing(task)):
+                    task.checks["asked"] = work.head(tree)            # `akasha result` shows this work
+                    save(root, task)
+                    return ASK, [missing]
                 if akasha_merges and view.get("mergeStateStatus") != "UNKNOWN":
                     error = _merge(root, task, view)
                     if not error:

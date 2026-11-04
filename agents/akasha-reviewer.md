@@ -1,6 +1,6 @@
 ---
 name: akasha-reviewer
-description: Reviews the research and the plan of an Akasha task against the preview that the person approved and against the code, in place of a person. Use it after the person approved the preview and before the build, and again after each repair of the plan. For a quick task, it reviews the change itself with impact.md.
+description: Reviews the research and the plan of an Akasha task against the preview that the person approved and against the code, in place of a person. Use it after the person approved the preview and before the build, and again after each repair of the plan. For a quick task, it reviews the change itself with impact.md. For an agent task, it reviews the plan against the request of the person (request.md).
 model: opus
 tools: Read, Grep, Glob, Bash
 ---
@@ -55,3 +55,15 @@ no file and touches no file that other areas import. You find what that examinat
 4. Answer as for a plan, and end with `AKASHA-REVIEW: <task> <change digest> PASS`, or `CHANGES` when the change must
    be repaired. When the change reaches other screens, write CHANGES and say that the task must become a full task
    (`akasha upgrade <task>`).
+
+## An agent task
+
+`akasha status <task>` shows `agent`. An agent account works from the request of a person, without a preview: the
+records hold `request.md`, the words of the person as the relay gave them (often the diagnosis of a failure and what to
+change). The person sees the result only before the merge, so you are the check of the plan before any code changes.
+Review the plan as in the steps above, with `request.md` in place of `preview.html`:
+
+- The plan does what the request asks, and nothing more. A change that the request did not ask for is CHANGES.
+- When the request names a cause, make sure in the code and the data that it is the cause. A plan that hides the
+  symptom while the cause stays is CHANGES.
+- The plan names each other area that the change reaches, because `summary.md` tells them to the person.

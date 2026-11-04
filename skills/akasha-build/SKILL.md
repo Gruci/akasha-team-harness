@@ -61,6 +61,29 @@ Skip the questions of step 1 that the request already answers.
 6. Continue with step 4.3 (check) and step 5 (land). A change of the code after the review or the approval needs both
    again. When a check named `quick` fails, the change is not a quick change: run `akasha upgrade <task>`.
 
+## An agent task: when the session start notice says that this account is an agent
+
+A program (the relay) runs this session. Each prompt is the words of a person: first their request, for example the
+diagnosis of a failed job and what to change, later their answer. The person does not see this session: only your last
+answer of each turn reaches them. The request decides what to make, so there is no preview and no question of step 1.
+The person approves the result before the merge. That is their only step.
+
+1. Run `akasha start "<title>" --name <short-name> --scope <file patterns>` at once, in the same turn as the request:
+   Akasha writes the prompt into `request.md` in the records folder. When it says that it found no request, end the
+   turn and ask the person to send the request again.
+2. Do step 3 (the plan and its review). Read `request.md` in place of a preview. When the request cannot work as it
+   says, end the turn with a short question to the person, in their language.
+3. Do step 4 (build and check).
+4. Write `summary.md` in the language of the request, in five short sections: the problem, the cause, what changed,
+   what other areas it reaches, and how to undo it.
+5. Run `akasha check <task>`, then `akasha land <task> --wait 540` with a shell timeout of 600000 ms. When it says ASK
+   (exit code 4), run `akasha result <task>`. Give its text as your whole answer, without other words, and end the
+   turn: the relay sends it to the person.
+6. The next prompt is the answer of the person. When it approves the result as it is, run `akasha approve <task>`,
+   then `akasha land <task> --wait 540`, and give the end of step 5 in simple words (MERGED, DEPLOYED, …). When it
+   asks for a change, change the work, run `akasha check <task>`, and land again: the landing asks again. Never
+   approve without a prompt of the person.
+
 ## 2. The preview: the decision of the person
 
 1. Read the files of `[guides] preview`.
@@ -137,6 +160,7 @@ Skip the questions of step 1 that the request already answers.
      it names a check that did not run, or a check that waits long for a runner, run `akasha help <task>` and tell
      the person.
    - FAILED: a check failed on GitHub. Repair it, run `akasha check <task>`, then land again.
+   - ASK (exit code 4): only an agent task. Do step 5 of "An agent task".
    - CONFLICT: Akasha names the files. Merge the default branch in the work copy as it tells, and keep the changes of
      both sides when they add different things (for example two new rows of a list). If `[guides] build` tells how to
      merge a shared file, do as it tells. Check, and land again.

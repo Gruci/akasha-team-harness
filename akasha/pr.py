@@ -20,7 +20,11 @@ def meta(task: Task) -> list[str]:
         lines.append("- Kind: quick change — no preview of the result and no plan. It changes only existing files "
                      "that no other area uses; the reviewer examined the change with impact.md, and the person "
                      "approved the change itself")
-    if task.approval:
+    if task.kind == "agent":
+        lines.append("- Kind: agent task — an agent account worked from the request of a person (request.md), "
+                     "without a preview. The person approves the result before the merge")
+        lines.append(_result_line(task))
+    elif task.approval:
         lines.append(f"- Preview approved by @{task.approval.get('by', '?')} at {task.approval.get('at', '?')} "
                      f"with \"{task.approval.get('words', '')}\" (preview `{task.approval.get('preview_sha', '')}`)")
     else:
@@ -39,9 +43,21 @@ def meta(task: Task) -> list[str]:
         lines.append(f"- Core changes: {', '.join(f'`{name}`' for name in found)} — {state}")
     if task.scope:
         lines.append(f"- Planned files: {', '.join(f'`{item}`' for item in task.scope)}")
-    kept = "impact, preview, summary" if task.kind == "quick" else "preview, research, plan, summary"
+    kept = {"quick": "impact, preview, summary", "agent": "request, research, plan, summary"}.get(
+        task.kind, "preview, research, plan, summary")
     lines.append(f"- Records: `{records(task)}/` ({kept})")
     return lines
+
+
+def _result_line(task: Task) -> str:
+    """Who approved the result of an agent task. The relay names the person; else it is the agent account."""
+    found = task.approval
+    if found.get("source") != "result":
+        return "- Result: not approved yet"
+    through = str(found.get("through") or "?")
+    who = f"@{through}" if found.get("by") == through else f"{found.get('by')} through @{through}"
+    return (f"- Result approved by {who} at {found.get('at', '?')} with \"{found.get('words', '')}\" (change "
+            f"`{found.get('change_sha', '')}`)")
 
 
 def summary(task: Task) -> str:
