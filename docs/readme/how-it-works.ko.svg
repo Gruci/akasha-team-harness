@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="698" viewBox="0 0 1000 698" role="img" aria-label="여러 팀과 에이전트가 동시에 요청합니다. 각 사람은 시안만 승인하고, 에이전트에게 맡긴 사람은 머지 직전에 결과를 승인합니다. 과업마다 AI 가 계획하고, 두 번째 AI 가 계획을 검사하고, 구현과 테스트를 합니다. 같은 파일을 고치는 두 과업에는 보드가 양쪽에 알립니다. 모든 과업이 하나씩 하나의 제품으로 합쳐지고, 뒤 과업은 앞서 합쳐진 것을 먼저 받아 최신으로 맞춥니다.">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="698" viewBox="0 0 1000 698" role="img" aria-label="여러 팀과 에이전트가 동시에 요청합니다. 주황 칸만 사람이 합니다: 팀은 시작할 때 시안을 승인하고, 에이전트에게 맡긴 사람은 마지막에 결과를 승인합니다. 계획 검사를 포함해 나머지는 모두 AI 가 합니다. 두 과업이 같은 파일을 계획하면 각 AI 가 상대의 변경을 미리 읽습니다. PR 은 과업마다 따로이고 하나씩 main 에 합쳐지며, 뒤 과업은 먼저 main 과 동기화하고 다시 검사합니다. 충돌이면 AI 가 양쪽 변경을 살려 합칩니다.">
 <style>
 text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;fill:#e6edf3}
 .title{font-size:22px;font-weight:700}
@@ -8,20 +8,20 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun
 .name{font-size:15px;font-weight:700}
 .small{font-size:12.5px;fill:#8b949e}
 .how{font-size:12.5px;fill:#8b949e}
-.gate{font-size:12.5px;fill:#c4b5fd}
 .who{font-size:12px;fill:#f0b072}
 .gh{font-size:12px;fill:#7ee787}
 .foot{font-size:14px;fill:#8b949e}
 .bar{font-size:13px}
 .commit{font-size:13px;font-weight:700;fill:#7ee787}
-.gatehead{font-size:13px;font-weight:600;fill:#c4b5fd}
-.okhead{font-size:13px;font-weight:600;fill:#f0b072}
+.person{font-size:13px;font-weight:600;fill:#f0b072}
+.sync{font-size:13px;font-weight:600;fill:#7ee787}
+.tag{font-size:12px;fill:#c9d1d9}
 @media (prefers-reduced-motion:reduce){.dot{display:none}}
 </style>
 <defs>
 <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3d444d"/></marker>
 <marker id="time" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#30363d"/></marker>
-<marker id="stack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+<marker id="up" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3fb950"/></marker>
 </defs>
 <rect width="1000" height="698" rx="14" fill="#0d1117"/>
 <text x="26" y="42" class="title">여러 팀과 에이전트가 하나의 제품을, 동시에</text>
@@ -30,124 +30,142 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun
 <path d="M360,96 L960,96" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5" marker-end="url(#time)"/>
 <rect x="200" y="112" width="776" height="382" rx="14" fill="#a78bfa" fill-opacity=".04" stroke="#a78bfa" stroke-width="1.5"/>
 <text x="216" y="138" class="akasha">AKASHA 하네스</text>
-<text x="332" y="138" class="small">작업 보드 · 관문 · 과업마다 작업 사본</text>
+<text x="332" y="138" class="small">작업 보드 · 관문 · 과업마다 작업 사본과 PR 하나</text>
 <path d="M200,538 L968,538" stroke="#3fb950" stroke-width="2"/>
 
 <!-- 레인: 팀에서 막대로, 그다음 main 으로 -->
-<path d="M184,183 L412,183" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
-<path d="M928,183 L960,183 L960,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
-<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-3.0s" repeatCount="indefinite" path="M184,183 L960,183 L960,538"/></circle>
-<path d="M184,269 L432,269" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
-<path d="M826,269 L860,269 L860,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
-<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-0.0s" repeatCount="indefinite" path="M184,269 L860,269 L860,538"/></circle>
-<path d="M184,355 L332,355" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
-<path d="M726,355 L760,355 L760,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
-<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-1.0s" repeatCount="indefinite" path="M184,355 L760,355 L760,538"/></circle>
-<path d="M184,441 L232,441" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
-<path d="M626,441 L660,441 L660,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
-<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-2.0s" repeatCount="indefinite" path="M184,441 L660,441 L660,538"/></circle>
+<path d="M184,183 L520,183" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M928,183 L950,183 L950,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-3.0s" repeatCount="indefinite" path="M184,183 L950,183 L950,538"/></circle>
+<path d="M184,269 L288,269" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M828,269 L850,269 L850,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-0.0s" repeatCount="indefinite" path="M184,269 L850,269 L850,538"/></circle>
+<path d="M184,355 L288,355" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M696,355 L750,355 L750,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-1.0s" repeatCount="indefinite" path="M184,355 L750,355 L750,538"/></circle>
+<path d="M184,441 L216,441" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M624,441 L650,441 L650,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-2.0s" repeatCount="indefinite" path="M184,441 L650,441 L650,538"/></circle>
 
-<!-- 에이전트: 프로그램이 돌리고, 맡긴 사람이 머지 직전에 결과를 승인한다 -->
+<!-- 에이전트: 프로그램이 돌린다. 계획은 사람이 보지 않고, 맡긴 사람이 마지막에 결과를 승인한다 -->
 <rect x="24" y="148" width="160" height="70" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
 <circle cx="44" cy="168" r="5" fill="#79c0ff"/>
 <text x="56" y="173" class="name">에이전트</text>
 <text x="38" y="193" class="small">“실패한 배치 고쳐 줘”</text>
-<text x="38" y="210" class="who">✓ 결과 승인</text>
-<rect x="412" y="166" width="516" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-<rect x="422" y="172" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="454.0" y="187" class="bar" text-anchor="middle">계획</text>
-<path d="M491,183 L507,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="512" y="172" width="104" height="22" rx="6" fill="#211a3a" stroke="#6d5bd0"/>
-<text x="564.0" y="187" class="gatehead" text-anchor="middle">계획 검사</text>
-<path d="M621,183 L637,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="642" y="172" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="674.0" y="187" class="bar" text-anchor="middle">구현</text>
-<path d="M711,183 L727,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="732" y="172" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="764.0" y="187" class="bar" text-anchor="middle">테스트</text>
-<path d="M801,183 L817,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="822" y="172" width="96" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
-<text x="870.0" y="187" class="okhead" text-anchor="middle">결과 승인</text>
-<circle cx="960" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
-<text x="960" y="564" class="commit" text-anchor="middle">#44</text>
-<text x="960" y="582" class="how" text-anchor="middle">배치 수정</text>
+<text x="38" y="210" class="who">✓ 마지막에 결과 승인</text>
+<rect x="520" y="166" width="408" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="526" y="172" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="549" y="187" class="bar" text-anchor="middle">계획</text>
+<path d="M575,183 L589,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="592" y="172" width="92" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="638" y="187" class="bar" text-anchor="middle">AI 계획 검사</text>
+<path d="M687,183 L701,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="704" y="172" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="727" y="187" class="bar" text-anchor="middle">구현</text>
+<path d="M753,183 L767,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="770" y="172" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="796" y="187" class="bar" text-anchor="middle">테스트</text>
+<path d="M825,183 L839,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="842" y="172" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
+<text x="882" y="187" class="person" text-anchor="middle">결과 승인</text>
+<circle cx="950" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="950" y="564" class="commit" text-anchor="middle">#44</text>
+<text x="950" y="582" class="how" text-anchor="middle">배치 수정</text>
 
+<!-- 영업팀: 시작할 때 사람이 시안을 승인한다. #41·#42 뒤에 머지되니 먼저 main 과 동기화한다 -->
 <rect x="24" y="234" width="160" height="70" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
 <circle cx="44" cy="254" r="5" fill="#f0883e"/>
 <text x="56" y="259" class="name">영업팀</text>
 <text x="38" y="279" class="small">“CSV 내려받기 넣어 줘”</text>
-<text x="38" y="296" class="who">✓ 시안 승인</text>
-<rect x="432" y="252" width="394" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-<rect x="442" y="258" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="474.0" y="273" class="bar" text-anchor="middle">계획</text>
-<path d="M511,269 L527,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="532" y="258" width="104" height="22" rx="6" fill="#211a3a" stroke="#6d5bd0"/>
-<text x="584.0" y="273" class="gatehead" text-anchor="middle">계획 검사</text>
-<path d="M641,269 L657,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="662" y="258" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="694.0" y="273" class="bar" text-anchor="middle">구현</text>
-<path d="M731,269 L747,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="752" y="258" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="784.0" y="273" class="bar" text-anchor="middle">테스트</text>
-<circle cx="860" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
-<text x="860" y="564" class="commit" text-anchor="middle">#43</text>
-<text x="860" y="582" class="how" text-anchor="middle">CSV 내려받기</text>
+<text x="38" y="296" class="who">✓ 시작할 때 시안 승인</text>
+<rect x="288" y="252" width="540" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="294" y="258" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
+<text x="334" y="273" class="person" text-anchor="middle">시안 승인</text>
+<path d="M377,269 L391,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="394" y="258" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="417" y="273" class="bar" text-anchor="middle">계획</text>
+<path d="M443,269 L457,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="460" y="258" width="92" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="506" y="273" class="bar" text-anchor="middle">AI 계획 검사</text>
+<path d="M555,269 L569,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="572" y="258" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="595" y="273" class="bar" text-anchor="middle">구현</text>
+<path d="M621,269 L635,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="638" y="258" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="664" y="273" class="bar" text-anchor="middle">테스트</text>
+<path d="M693,269 L707,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="710" y="258" width="112" height="22" rx="6" fill="#0f1a13" stroke="#3fb950"/>
+<text x="766" y="273" class="sync" text-anchor="middle">↻ main 동기화</text>
+<circle cx="850" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="850" y="564" class="commit" text-anchor="middle">#43</text>
+<text x="850" y="582" class="how" text-anchor="middle">CSV 내려받기</text>
 
+<!-- 운영팀: 영업팀과 같은 자리에서 시작한다. 두 구현 칸이 한 세로줄에 선다 -->
 <rect x="24" y="320" width="160" height="70" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
 <circle cx="44" cy="340" r="5" fill="#f0883e"/>
 <text x="56" y="345" class="name">운영팀</text>
 <text x="38" y="365" class="small">“배치 상태 보여 줘”</text>
-<text x="38" y="382" class="who">✓ 시안 승인</text>
-<rect x="332" y="338" width="394" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-<rect x="342" y="344" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="374.0" y="359" class="bar" text-anchor="middle">계획</text>
-<path d="M411,355 L427,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="432" y="344" width="104" height="22" rx="6" fill="#211a3a" stroke="#6d5bd0"/>
-<text x="484.0" y="359" class="gatehead" text-anchor="middle">계획 검사</text>
-<path d="M541,355 L557,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="562" y="344" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="594.0" y="359" class="bar" text-anchor="middle">구현</text>
-<path d="M631,355 L647,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="652" y="344" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="684.0" y="359" class="bar" text-anchor="middle">테스트</text>
-<circle cx="760" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
-<text x="760" y="564" class="commit" text-anchor="middle">#42</text>
-<text x="760" y="582" class="how" text-anchor="middle">배치 상태</text>
+<text x="38" y="382" class="who">✓ 시작할 때 시안 승인</text>
+<rect x="288" y="338" width="408" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="294" y="344" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
+<text x="334" y="359" class="person" text-anchor="middle">시안 승인</text>
+<path d="M377,355 L391,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="394" y="344" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="417" y="359" class="bar" text-anchor="middle">계획</text>
+<path d="M443,355 L457,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="460" y="344" width="92" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="506" y="359" class="bar" text-anchor="middle">AI 계획 검사</text>
+<path d="M555,355 L569,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="572" y="344" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="595" y="359" class="bar" text-anchor="middle">구현</text>
+<path d="M621,355 L635,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="638" y="344" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="664" y="359" class="bar" text-anchor="middle">테스트</text>
+<circle cx="750" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="750" y="564" class="commit" text-anchor="middle">#42</text>
+<text x="750" y="582" class="how" text-anchor="middle">배치 상태</text>
 
-<!-- 영업팀과 운영팀이 같은 파일을 고친다: 보드가 양쪽에 알린다 -->
-<path d="M694,288 L594,336" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="3 4"/>
-<text x="616" y="322" class="gate" text-anchor="end">같은 파일 · 보드가 양쪽에 알림</text>
+<!-- 영업팀과 운영팀이 같은 파일을 계획했다: 각 AI 가 상대의 변경을 미리 읽고, 사람은 아무것도 정하지 않는다 -->
+<path d="M595,288 L595,336" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="3 4"/>
+<rect x="550" y="302" width="90" height="20" rx="10" fill="#0d1117" stroke="#8b949e"/>
+<text x="595" y="316" class="tag" text-anchor="middle">⇅ 같은 파일</text>
+<text x="542" y="316" class="how" text-anchor="end">AI 가 서로의 변경을 미리 파악</text>
 
 <rect x="24" y="406" width="160" height="70" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
 <circle cx="44" cy="426" r="5" fill="#f0883e"/>
 <text x="56" y="431" class="name">재무팀</text>
 <text x="38" y="451" class="small">“월 합계 넣어 줘”</text>
-<text x="38" y="468" class="who">✓ 시안 승인</text>
-<rect x="232" y="424" width="394" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-<rect x="242" y="430" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="274.0" y="445" class="bar" text-anchor="middle">계획</text>
-<path d="M311,441 L327,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="332" y="430" width="104" height="22" rx="6" fill="#211a3a" stroke="#6d5bd0"/>
-<text x="384.0" y="445" class="gatehead" text-anchor="middle">계획 검사</text>
-<path d="M441,441 L457,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="462" y="430" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="494.0" y="445" class="bar" text-anchor="middle">구현</text>
-<path d="M531,441 L547,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="552" y="430" width="64" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="584.0" y="445" class="bar" text-anchor="middle">테스트</text>
-<circle cx="660" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
-<text x="660" y="564" class="commit" text-anchor="middle">#41</text>
-<text x="660" y="582" class="how" text-anchor="middle">월 합계</text>
+<text x="38" y="468" class="who">✓ 시작할 때 시안 승인</text>
+<rect x="216" y="424" width="408" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="222" y="430" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
+<text x="262" y="445" class="person" text-anchor="middle">시안 승인</text>
+<path d="M305,441 L319,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="322" y="430" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="345" y="445" class="bar" text-anchor="middle">계획</text>
+<path d="M371,441 L385,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="388" y="430" width="92" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="434" y="445" class="bar" text-anchor="middle">AI 계획 검사</text>
+<path d="M483,441 L497,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="500" y="430" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="523" y="445" class="bar" text-anchor="middle">구현</text>
+<path d="M549,441 L563,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="566" y="430" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="592" y="445" class="bar" text-anchor="middle">테스트</text>
+<circle cx="650" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
+<text x="650" y="564" class="commit" text-anchor="middle">#41</text>
+<text x="650" y="582" class="how" text-anchor="middle">월 합계</text>
 
-<!-- #41·#42 가 합쳐진 뒤, 뒤에 오는 영업팀 과업이 그것을 먼저 받아 최신으로 맞추고 다시 검사한다 -->
-<path d="M810,532 L810,292" stroke="#a78bfa" stroke-width="2" fill="none" marker-end="url(#stack)"/>
-<circle r="3.5" fill="#a78bfa" class="dot"><animateMotion dur="4s" begin="-0.5s" repeatCount="indefinite" path="M810,538 L810,290"/></circle>
-<text x="860" y="600" class="gh" text-anchor="middle">먼저 최신으로 맞춤</text>
+<!-- #41·#42 가 합쳐진 main 이 뒤에 오는 영업팀 과업으로 들어간다(머지 전에) -->
+<path d="M766,532 L766,290" stroke="#3fb950" stroke-width="2" fill="none" marker-end="url(#up)"/>
+<circle r="3.5" fill="#3fb950" class="dot"><animateMotion dur="4s" begin="-0.5s" repeatCount="indefinite" path="M766,538 L766,290"/></circle>
+<text x="773" y="516" class="gh">#41 · #42</text>
+<text x="850" y="602" class="gh" text-anchor="middle">머지 전 main 동기화 · 재검사</text>
+<text x="850" y="618" class="gh" text-anchor="middle">충돌은 AI 가 양쪽 변경을 살려 해결</text>
 
 <rect x="24" y="510" width="160" height="56" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
 <circle cx="44" cy="532" r="5" fill="#3fb950"/>
 <text x="56" y="537" class="name">GitHub</text>
 <text x="38" y="558" class="small">main</text>
 <rect x="24" y="634" width="952" height="44" rx="8" fill="#161b22" stroke="#30363d"/>
-<text x="500" y="661" class="foot" text-anchor="middle">각 사람은 원하는 것을 말하고 본 것(시안, 또는 에이전트의 결과)을 승인할 뿐입니다. 나머지는 AI 가 합니다.</text>
+<text x="500" y="661" class="foot" text-anchor="middle">주황 칸만 사람이 합니다: 팀은 시작할 때 시안을, 에이전트는 마지막에 결과를 승인합니다. 나머지는 AI 가 합니다.</text>
 </svg>

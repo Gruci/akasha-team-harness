@@ -19,7 +19,7 @@ or `akasha <command>`.
 | `land <task> [--wait <seconds>]` | Make the pull request ready and merge it when the checks pass, then follow the deployment of `[deploy]` and run its `verify`. Exit code 3: still waiting (WAITING, DEPLOYING). Exit code 4: an agent task waits for the approval of its result (ASK) |
 | `result <task>` | An agent task, after the landing said ASK: the text for the person (the summary, the change between two fixed commits, the changed files). Only a message of this session after it approves the result |
 | `status [<task>]` | The tasks on this computer, the records folder, the plan digest (the change digest of a quick task), and the next step |
-| `board` | The open tasks of the team |
+| `board [--scope <patterns>]` | The open tasks of the team. With `--scope`, only the open tasks that plan or already change files of these patterns, before a start: the AI reads what they change before it plans |
 | `resume <task or #number> [--force]` | Continue a task of the board on this computer. It runs `[checks] setup` in the new work copy |
 | `handoff <task>` | Save the work on the server and free the task |
 | `cancel <task> [--force]` | Stop a task for good: close its pull request and remove the work copy. When another person holds it, only remove the copy here |

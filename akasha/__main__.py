@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from akasha import VERSION, board, checks, config, flow, land, repo, retro, setup
-from akasha.task import all_local, load, records
+from akasha.task import Task, all_local, load, records
 
 # 3: run the same landing again. 4: an agent task waits for the person (`akasha result`, then end the turn)
 EXIT = {land.MERGED: 0, land.CLOSED: 0, land.DEPLOYED: 0, land.WAITING: 3, land.DEPLOYING: 3, land.ASK: 4}
@@ -64,7 +64,9 @@ def _parser() -> argparse.ArgumentParser:
     shown.add_argument("task")
     status = commands.add_parser("status", help="the tasks on this computer and the next step of each")
     status.add_argument("task", nargs="?")
-    commands.add_parser("board", help="the open tasks of the team")
+    shown_board = commands.add_parser("board", help="the open tasks of the team")
+    shown_board.add_argument("--scope", nargs="*", default=[],
+                             help="only the open tasks that plan or change files of these patterns, before a start")
     resume = commands.add_parser("resume", help="continue a task of the board on this computer")
     resume.add_argument("task", help="the task name or the number of its pull request")
     resume.add_argument("--force", action="store_true", help="the person who holds it agrees or is gone")
@@ -205,6 +207,10 @@ def main(argv: list[str] | None = None) -> int:
         entries = board.read(root)
         if entries is None:
             raise RuntimeError("gh cannot read the board. Log in to GitHub: gh auth login")
+        if args.scope:
+            planned = Task(id="", title="", scope=[config.pattern(item) for item in args.scope])
+            print("\n".join(board.overlaps(planned, [], entries)) or "No open task plans or changes these files.")
+            return 0
         print("\n".join(board.lines(entries, repo.me(root))) or "No open task.")
         return 0
     if args.command == "resume":

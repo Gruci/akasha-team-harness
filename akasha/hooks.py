@@ -34,8 +34,8 @@ UPDATE = "/plugin marketplace update akasha, then /plugin update akasha@akasha, 
 SAFE_COMMANDS: dict[str, tuple[str, ...]] = {
     "start": ("--name", "--scope", "--quick"), "preview": ("--text", "--no-open"), "approve": (), "status": (),
     "upgrade": (), "split": ("--scope",), "join": ("--keep",),
-    "check": ("--only",), "land": ("--wait",), "result": (), "board": (), "help": (), "ask": (), "handoff": (),
-    "resume": (), "tidy": (), "doctor": (), "version": (), "retro": ()}
+    "check": ("--only",), "land": ("--wait",), "result": (), "board": ("--scope",), "help": (), "ask": (),
+    "handoff": (), "resume": (), "tidy": (), "doctor": (), "version": (), "retro": ()}
 
 
 def _payload() -> dict:

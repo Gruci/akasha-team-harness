@@ -155,8 +155,10 @@ its tasks (their own work copies, edits in the main checkout, their merges). For
 comes first, and the session start and each prompt say so. The rules on pushes, force pushes, `.env`, and
 `.akasha/state` hold for everyone.
 
-After an edit, Akasha also tells the agent engine when another open task plans or changes the same file. It does not
-stop the work: the task that lands later takes the earlier change.
+Before a start, `akasha board --scope <patterns>` names each open task that plans or already changes the same files,
+and the AI reads what it changes before it plans. Nobody waits, and the person decides nothing more. After an edit,
+Akasha also tells the agent engine when another open task plans or changes the same file. It does not stop the work:
+each task keeps its own pull request, and the task that lands later takes the earlier change.
 
 Where no Python 3.11 or higher is on the computer, the hooks cannot run. Then the session start and each prompt tell
 it to the agent engine, and each edit in a repository that uses Akasha stops, so that no step goes around Akasha
@@ -242,7 +244,7 @@ Each person, from any team, holds their own tasks. Any number of tasks can be op
 | Situation | What happens |
 |:--|:--|
 | A new task plans files that open tasks already plan | `akasha start` and the board show those tasks and their holders |
-| Tasks change the same file | The hook tells each of them after the edit. A task that lands later takes the earlier changes, or stops with CONFLICT |
+| Tasks change the same file | Before the start, the AI reads what the other task changes. The hook tells each task after the edit. Each keeps its own pull request: a task that lands later takes the earlier changes, or stops with CONFLICT, and its AI keeps the changes of both sides, checks again, and lands |
 | Several tasks are ready at once | They merge one by one. Each later one is behind: Akasha brings it up to date, and it merges after its checks pass again |
 | A person stops, and another person or computer continues | `akasha handoff <task>` saves the work and frees the task. `akasha resume <task>` continues it anywhere |
 | Another person took a task with `akasha resume --force` | The old computer stops pushing, landing, and closing it, and removes its copy at the next session start |

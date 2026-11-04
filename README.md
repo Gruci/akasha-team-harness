@@ -84,7 +84,7 @@ The AI does the rest, and tells you when the change is merged and when it is liv
 
 ## How It Works
 
-<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams and an agent ask at the same time. Each person only approves a preview; the person who asked the agent approves its result before the merge. For each task an AI plans, a second AI checks the plan, the AI builds and tests. The board tells two tasks that change the same file. The tasks merge into one product one by one, and a later one is first brought up to date.">
+<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams and an agent ask at the same time. Each person only approves a preview; the person who asked the agent approves its result before the merge. For each task an AI plans, a second AI checks the plan, the AI builds and tests. When two tasks plan the same file, each AI reads the other's change first. The tasks merge into one product one by one, and each later one is first updated from main and checked again.">
 
 Each task goes through six steps, and many tasks go through them at once:
 
@@ -115,8 +115,8 @@ Each person, from any team, works on their own task at the same time as the othe
 
 | Situation | What happens |
 |:--|:--|
-| A new task plans the files of open tasks | The board shows those tasks and who holds them |
-| Tasks change the same file | Each AI hears of it, and the later task takes the change |
+| A new task plans the files of open tasks | The board shows those tasks and who holds them, and the AI reads what they change before it plans |
+| Tasks change the same file | Each AI hears of it. Each task keeps its own pull request: the later one takes the change, and its AI resolves a conflict and checks again |
 | Several tasks are ready at once | They merge one by one, each up to date first |
 | A person stops, and another continues | `handoff` frees the task, `resume` continues it anywhere |
 | A task name is in use | The start refuses it, and the AI picks another |
