@@ -9,7 +9,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from akasha import agent, approval, board, checks, config, core, pr, quick, repo, review, trace, work
+from akasha import agent, approval, board, checks, config, core, pr, quick, repo, review, spec, trace, work
 from akasha.config import Team
 from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id, record,
                          records, save)
@@ -17,6 +17,7 @@ from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, diges
 STUCK = 3                      # failed checks in a row before Akasha suggests to ask an administrator
 DECISIONS = 'id="akasha-decisions"'       # the box of the questions and the answers of the person, in the preview
 QUICK = "quick"                            # the check that the change of a quick task is a quick change
+DATA = "data"                              # the check that a change of data has the values of its preview defined
 
 
 def rules(root: Path) -> Team:
@@ -66,8 +67,10 @@ def next_step(task: Task) -> str:
         return _quick_step(task)
     if task.status == "preview":
         if not record(task, PREVIEW).is_file():
-            return (f"Ask the person what they want until it is clear. Then write the preview (an HTML mockup of "
-                    f"the screen, or a diagram of the flow and the data) at {records(task)}/{PREVIEW}.")
+            return (f"Ask the person only what changes the result and what you cannot decide. Then write the preview "
+                    f"at {records(task)}/{PREVIEW}: the decisions, the look (an HTML mockup of the screen, or a diagram "
+                    "of the flow and the data), the values from data with their source and formula, and the rules "
+                    "with an example each (akasha-build step 2).")
         if not task.shown_at or digest(record(task, PREVIEW)) != task.preview_sha:
             return f"Show the preview: `akasha preview {task.id}`."
         if time.time() - task.shown_at > approval.MAX_AGE:
@@ -185,6 +188,10 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
     elif planned:
         notes.append(f"core — {', '.join(f'{name} ({why})' for name, why in planned.items())}. Add new code beside "
                      f"these files; a change of their existing lines waits for an approval of an administrator")
+    planned_data = [] if request or fast else checks.touches(task.scope, team.data_paths)
+    if planned_data:
+        notes.append(f"data — the task plans {', '.join(planned_data[:3])}, which make data that people see. Mark each "
+                     "value of the preview and define its source, formula, value, and check (akasha-build step 2)")
     if online:
         pushed = ""
         try:
@@ -272,9 +279,14 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
         path.write_text(_simple_preview(task.title, text), encoding="utf-8")
     if not path.is_file():
         raise ValueError(f"write the preview first: {path}")
-    if DECISIONS not in path.read_text(encoding="utf-8", errors="replace"):
+    shown = path.read_text(encoding="utf-8", errors="replace")
+    if DECISIONS not in shown:
         raise ValueError(f'the preview has no box of the decisions. At the top of {path}, add <section '
                          f'id="akasha-decisions"> with each question that you asked and the answer of the person')
+    if not quick.is_quick(task):
+        found = spec.problems(shown, data_required=bool(checks.touches(task.scope, rules(root).data_paths)))
+        if found:
+            raise ValueError(f"the preview {path} does not specify the change yet: " + "; ".join(found[:5]))
     sha = digest(path)
     changed = bool(task.approval) and task.approval.get("preview_sha") != sha
     if changed:
@@ -379,6 +391,14 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
         result.status[QUICK] = "FAIL" if found else "PASS"
         result.details[QUICK] = ("this is not a quick change: " + "; ".join(found[:5]) + f". Run `akasha upgrade "
                                  f"{task.id}` for a full task with a preview and a plan") if found else ""
+    touched = [] if only or quick.is_quick(task) or agent.is_agent(task) else checks.touches(changed, team.data_paths)
+    if touched:
+        page = record(task, PREVIEW)
+        found = spec.value_problems(page.read_text(encoding="utf-8", errors="replace") if page.is_file() else "", True)
+        result.status[DATA] = "FAIL" if found else "PASS"
+        result.details[DATA] = (f"the change touches {', '.join(touched[:5])}, which make data: "
+                                + "; ".join(found[:5]) + f". Repair the preview, show it again with `akasha preview "
+                                f"{task.id}`, and ask the person again") if found else ""
     if locked:
         result.status[checks.ADMIN_ONLY] = "FAIL"
         result.details[checks.ADMIN_ONLY] = (

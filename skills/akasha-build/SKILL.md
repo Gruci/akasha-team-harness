@@ -15,15 +15,19 @@ a task of yours, do its next step first.
 
 ## 1. Understand the request
 
-1. Ask until the request is clear, in simple words, and only what the person did not say yet. Never ask how to
-   build it. These seven questions apply to each request, in this order:
+1. The person checks what you propose; they do not dictate it. Go through these seven questions:
    - Who uses it? Must some people not see it?
    - Where do they open it (which screen or menu)?
-   - What must they see or do? Ask for an example.
-   - For data: where does it come from, and how new must it be?
+   - What must they see or do?
+   - For data: where does it come from, how is each number computed, and how new must it be?
    - What changes in what exists now, and what stays the same?
    - What shows when there is no data, or when an entry is wrong?
    - When is it done? What will the person check?
+
+   Ask only the questions whose answer changes the result and that you cannot decide from the request, the code, the
+   data, and the guides of the team: at most three, in simple words. Never ask how to build it: no formula, no field,
+   no edge case. Decide the rest yourself, and show it in the preview as your proposal (step 2), where the person can
+   check it.
 
    If the agent app has a choice tool (Claude Code: `AskUserQuestion`), ask these questions with it: up to four
    questions in one call, each with two to four options that fit the request, in the words of the person. Put the
@@ -91,24 +95,49 @@ The person approves the result before the merge. That is their only step.
 
 ## 2. The preview: the decision of the person
 
-1. Read the files of `[guides] preview`.
+The preview specifies what to make: the person approves it, and the task builds it as it is, words included. It has
+four parts, in this order: the decisions, the look, the values, and the rules. Akasha refuses a preview without the
+decisions and the rules, and a value of data without its definition.
+
+1. Read the files of `[guides] preview`: the design and the words of the screens of the team, and how a teammate reads
+   the data.
 2. Write one self-contained HTML file named `preview.html` in the records folder of the task (`akasha start` and
    `akasha status` name it), in the work copy. No links to other files or sites:
-   - For a screen: a mockup with the real words of the screen, realistic sample data, and the states that matter
-     (empty, loading, error).
-   - For a change without a screen (data, a batch job, an API, a rule): a diagram of the flow, and a table of the
-     result before and after with sample values.
-   - At the top, three short lines: what changes, what the person will see, and what stays the same.
-   - At the very top, a box `<section id="akasha-decisions">` titled in the language of the person (for example
-     "정한 것"): each question that you asked and the answer of the person, in their words (for a choice, the option
-     that they chose, or the words that they typed). Akasha refuses a preview
-     without it. The approval of the preview is the record of these answers.
-3. Run `akasha preview <task>`. It opens the preview in the browser. Tell the person what they see in a few short
-   lines, then ask in plain chat, in the language of the person: "Shall I build it like this, or what should change?"
+   - The decisions, at the very top: a box `<section id="akasha-decisions">` with a title of one line (what changes),
+     and each question that you asked with the answer of the person, one line each, in their words (for a choice,
+     the option that they chose, or the words that they typed). The approval of the preview is the record of these
+     answers.
+   - The look: for a screen, a mockup with the real words of the screen and the states that matter (empty, loading,
+     error). Draw it with the parts, the colors, the spacing, and the controls that the app already has: the task
+     builds it as it is. For a change without a screen (data, a batch job, an API, a rule), a diagram of the flow and
+     a table of the result before and after.
+   - The values: never make up a value that comes from data. Read the source first, as `[guides] preview` tells, and
+     find the source and the formula in the code and the data. Mark each such value of the look with
+     `data-akasha-value="<key>"` and a link to its row. Below the look, a box `<section id="akasha-data">` with one row
+     `<tr data-akasha-key="<key>">` for each value, with the cells `data-akasha-field="source"` (the table and field,
+     the API, or the file), `"formula"` (how the source becomes the value), `"value"` (its value now, with the time
+     that you read it), and `"check"` (the query or the command that gives it again; fold a long one in
+     `<details>`). When `akasha start` said `data —`, the preview must mark one value or more.
+   - The rules: a box `<section id="akasha-rules">` with one row `<tr data-akasha-rule="<key>"
+     data-akasha-from="person|ai">` for each behavior that the person can notice (who sees it, a filter, an order,
+     no data, a wrong entry), with the cells `data-akasha-field="when"`, `"then"`, and `"example"`: one real case
+     that a test can check as it is. `person` marks a rule that the person decided in an answer, `ai` a rule that you
+     decided: show which is which on the page. Do not list each edge case; the plan decides what the screen does not
+     show. A new part that the app does not have yet is a rule with `ai`.
+   - The boxes and the marks are the specification, not the screen: the task never builds them into the app.
+3. The words of the preview are the words of the product. Follow the rules for words of `[guides] preview` first.
+   Then: write in the language of the person and in the tone of the screens of the team; use the words of the
+   person, and one name for one thing in the whole preview; one fact in a sentence, with no filler, no praise, no
+   sales words, and no emoji; a label names what the person gets, not what the code does; a number has its unit and
+   its date. Write nothing that explains Akasha or the boxes. Read the preview once more, and cut each word that
+   changes no decision of the person. Hide personal data: the preview goes into git.
+4. Run `akasha preview <task>`. It opens the preview in the browser. Tell the person what they see in a few short
+   lines, and how many rules you proposed for them to check, then ask in plain chat, in the language of the person:
+   "Shall I build it like this, or what should change?"
    Never ask with AskUserQuestion or another choice tool: only a message that the person types counts.
-4. When the person asks for a change or asks a question, change the preview or answer, run `akasha preview <task>`
+5. When the person asks for a change or asks a question, change the preview or answer, run `akasha preview <task>`
    again after a change, and ask again.
-5. When the message of the person approves the preview as it is, in any words and any language, run
+6. When the message of the person approves the preview as it is, in any words and any language, run
    `akasha approve <task>`. It records the approval with the exact words of the person. When a message mixes a yes
    with a change ("good, but move the table"), it is a change. When you cannot tell, ask. Never approve for the
    person, and never run it without a message of the person.
@@ -117,8 +146,9 @@ The person approves the result before the merge. That is their only step.
 
 1. Write `research.md` in the records folder: how the code and the data work now, each caller and reader of what will
    change, and the limits. Read the files of `[guides] plan` first.
-2. Write `plan.md` there: the approach, each file and the exact change, the tests for each behavior that the preview
-   shows, the risks, and how to undo the change. No "TBD". List each step that only an administrator can do, for
+2. Write `plan.md` there: the approach, each file and the exact change, a test for each example of the rules and each
+   value of the box of the values, the risks, and how to undo the change. The plan keeps each rule and each
+   definition of the preview, also the ones that you proposed: the approval made them decisions. No "TBD". List each step that only an administrator can do, for
    example a new secret value on the server or a first run of a job; `summary.md` repeats them.
 3. Run `akasha status <task>` for the plan digest. Ask the akasha-reviewer agent: "Review the plan of Akasha task
    <task>. Work copy: <path>. Plan digest: <digest>. Akasha command: <the command of the session start notice>." It
@@ -126,7 +156,7 @@ The person approves the result before the merge. That is their only step.
    Only the akasha-reviewer agent counts. Repair each item that failed, and ask again with the new digest, until the
    mark is PASS. When the next step says that a PASS mark did not count, an item had no row: ask again.
 4. If the review shows that the result must differ from the approved preview, change the preview and get a new
-   approval from the person (step 2.3). Else do not ask the person anything.
+   approval from the person (step 2.4). Else do not ask the person anything.
 5. Only an agent app without the akasha-reviewer agent (for example Codex) reviews the plan itself, as strictly as
    the agent would, then runs `akasha review <task> --verdict pass`. Akasha refuses it in Claude Code.
 6. Core files: when `akasha start` or `akasha check` names a core file (code that other areas use, or a path of
@@ -140,7 +170,8 @@ The person approves the result before the merge. That is their only step.
    move into the work copy now, so that the own checks of the repository see the right paths. Leave it again
    (`ExitWorktree`) before `akasha handoff` or `akasha cancel`, and after the landing ends. Change the files only in
    the work copy of the task. Akasha stops an edit before the approval and the review.
-2. Write an automated test for each behavior that the preview shows.
+2. Write an automated test for each example of the rules, and for each value of the box of the values: compute it
+   from its source by its formula. The expected values come from the preview, never from what the new code makes.
    To give the work to several workers at the same time (for example subagents of an orchestrator), never make
    work copies with `git worktree add`: Akasha stops it. Run `akasha split <task> <part> --scope <file patterns>`
    for each worker, with files that no other part has, and give the worker the work copy and the scope that Akasha

@@ -17,6 +17,8 @@ in any language. This page tells what happens, for the person who must understan
 | Which commands check a change? Does the team have its own CI? | `[checks]`, `[ci] required` |
 | What must each computer install to run the checks? | `[checks] setup`, `ready` of each check, `[guides] join` |
 | Which documents must the AI read before the preview, the plan, and the review? | `[guides]` |
+| How does a teammate read the data, so that the preview shows each value now (a copy of the database, a read-only account, an API)? | a file of `[guides] preview` and `[guides] join` |
+| Which files make data that people see, for example queries and calculations? Their previews define each value | `[preview] data` |
 | Which folder do the checkers of the team skip, for the records of the tasks? | `[work] records` |
 | Which workflow deploys each merge? | `[deploy] workflow` |
 | Which command shows that the live service works after a deployment? | `[deploy] verify` |
@@ -124,7 +126,7 @@ Each teammate installs the plugin once (`/plugin marketplace add Gruci/akasha-te
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.0"`, elsewhere `python3 -m pip install …`.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.1"`, elsewhere `python3 -m pip install …`.
 Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
 
 ## Agent accounts

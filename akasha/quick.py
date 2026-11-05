@@ -69,6 +69,8 @@ def problems(team: Team, tree: Path, start: str, end: str = "") -> list[str]:
     for path in edited:
         if path in locked:
             found.append(f"{path}: only an administrator changes it")
+        elif any(matches(path, item) for item in team.data_paths):
+            found.append(f"{path}: it makes data that people see, so the preview defines its values")
         elif why := core.reason(path, team, graph):
             found.append(f"{path}: {why}, so the change can reach other screens")
         elif not path.endswith(core.PY + core.JS) and not any(matches(path, item) for item in DOCS + team.quick_paths):

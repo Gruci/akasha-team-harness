@@ -20,6 +20,9 @@ areas = ["domains/*", "src/features/*"]   # folders of one feature each
 paths = ["schema/**"]                     # an administrator approves a change of their existing lines
 used_by = 2                               # a file that 2 or more other areas import is core
 
+[preview]
+data = ["src/queries/**"]          # files that make data: their previews define each value that they show
+
 [checks]
 required = ["secrets", "tests", "front"]
 setup = "python -m pip install -r requirements.txt"
@@ -39,7 +42,7 @@ required = ["checks"]              # the required checks of the own CI of the te
 
 [guides]
 join = ["docs/JOIN.md"]
-preview = ["design/UX.md"]
+preview = ["design/UX.md", "docs/DATA.md"]   # the words and the design of the screens; how to read the data
 plan = ["docs/ARCHITECTURE.md"]
 review = ["docs/RULES.md"]
 
@@ -103,6 +106,16 @@ of file, for example a CSS file, a template, or a settings file: a quick task ch
 | Key | Value |
 |:--|:--|
 | `paths` | File patterns of files other than code and text that a quick task can change, for example `["config/messages/*.json", "src/pages/*/*.css"]`. Do not put files that many screens read here, for example a global style sheet |
+
+## `[preview]`
+
+Each preview of a full task specifies the change: its rules, and the source, formula, value now, and check of each
+value from data that it shows (see "The preview specifies the change" in [how it works](how-it-works.md)). This
+section makes Akasha sure that a change of data shows its values: the AI cannot forget to mark them.
+
+| Key | Value |
+|:--|:--|
+| `data` | File patterns of files that make data that people see, for example `["src/queries/**", "src/reports/**"]`. A task that plans one must mark one value or more in its preview, `akasha check` fails the check `data` when the change touches one and the preview defines no value, and a quick task never changes one. How a teammate reads the data for a preview (a copy of the database, a read-only account, an API) goes into a file of `[guides] preview` and `[guides] join` |
 
 ## `[checks]`
 

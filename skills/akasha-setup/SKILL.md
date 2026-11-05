@@ -61,7 +61,11 @@ their language and in simple words.
      `[checks] setup` empty when it installs much: put that into the join document instead. Leave a check that a
      teammate's computer cannot run to the CI (`[ci] required`).
    - Which team documents must the AI read before the preview (design, words on the screen), before the plan
-     (architecture, rules), and for the AI that checks the plan? → `[guides] preview`, `plan`, and `review`.
+     (architecture, rules), and for the AI that checks the plan? → `[guides] preview`, `plan`, and `review`. The
+     preview shows the value now of each number that comes from data, so a teammate must read the data: how (a copy
+     of the database, a read-only account, an API)? Write it into a document of `[guides] preview` and `[guides] join`.
+   - Which files make data that people see, for example queries and calculations? → `[preview] data`. A task that
+     changes them defines each value of its preview (source, formula, value, check), and is never a quick task.
    - Which files do many new features change, for example the list of routes, the menu, or a generated index? →
      a short document for `[guides] build` that names them and tells how to merge each one when two tasks change it.
    - Does a checker of the repository examine Markdown or other files that it finds by their folder? The records of

@@ -25,7 +25,7 @@ SERVER_RULES = ("github", "akasha")          # who stops a merge without the che
 GUIDE_STEPS = ("join", "preview", "plan", "build", "review")
 CHECK_KEYS = ("command", "cwd", "only_when", "command_windows", "ready")
 CHECK_SETTINGS = ("required", "setup", "run_all_when")
-RESERVED_CHECKS = CHECK_SETTINGS + ("secrets",)
+RESERVED_CHECKS = CHECK_SETTINGS + ("secrets", "data")     # data: the check of the values of the preview (flow.py)
 ONE_LINE_CHECKS = ("tests", "lint")          # a check with one command line: tests = "<command>"
 CHECK_NAME = re.compile(r"[A-Za-z0-9_-]+")
 NOT_IN_BRANCH = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{")
@@ -52,6 +52,7 @@ _KEYS: dict[str, set[str] | None] = {
     "core": {"paths", "areas", "used_by"},
     "deploy": {"workflow", "verify"},
     "quick": {"paths"},
+    "preview": {"data"},
 }
 
 
@@ -95,6 +96,7 @@ class Team:
     core_areas: tuple[str, ...] = ()         # folder patterns of one feature each, for example "domains/*"
     core_used_by: int = 2                    # a file that so many other areas import is core
     quick_paths: tuple[str, ...] = ()        # files other than code and text that a quick task can change
+    data_paths: tuple[str, ...] = ()         # files that make data people see: their task defines its values (spec.py)
     unknown: tuple[str, ...] = ()            # settings of a newer Akasha that this one does not know
 
     @property
@@ -279,6 +281,7 @@ def team_from(data: dict) -> Team:
         core_areas=tuple(pattern(item.rstrip("/\\")) for item in _strings(core.get("areas", []), "[core] areas")),
         core_used_by=_count(core.get("used_by", 2), "[core] used_by"),
         quick_paths=_patterns(data.get("quick", {}).get("paths", []), "[quick] paths"),
+        data_paths=_patterns(data.get("preview", {}).get("data", []), "[preview] data"),
         unknown=tuple(unknown),
     )
 

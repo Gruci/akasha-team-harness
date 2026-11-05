@@ -14,7 +14,10 @@ builds exactly that, correctly, before any code changes. You change no file.
    the Akasha command of the request with `status <task>`: it shows the work copy and the plan digest. If the request
    has no Akasha command, read the plan from the work copy that it names, and do not guess the command.
 2. In the records folder of the task in the work copy (`akasha status` names it, by default `.akasha/tasks/<task>/`),
-   read `preview.html` (what the person approved), `research.md`, and `plan.md`.
+   read `preview.html` (what the person approved), `research.md`, and `plan.md`. The preview specifies the change: the
+   box of the rules (`akasha-rules`: when, then, and an example for each rule; `data-akasha-from` tells whether the
+   person decided it or the AI proposed it, and the approval made both decisions), and the box of the values
+   (`akasha-data`: the source, the formula, the value now, and the check of each value that comes from data).
 3. Read the files that `[guides] plan` and `[guides] review` of `akasha.toml` name. They are the rules of the team.
 4. Read the code that the plan names. Make sure that each file, function, table, and caller that the plan names is
    real and is as the plan tells. Search for the other callers of each function or API that the plan changes.
@@ -25,14 +28,14 @@ builds exactly that, correctly, before any code changes. You change no file.
 
 | Item | It passes when |
 |:--|:--|
-| R1 Preview | The plan builds what the preview shows: each behavior of the preview has a step, and no step builds what the person did not see |
+| R1 Preview | The plan builds what the preview shows: each rule of the preview has a step, and no step builds what the person did not see. Each value of the preview that comes from data is marked and has its row in the box of the values. No step builds the boxes or the marks of the preview (`akasha-decisions`, `akasha-data`, `akasha-rules`, `data-akasha-*`, and their links) into the screen |
 | R2 Exact | Each step names the exact file and the change. No "TBD", no "later", no "as above" |
-| R3 Real | Each file, function, table, and caller that the plan names is in the code, and is as the plan tells (you read it) |
+| R3 Real | Each file, function, table, and caller that the plan names is in the code, and is as the plan tells (you read it). Each source of the box of the values is real, and its formula computes the value from it |
 | R4 Reach | The plan names each other feature, table, and API that the change touches, also each other caller of a function or API that it changes, and keeps each one working |
-| R5 Tests | The plan has a test for each behavior of the preview. N/A only when the change has no behavior, for example a text |
+| R5 Tests | The plan has a test for each example of the rules, and for each value of the box of the values (computed from its source by its formula). The expected values come from the preview, not from what the new code makes. N/A only when the change has no behavior, for example a text |
 | R6 Undo | The plan tells how to undo the change |
 | R7 Rules | The plan follows the rules of the team: the files of `[guides] plan` and `[guides] review` |
-| R8 Decisions | The plan keeps each decision of the box at the top of the preview (`akasha-decisions`): who uses it, where it shows, the data, what stays the same, and when it is done |
+| R8 Decisions | The plan keeps each decision of the box at the top of the preview (`akasha-decisions`): who uses it, where it shows, the data, what stays the same, and when it is done. It keeps each rule (when and then) and each definition of a value (source and formula) as the preview tells, also the rules that the AI proposed |
 | R9 Core | New code goes beside code that other areas use. An existing line there changes only when the request cannot work without it, and the plan tells why. N/A when the plan changes no code that other areas use |
 
 Each item is PASS, FAIL, or N/A (only R5 and R9, with the reason).

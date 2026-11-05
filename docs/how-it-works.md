@@ -2,9 +2,12 @@
 
 ## The principle
 
-The person who asks for a change decides what to make. They decide it once, at the start, on a preview that they can
-see: a mockup of the screen, or a diagram of the flow and the data. The AI does everything after that, and another AI
-checks its plan in place of a person. Machines check the result. GitHub merges it.
+The person who asks for a change decides what to make. They decide it once, at the start, on a preview that
+specifies it: the look (a mockup of the screen, or a diagram of the flow and the data), each value from data with its
+source and formula, and each rule with an example. The AI asks only what changes the result and what it cannot
+decide; it proposes the rest in the preview, where the person checks it. The person does not dictate formulas or
+edge cases. The AI does everything after that, and another AI checks its plan in place of a person. Machines check
+the result. GitHub merges it.
 
 A team has three roles. A teammate asks for changes and approves their previews, and never reads code. An
 administrator sets up and maintains Akasha and the few risky parts (the database, the deployment), and helps when an
@@ -16,9 +19,9 @@ approves it on GitHub before it lands.
 | Step | Who | What happens |
 |:--|:--|:--|
 | 1. Request | The person | Says what they want, in their own words. The AI asks until it is clear |
-| 2. Preview | The person | Looks at the preview in the browser. Says "approve", or what to change |
+| 2. Preview | The person | Looks at the preview in the browser: the look, the values, and the rules. Says "approve", or what to change |
 | 3. Plan | The AI | The AI writes the research and the plan. A second AI (the akasha-reviewer agent) checks the plan until it passes |
-| 4. Build | The AI | Changes the code in its own work copy, with a test for each behavior of the preview |
+| 4. Build | The AI | Changes the code in its own work copy, with a test for each example of the rules and each value of the preview |
 | 5. Check | The AI and the checks | Runs the checks of the team until they pass |
 | 6. Land | The AI and GitHub | Makes the pull request ready, brings it up to date, and merges it when the checks pass on GitHub |
 
@@ -59,6 +62,51 @@ The approval of the preview is the only decision of the person, so Akasha takes 
   task needs a new approval. The digest ignores the line ends, so an approval stays valid on another computer. A
   person who continues a task with `akasha resume` before its approval sees the preview again first.
 
+## The preview specifies the change
+
+The task builds the approved preview as it is, words included. So the preview is short, in the words of the screens
+of the team (`[guides] preview` first), and drawn with the parts that the app already has. Below the look it has two
+boxes. They are the specification, not the screen: the task never builds them.
+
+| Box | One row for | Cells (`data-akasha-field`) |
+|:--|:--|:--|
+| The values `<section id="akasha-data">` | each value of the look that comes from data, marked `data-akasha-value="<key>"`, in the row `<tr data-akasha-key="<key>">` | `source` (the table and field, the API, the file), `formula`, `value` (its value now, read from the source), `check` (the query or command that gives it again) |
+| The rules `<section id="akasha-rules">` | each behavior that the person can notice, in the row `<tr data-akasha-rule="<key>" data-akasha-from="person\|ai">` | `when`, `then`, `example` (one real case that a test checks as it is) |
+
+`data-akasha-from` tells who decided a rule: `person` in an answer, or `ai` as a proposal. The person checks the
+proposals; the approval makes them decisions as well.
+
+```html
+<p>Orders last month: <a href="#akasha-key-orders" data-akasha-value="orders">312</a></p>
+<section id="akasha-data"><table>
+  <tr id="akasha-key-orders" data-akasha-key="orders">
+    <td>Orders last month</td>
+    <td data-akasha-field="source">orders.id, orders.status</td>
+    <td data-akasha-field="formula">orders of last month that are not cancelled</td>
+    <td data-akasha-field="value">312 (2026-11-05 09:00)</td>
+    <td data-akasha-field="check"><details><summary>SQL</summary>SELECT COUNT(*) FROM orders WHERE …</details></td>
+  </tr>
+</table></section>
+<section id="akasha-rules"><table>
+  <tr data-akasha-rule="empty" data-akasha-from="ai">
+    <td>Proposed</td>
+    <td data-akasha-field="when">a month without orders</td>
+    <td data-akasha-field="then">0 and "No orders"</td>
+    <td data-akasha-field="example">February 2026 → 0 · No orders</td>
+  </tr>
+</table></section>
+```
+
+| Akasha refuses | When |
+|:--|:--|
+| `akasha preview` | A preview of a full task without a rule, a rule without its three cells or without `data-akasha-from`, or a marked value without its row and its four cells |
+| `akasha preview` | A task that plans a file of `[preview] data`, with a preview that marks no value |
+| `akasha check` (`data`) | A change of a file of `[preview] data`, while the preview defines no value |
+
+A quick task and an agent task have no such boxes: the preview of a quick task is the change itself, and an agent
+task has no preview. Whether a source is real and a formula is right, the reviewer judges (R3, R5), and the person
+can run the check again.
+
 ## The review of the plan
 
 Another AI reviews the plan, in place of a person who reads it.
@@ -76,14 +124,14 @@ Another AI reviews the plan, in place of a person who reads it.
 
 | Item | It passes when |
 |:--|:--|
-| R1 Preview | Each behavior of the preview has a step, and no step builds what the person did not see (an agent task: what `request.md` asks, and nothing more) |
+| R1 Preview | Each rule of the preview has a step, each value from data is defined, no step builds what the person did not see, and no step builds the boxes or marks of the preview into the screen (an agent task: what `request.md` asks, and nothing more) |
 | R2 Exact | Each step names the exact file and the change: no "TBD", "later", or "as above" |
-| R3 Real | Each file, function, table, and caller that the plan names is in the code as the plan tells |
+| R3 Real | Each file, function, table, and caller that the plan names is in the code as the plan tells, and each source of the values is real and gives the value by its formula |
 | R4 Reach | The plan names each other feature, table, API, and caller that the change touches, and keeps each one working |
-| R5 Tests | A test for each behavior. N/A only for a change without a behavior, for example a text |
+| R5 Tests | A test for each example of the rules and each value, with the expected values of the preview. N/A only for a change without a behavior, for example a text |
 | R6 Undo | The plan tells how to undo the change |
 | R7 Rules | The plan follows the rules of the team (`[guides] plan`, `[guides] review`) |
-| R8 Decisions | The plan keeps each decision of the box at the top of the preview (an agent task: the cause — the code and the data confirm it, and the plan repairs it, not only the symptom) |
+| R8 Decisions | The plan keeps each decision of the box at the top of the preview, each rule, and each definition of a value, also the rules that the AI proposed (an agent task: the cause — the code and the data confirm it, and the plan repairs it, not only the symptom) |
 | R9 Core | New code goes beside code that other areas use; an existing line there changes only when the request needs it, with the reason. N/A when the plan changes no such code |
 
 An item fails when the result, built as the plan says, would be wrong, would break a feature, or would miss a
@@ -101,7 +149,7 @@ and keeps the review of another AI, the approval of the person, the checks, and 
 
 | Part | How it works |
 |:--|:--|
-| What is quick | Akasha decides from what the change touches, not from its size. A quick change only changes existing files: it adds and deletes no file, so a new screen never comes in without a preview. No changed file is a core file (`[core]`): one line of a button that many screens use is not quick, also a new line. It touches no file that only an administrator changes. A file other than code and text matches `[quick] paths` |
+| What is quick | Akasha decides from what the change touches, not from its size. A quick change only changes existing files: it adds and deletes no file, so a new screen never comes in without a preview. No changed file is a core file (`[core]`): one line of a button that many screens use is not quick, also a new line. It touches no file that only an administrator changes, and no file of `[preview] data`. A file other than code and text matches `[quick] paths` |
 | The same for each person | The administrators and the people of `[team] own_procedure` are free of the core approval, not of these rules: when they need more, they make a full task |
 | The order | The AI makes the change, then writes `impact.md` in the records: each changed file, which screens use it, and why no other screen changes |
 | The review | The akasha-reviewer agent reviews the change with `impact.md`, and finds the users that an import does not show (a setting key, a CSS class, a text key). Its mark holds the digest of the change and of `impact.md` |
@@ -139,6 +187,7 @@ word on the merge; the hooks keep a cooperative agent engine on the procedure.
 |:--|:--|:--|
 | An edit | A change of the repository in the main checkout, or in a git worktree that is not a task, after the setup merged | Each change is a task, in its own work copy |
 | An edit | A change of the code of a task before the approval and the passed review | The person decides first, and the plan is right first |
+| A preview | A preview of a full task without its rules, or with a value from data that it does not define (see "The preview specifies the change") | The person approves what to make, with a way to check it |
 | An edit | A change of `.env` and of `.akasha/state` | Secret values, and the records of Akasha |
 | An edit | In a teammate's task, a change of `akasha.toml`, `.github/`, CODEOWNERS, or a path of `[risk]` | The administrators maintain them. The AI asks with `akasha help`, and the check `admin_only` also fails on such a change |
 | A command | A force push, a push to the default branch (also a plain `git push` on it), a delete of the default branch | They go around the pull request, or cannot be undone |

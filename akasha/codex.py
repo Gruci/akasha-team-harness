@@ -28,11 +28,15 @@ This repository uses Akasha. Each change is an Akasha task. The command is `py -
 `pip install "{SOURCE}"`. The session start notice tells the tasks of this person and the open tasks of the team.
 {PRECEDENCE}
 
-1. Ask the person what they want until it is clear. Run `akasha start "<title>" --scope <file patterns>`.
-2. Write the preview in the records folder of the task (`akasha status <task>` and the start tell where): an HTML
-   mockup of the screen, or a diagram of the flow and the data for a change without a screen. Read the files of
-   [guides] preview in akasha.toml first. Run `akasha preview <task>` and ask the person whether to build it like
-   this, or what to change. When their own message approves it, in any language and without asking for a change, run
+1. Ask the person only what changes the result and what you cannot decide from the code, the data, and the guides of
+   the team: at most three questions. Decide the rest, and propose it in the preview. Run
+   `akasha start "<title>" --scope <file patterns>`.
+2. Write the preview in the records folder of the task (`akasha status <task>` and the start tell where). It
+   specifies the change, and the task builds it as it is: the decisions, the look (an HTML mockup of the screen, or a
+   diagram of the flow and the data), each value from data with its source, formula, value now, and check, and each
+   rule with an example, marked as decided by the person or proposed by you. Step 2 of skills/akasha-build/SKILL.md
+   in the plugin gives the form. Read the files of [guides] preview in akasha.toml first. Run `akasha preview <task>`
+   and ask the person whether to build it like this, or what to change. When their own message approves it, in any language and without asking for a change, run
    `akasha approve <task>`: it records the words of the person that the hook kept. Never approve for the person.
 3. After the approval, do the rest without asking: write research.md and plan.md in the records folder. Ask a
    separate reviewer to review the plan against the preview and the code, and repair the plan until it passes. The
@@ -41,7 +45,8 @@ This repository uses Akasha. Each change is an Akasha task. The command is `py -
    (`akasha status <task>` shows the digest). A PASS mark without a passed row for each item counts as CHANGES.
    Without a reviewer agent, review the plan yourself and run `akasha review <task> --verdict pass`: the
    pull request tells that it was a self-review.
-4. Build in the work copy of the task. Write a test for each behavior that the preview shows. Run
+4. Build in the work copy of the task. Write a test for each example of the rules and each value of the preview,
+   with the expected values of the preview. Never build the boxes or the marks of the preview into the screen. Run
    `akasha check <task>` and repair each failure.
 5. Write summary.md (why, what changed, how to undo it), run the check again, then `akasha land <task> --wait 540`
    with a shell timeout of 10 minutes. Run it again while it says WAITING or DEPLOYING. Repair a FAILED or a CONFLICT,

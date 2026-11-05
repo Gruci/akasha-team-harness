@@ -18,7 +18,7 @@ and approves a preview of it. That is their only step.
 The AI plans, a second AI checks the plan,<br>
 and the AI builds, checks, and lands the change.
 
-<img src="https://img.shields.io/badge/version-1.1.0-7c3aed" alt="Version 1.1.0">
+<img src="https://img.shields.io/badge/version-1.1.1-7c3aed" alt="Version 1.1.1">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -42,7 +42,7 @@ Akasha puts the person there, and puts machines everywhere else.
 
 | | Without | With Akasha |
 |:--|:--|:--|
-| What the person checks | A technical plan, or nothing | A preview they can see: a mockup or a diagram |
+| What the person checks | A technical plan, or nothing | One preview that specifies the change: the look, each value with its source and formula, each rule with an example. The AI asks a few questions and proposes the rest |
 | The plan | Nobody reads it | A second AI checks nine written items, each with its evidence, until each one passes |
 | The approval | The AI can write "approved" | Only words that the person typed, kept as typed |
 | Many people | Nobody sees the others | The open pull requests are the board |
@@ -77,7 +77,7 @@ Approve it in your own words, in any language, or tell what to change.<br>
 The AI does the rest, and tells you when the change is merged and when it is live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.0"` in that Python
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.1"` in that Python
 > (on Windows `py -3 -m pip install …`).
 
 * * *
@@ -91,7 +91,7 @@ Each task goes through six steps, and many tasks go through them at once:
 | Step | Who | Gate |
 |:--|:--|:--|
 | 1.&nbsp;Request | The person says what they want | — |
-| 2.&nbsp;Preview | The AI makes a preview, the person looks | The person approves it in the chat |
+| 2.&nbsp;Preview | The AI makes a preview: the look, the values, the rules. The person checks it | The person approves it in the chat |
 | 3.&nbsp;Plan | The AI writes research and a plan | A second AI checks it until it passes |
 | 4.&nbsp;Build | The AI changes the code in its own copy | No code before steps 2 and 3 |
 | 5.&nbsp;Check | The checks of the team run | Each required check passes |
@@ -159,6 +159,7 @@ person can tune the harness freely.
 | Guarantees | How |
 |:--|:--|
 | An approval comes from the person | Only words typed in the session that showed the preview |
+| The person approves a specification, not only a picture | Akasha refuses a preview without rules, or with a value from data that has no source, formula, value, and check |
 | The code waits for the approval and the plan check | The guard stops each edit of the code before both |
 | A change that failed the checks does not merge | The required checks must really run and pass on GitHub |
 | Only an administrator changes the risky parts | A teammate's task stops at the database or the deployment |
@@ -189,7 +190,8 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
-| **v1.1.0** | Agent accounts (`[team] agents`): a program runs the account, it works from the request of a person without a preview, and that person approves the result before the merge (`akasha result`, the landing result ASK). The review of the plan: nine written items, one row each with its evidence; a PASS mark counts only when each item passed, and `review.md` keeps the answer. Tasks that change the same files: before a start, `akasha board --scope` names the open tasks that plan or change those files, and the AI reads what they change before it plans. Quick tasks (`start --quick`): a small change of existing files that no other area uses, without a preview and a plan. Parts of a task for workers at the same time (`split`, `join`). The core: a teammate adds freely, and an administrator approves only a change of existing lines of code that other areas use. The scope interview in a choice tool. |
+| **v1.1.1** | The preview becomes a specification that the person checks: each value with its source and formula, each rule with an example. |
+| **v1.1.0** | Agent accounts: an agent works from the request of a person, who approves the result before the merge. |
 | **v1.0.0** | First release. |
 
 * * *
