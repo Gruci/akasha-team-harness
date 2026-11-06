@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" viewBox="0 0 900 260" role="img" aria-labelledby="title desc">
   <title id="title">Akasha</title>
-  <desc id="desc">Akasha lets any person on your team build one product with an AI agent. Each task goes through six steps: request, preview, plan, build, check, and land.</desc>
+  <desc id="desc">Akasha lets your whole team build one product with AI: sales, operations, finance, and developers. The product does not drift.</desc>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#1e1b4b"/>
@@ -13,30 +13,19 @@
   <g font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
     <text x="48" y="86" font-size="54" font-weight="700" fill="#ffffff">Akasha</text>
     <text x="50" y="116" font-size="14" font-weight="600" letter-spacing="2" fill="#c4b5fd">TEAM HARNESS · V1.1.2</text>
-    <text x="48" y="150" font-size="21" fill="#ede9fe">Let any person on your team build one product with an AI agent.</text>
-    <g fill="#ffffff" fill-opacity="0.1" stroke="#a78bfa" stroke-width="1.5">
-      <rect x="48" y="178" width="122" height="36" rx="18"/>
-      <rect x="184.4" y="178" width="122" height="36" rx="18"/>
-      <rect x="320.8" y="178" width="122" height="36" rx="18"/>
-      <rect x="457.2" y="178" width="122" height="36" rx="18"/>
-      <rect x="593.6" y="178" width="122" height="36" rx="18"/>
-      <rect x="730" y="178" width="122" height="36" rx="18"/>
+    <text x="48" y="150" font-size="21" fill="#ede9fe">Your whole team builds one product with AI. It doesn't drift.</text>
+    <g stroke="#a78bfa" stroke-width="1.5">
+      <rect x="48" y="178" width="170" height="36" rx="18" fill="#ffffff" fill-opacity="0.1"/>
+      <rect x="232" y="178" width="170" height="36" rx="18" fill="#ffffff" fill-opacity="0.1"/>
+      <rect x="416" y="178" width="170" height="36" rx="18" fill="#ffffff" fill-opacity="0.1"/>
+      <rect x="600" y="178" width="170" height="36" rx="18" fill="#ffffff" fill-opacity="0.22"/>
     </g>
-    <g fill="#c4b5fd">
-      <path d="M174.2 191 L180.2 196 L174.2 201 Z"/>
-      <path d="M310.6 191 L316.6 196 L310.6 201 Z"/>
-      <path d="M447 191 L453 196 L447 201 Z"/>
-      <path d="M583.4 191 L589.4 196 L583.4 201 Z"/>
-      <path d="M719.8 191 L725.8 196 L719.8 201 Z"/>
+    <g font-size="15" font-weight="600" fill="#f5f3ff" text-anchor="middle">
+      <text x="133" y="201">Sales</text>
+      <text x="317" y="201">Operations</text>
+      <text x="501" y="201">Finance</text>
+      <text x="685" y="201">Developers</text>
     </g>
-    <g font-size="14" font-weight="600" fill="#f5f3ff" text-anchor="middle">
-      <text x="109" y="201">Request</text>
-      <text x="245.4" y="201">Preview</text>
-      <text x="381.8" y="201">Plan</text>
-      <text x="518.2" y="201">Build</text>
-      <text x="654.6" y="201">Check</text>
-      <text x="791" y="201">Land</text>
-    </g>
-    <text x="48" y="242" font-size="14" fill="#c4b5fd">The person approves a preview · The AI does the rest · Machines check it, GitHub merges it</text>
+    <text x="48" y="242" font-size="14" fill="#c4b5fd">A team harness for Claude Code and Codex · Each person approves one preview · Your rules hold</text>
   </g>
 </svg>

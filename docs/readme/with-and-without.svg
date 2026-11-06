@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title desc">
+  <title id="title">Same request. Same AI. Different result.</title>
+  <desc id="desc">Finance asks to add a monthly fee total to the board. Without Akasha, the AI builds what it guessed, changes other screens on its own, breaks something that used to work, and goes live with nobody checking: odd results and surprise changes. With Akasha, the person approves exactly what they will get, only that gets built, changes to shared parts wait for a developer, and it goes live only when the team's checks pass: the approved change, and the rest of the product as it was.</desc>
+  <defs>
+    <g id="cross"><path d="M0 0 L10 10 M10 0 L0 10" stroke="#cf222e" stroke-width="2.4" stroke-linecap="round"/></g>
+    <g id="lock">
+      <path d="M2.5 7 V4.5 A4 4 0 0 1 10.5 4.5 V7" fill="none" stroke="#6d28d9" stroke-width="1.8"/>
+      <rect x="0" y="7" width="13" height="10" rx="2" fill="#6d28d9"/>
+    </g>
+  </defs>
+  <rect width="900" height="590" rx="16" fill="#ffffff"/>
+  <g font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+    <text x="450" y="44" text-anchor="middle" font-size="26" font-weight="700" fill="#1f2328">Same request. Same AI. Different result.</text>
+    <rect x="215" y="64" width="470" height="44" rx="22" fill="#1f6feb"/>
+    <text x="450" y="92" text-anchor="middle" font-size="17" fill="#ffffff">Finance: “Add a monthly fee total to the board.”</text>
+    <path d="M450 108 V126 H235 V144 M450 126 H665 V144" fill="none" stroke="#8c959f" stroke-width="2"/>
+
+    <rect x="40" y="146" width="390" height="40" rx="8" fill="#f3f4f6"/>
+    <text x="235" y="172" text-anchor="middle" font-size="18" font-weight="700" fill="#57606a">Without Akasha</text>
+    <rect x="470" y="146" width="390" height="40" rx="8" fill="#ede9fe"/>
+    <text x="665" y="172" text-anchor="middle" font-size="18" font-weight="700" fill="#4c1d95">With Akasha</text>
+
+    <g font-size="16" fill="#1f2328">
+      <rect x="40" y="200" width="390" height="46" rx="8" fill="#fff5f5" stroke="#ffc1c0"/>
+      <use href="#cross" x="60" y="218"/><text x="84" y="229">Builds what it guessed you meant</text>
+      <rect x="40" y="256" width="390" height="46" rx="8" fill="#fff5f5" stroke="#ffc1c0"/>
+      <use href="#cross" x="60" y="274"/><text x="84" y="285">Also changes other screens on its own</text>
+      <rect x="40" y="312" width="390" height="46" rx="8" fill="#fff5f5" stroke="#ffc1c0"/>
+      <use href="#cross" x="60" y="330"/><text x="84" y="341">Breaks something that used to work</text>
+      <rect x="40" y="368" width="390" height="46" rx="8" fill="#fff5f5" stroke="#ffc1c0"/>
+      <use href="#cross" x="60" y="386"/><text x="84" y="397">Goes live with nobody checking</text>
+      <text x="235" y="446" text-anchor="middle" font-size="15" font-style="italic" fill="#8c959f">The person who asked can't tell.</text>
+    </g>
+
+    <g font-size="16" fill="#1f2328">
+      <rect x="470" y="200" width="390" height="62" rx="8" fill="#f97316"/>
+      <text x="492" y="226" fill="#ffffff" font-weight="700">You approve exactly what you'll get</text>
+      <text x="492" y="250" fill="#ffffff">the screen, and each number with its source</text>
+      <rect x="470" y="274" width="390" height="42" rx="8" fill="#ffffff" stroke="#c4b5fd"/>
+      <use href="#lock" x="490" y="286"/><text x="514" y="301">Only what you approved gets built</text>
+      <rect x="470" y="328" width="390" height="42" rx="8" fill="#ffffff" stroke="#c4b5fd"/>
+      <use href="#lock" x="490" y="340"/><text x="514" y="355">Changes to shared parts wait for a developer</text>
+      <rect x="470" y="382" width="390" height="42" rx="8" fill="#ffffff" stroke="#c4b5fd"/>
+      <use href="#lock" x="490" y="394"/><text x="514" y="409">It goes live only when your checks pass</text>
+    </g>
+
+    <rect x="40" y="474" width="390" height="62" rx="8" fill="#cf222e"/>
+    <text x="62" y="500" font-size="16" font-weight="700" fill="#ffffff">Odd results, surprise changes</text>
+    <text x="62" y="523" font-size="15" fill="#ffe1e1">The product drifts with every request</text>
+    <rect x="470" y="474" width="390" height="62" rx="8" fill="#1a7f37"/>
+    <text x="492" y="500" font-size="16" font-weight="700" fill="#ffffff">The change you approved</text>
+    <text x="492" y="523" font-size="15" fill="#d2f4dc">and the rest of the product as it was</text>
+
+    <text x="450" y="570" text-anchor="middle" font-size="16" fill="#57606a">That is why the whole team can build one product, not just the developers.</text>
+  </g>
+</svg>

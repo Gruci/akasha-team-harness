@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title desc">
+  <title id="title">같은 요청, 같은 AI, 다른 결과</title>
+  <desc id="desc">재무 담당자가 월별 수수료 합계를 보드에 넣어 달라고 합니다. 아카샤 없이는 AI 가 짐작한 대로 만들고, 다른 화면까지 멋대로 바꾸고, 되던 것을 깨뜨리고, 아무도 확인하지 않은 채 나갑니다. 아카샤와 함께면 받을 결과를 그대로 보고 승인하고, 승인한 것만 만들어지고, 공용 부분 변경은 개발자를 기다리고, 팀 검사를 통과해야 나갑니다.</desc>
+  <defs>
+    <g id="cross"><path d="M0 0 L10 10 M10 0 L0 10" stroke="#cf222e" stroke-width="2.4" stroke-linecap="round"/></g>
+    <g id="lock">
+      <path d="M2.5 7 V4.5 A4 4 0 0 1 10.5 4.5 V7" fill="none" stroke="#6d28d9" stroke-width="1.8"/>
+      <rect x="0" y="7" width="13" height="10" rx="2" fill="#6d28d9"/>
+    </g>
+  </defs>
+  <rect width="900" height="590" rx="16" fill="#ffffff"/>
+  <g font-family="'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', sans-serif">
+    <text x="450" y="44" text-anchor="middle" font-size="26" font-weight="700" fill="#1f2328">같은 요청, 같은 AI, 다른 결과</text>
+    <rect x="215" y="64" width="470" height="44" rx="22" fill="#1f6feb"/>
+    <text x="450" y="92" text-anchor="middle" font-size="17" fill="#ffffff">재무: “월별 수수료 합계를 보드에 넣어 줘.”</text>
+    <path d="M450 108 V126 H235 V144 M450 126 H665 V144" fill="none" stroke="#8c959f" stroke-width="2"/>
+
+    <rect x="40" y="146" width="390" height="40" rx="8" fill="#f3f4f6"/>
+    <text x="235" y="172" text-anchor="middle" font-size="18" font-weight="700" fill="#57606a">아카샤 없이</text>
+    <rect x="470" y="146" width="390" height="40" rx="8" fill="#ede9fe"/>
+    <text x="665" y="172" text-anchor="middle" font-size="18" font-weight="700" fill="#4c1d95">아카샤와 함께</text>
+
+    <g font-size="16" fill="#1f2328">
+      <rect x="40" y="200" width="390" height="46" rx="8" fill="#fff5f5" stroke="#ffc1c0"/>
+      <use href="#cross" x="60" y="218"/><text x="84" y="229">짐작한 대로 만든다</text>
+      <rect x="40" y="256" width="390" height="46" rx="8" fill="#fff5f5" stroke="#ffc1c0"/>
+      <use href="#cross" x="60" y="274"/><text x="84" y="285">다른 화면까지 멋대로 바꾼다</text>
+      <rect x="40" y="312" width="390" height="46" rx="8" fill="#fff5f5" stroke="#ffc1c0"/>
+      <use href="#cross" x="60" y="330"/><text x="84" y="341">되던 것이 깨진다</text>
+      <rect x="40" y="368" width="390" height="46" rx="8" fill="#fff5f5" stroke="#ffc1c0"/>
+      <use href="#cross" x="60" y="386"/><text x="84" y="397">아무도 확인하지 않고 나간다</text>
+      <text x="235" y="446" text-anchor="middle" font-size="15" font-style="italic" fill="#8c959f">요청한 사람은 알아챌 수 없다</text>
+    </g>
+
+    <g font-size="16" fill="#1f2328">
+      <rect x="470" y="200" width="390" height="62" rx="8" fill="#f97316"/>
+      <text x="492" y="226" fill="#ffffff" font-weight="700">받을 결과를 그대로 보고 승인한다</text>
+      <text x="492" y="250" fill="#ffffff">화면, 그리고 숫자마다 출처</text>
+      <rect x="470" y="274" width="390" height="42" rx="8" fill="#ffffff" stroke="#c4b5fd"/>
+      <use href="#lock" x="490" y="286"/><text x="514" y="301">승인한 것만 만든다</text>
+      <rect x="470" y="328" width="390" height="42" rx="8" fill="#ffffff" stroke="#c4b5fd"/>
+      <use href="#lock" x="490" y="340"/><text x="514" y="355">공용 부분 변경은 개발자를 기다린다</text>
+      <rect x="470" y="382" width="390" height="42" rx="8" fill="#ffffff" stroke="#c4b5fd"/>
+      <use href="#lock" x="490" y="394"/><text x="514" y="409">팀 검사를 통과해야 나간다</text>
+    </g>
+
+    <rect x="40" y="474" width="390" height="62" rx="8" fill="#cf222e"/>
+    <text x="62" y="500" font-size="16" font-weight="700" fill="#ffffff">엉뚱한 결과, 뜻밖의 변경</text>
+    <text x="62" y="523" font-size="15" fill="#ffe1e1">요청할 때마다 제품이 흐트러진다</text>
+    <rect x="470" y="474" width="390" height="62" rx="8" fill="#1a7f37"/>
+    <text x="492" y="500" font-size="16" font-weight="700" fill="#ffffff">승인한 변경만</text>
+    <text x="492" y="523" font-size="15" fill="#d2f4dc">나머지 제품은 그대로</text>
+
+    <text x="450" y="570" text-anchor="middle" font-size="16" fill="#57606a">그래서 개발자만이 아니라 팀 전체가 하나의 제품을 만들 수 있다</text>
+  </g>
+</svg>

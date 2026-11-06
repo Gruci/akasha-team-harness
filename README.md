@@ -2,28 +2,20 @@
 
 <div align="center">
 
-◯ ───────────────────────────────── ◯
+<img src="docs/readme/banner.svg" width="860" alt="Akasha lets your whole team build one product with AI: sales, operations, finance, and developers.">
 
-<img src="docs/readme/banner.svg" width="860" alt="Akasha lets any person on your team build one product with an AI agent.">
+<h3>Your whole team can build with AI,<br>without the product drifting.</h3>
 
-**A K A S H A**
-
-◯ ───────────────────────────────── ◯
-
-**A light team harness for Claude Code and Codex.**
-
-Each person asks for a change in plain words<br>
-and approves a preview of it. That is their only step.
-
-The AI plans, a second AI checks the plan,<br>
-and the AI builds, checks, and lands the change.
+When people who don't code build with AI on their own, the product drifts:<br>
+odd results, and changes nobody asked for.<br>
+With Akasha, each person approves one preview, and only that gets built, under your team's rules.
 
 <img src="https://img.shields.io/badge/version-1.1.2-7c3aed" alt="Version 1.1.2">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
 
-[Quick Start](#quick-start) · [How It Works](#how-it-works) · [Many People](#many-people-at-the-same-time) · [Server Rules](#server-rules) · [Docs](docs/README.md)
+[How It Works](#how-it-works) · [How You Use It](#how-you-use-it) · [Quick Start](#quick-start) · [Many People](#many-people-at-the-same-time) · [Docs](docs/README.md)
 
 </div>
 
@@ -34,20 +26,20 @@ and the AI builds, checks, and lands the change.
 
 * * *
 
-## Why Akasha
+## How It Works
 
-Today the AI writes most of the code, and few people read it.<br>
-The human check that still matters is the one at the start: is this what we want?<br>
-Akasha puts the person there, and puts machines everywhere else.
+<img src="docs/readme/with-and-without.svg" width="900" alt="Same request, same AI, different result. Without Akasha, the AI builds what it guessed, changes other screens on its own, breaks something that used to work, and goes live with nobody checking. With Akasha, the person approves exactly what they will get, only that gets built, changes to shared parts wait for a developer, and it goes live only when the team's checks pass.">
 
-| | Without | With Akasha |
+Many people can do this at the same time without stepping on each other: [see how](#many-people-at-the-same-time).
+
+* * *
+
+## How You Use It
+
+| 1 · Say what you want | 2 · Check the preview | 3 · It goes live |
 |:--|:--|:--|
-| What the person checks | A technical plan, or nothing | One preview that specifies the change: the look, each value with its source and formula, each rule with an example. The AI asks a few questions and proposes the rest |
-| The plan | Nobody reads it | A second AI checks nine written items, each with its evidence, until each one passes |
-| The approval | The AI can write "approved" | Only words that the person typed, kept as typed |
-| Many people | Nobody sees the others | The open pull requests are the board |
-| "Done" | A claim | The checks pass on GitHub, then one commit |
-| Months later | Nobody knows why | The preview, plan, review, and summary stay with it |
+| In Claude Code or Codex, in your own words | It opens in your browser: the screen, and where each number comes from | When your team's checks pass. You get a short note of what changed |
+| *"Add a monthly fee total to the board."* | *"Build it like this."* | *"Live. Monthly fee total added."* |
 
 * * *
 
@@ -82,9 +74,7 @@ The AI does the rest, and tells you when the change is merged and when it is liv
 
 * * *
 
-## How It Works
-
-<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams and an agent ask at the same time. Each person only approves a preview; the person who asked the agent approves its result before the merge. For each task an AI plans, a second AI checks the plan, the AI builds and tests. When two tasks plan the same file, each AI reads the other's change first. The tasks merge into one product one by one, and each later one is first updated from main and checked again.">
+## Under the Hood
 
 Each task goes through six steps, and many tasks go through them at once:
 
@@ -110,6 +100,8 @@ The hooks hold the AI on these steps.
 * * *
 
 ## Many People at the Same Time
+
+<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams and an agent ask at the same time. Each person only approves a preview; the person who asked the agent approves its result before the merge. For each task an AI plans, a second AI checks the plan, the AI builds and tests. When two tasks plan the same file, each AI reads the other's change first. The tasks merge into one product one by one, and each later one is first updated from main and checked again.">
 
 Each person, from any team, works on their own task at the same time as the others.
 
