@@ -17,7 +17,8 @@ CONFIG_FILE = "akasha.toml"
 PLACES = (CONFIG_FILE, f".github/{CONFIG_FILE}")    # where the team config can be, in this order
 STATE_DIR = Path(".akasha") / "state"        # the state of this computer. Git ignores it
 RECORDS_DIR = ".akasha/tasks"                # the preview, the plan, and the summary of each task. They go into git
-WORK_DIR = ".akasha/work"                    # a git worktree for each task: <folder>/<task>
+WORK_DIR = ".claude/worktrees"               # a git worktree for each task: <folder>/<task>. Claude Code moves a
+#                                              session into a folder here without asking, and asks anywhere else
 BRANCH_PREFIX = "akasha/"                    # the branch of each task: <prefix><task>
 LABEL = "akasha"                             # the label of each pull request of a task: the open ones are the board
 HELP_LABEL = "akasha-help"                   # a task that waits for an administrator

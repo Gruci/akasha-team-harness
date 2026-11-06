@@ -47,7 +47,7 @@ plan = ["docs/ARCHITECTURE.md"]
 review = ["docs/RULES.md"]
 
 [work]
-folder = ".akasha/work"
+folder = ".claude/worktrees"
 branch_prefix = "akasha/"
 records = "docs/tasks/akasha"      # a folder that the own checkers of the team skip
 
@@ -165,7 +165,7 @@ The files of the team that the AI reads in each step. The session start notice n
 
 | Key | Value |
 |:--|:--|
-| `folder` | The folder of the work copies, in the repository. The default is `.akasha/work`, or a `worktrees` folder that the repository already ignores. Git must not track files in it |
+| `folder` | The folder of the work copies, in the repository. The default is `.claude/worktrees`: Claude Code moves a session into a folder there without asking, and asks once for each task anywhere else. Git must not track files in it |
 | `branch_prefix` | The prefix of the task branches. The default is `akasha/` |
 | `records` | The folder of the records of the tasks (preview, research, plan, summary), which go into git. The default is `.akasha/tasks`. Choose a folder that the own checkers of the team skip, for example a Markdown checker. A task keeps the folder that was set when it started |
 

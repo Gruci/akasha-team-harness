@@ -28,7 +28,7 @@ def first_config(root: Path) -> str:
     packs = langs.detect(root)
     pack = packs[0] if packs else None
     admins = f'"{me}"' if me else ""
-    folder = "worktrees" if _ignored(root, "worktrees/x") else config.WORK_DIR     # a worktree folder of the team
+    folder = config.WORK_DIR                                     # Claude Code enters a work copy there without asking
     lines = ["# The team rules of Akasha. An administrator changes them with a pull request.", "",
              "[team]", f"admins = [{admins}]          # GitHub names: they set up and maintain Akasha, and help when "
              "the AI is stuck",

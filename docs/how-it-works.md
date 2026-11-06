@@ -31,7 +31,7 @@ A task is one change of one person.
 
 | Part | Where |
 |:--|:--|
-| The work copy | A git worktree in `.akasha/work/<task>`, on the branch `akasha/<task>` (`[work]` changes both) |
+| The work copy | A git worktree in `.claude/worktrees/<task>`, on the branch `akasha/<task>` (`[work]` changes both). Claude Code moves a session into it without asking |
 | The board entry | A draft pull request with the label `akasha`, from the first minute. The open pull requests with the label are the board of the team |
 | The records | `.akasha/tasks/<task>/` in the branch (`[work] records` changes the folder): `preview.html`, `research.md`, `plan.md`, `summary.md`. They merge with the change, so each change keeps why it looks as it does |
 | The state on this computer | `.akasha/state/tasks/<task>.json`. Git ignores it |

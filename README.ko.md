@@ -18,7 +18,7 @@
 계획은 AI 가 쓰고, 두 번째 AI 가 그 계획을 검사하고,<br>
 AI 가 만들고 검사해서 병합까지 합니다.
 
-<img src="https://img.shields.io/badge/version-1.1.1-7c3aed" alt="버전 1.1.1">
+<img src="https://img.shields.io/badge/version-1.1.2-7c3aed" alt="버전 1.1.2">
 <a href="#라이선스"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT 라이선스"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 이상">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="엔진: Claude Code, Codex">
@@ -77,7 +77,7 @@ AI 가 분명해질 때까지 묻고, 브라우저에 시안을 띄웁니다.<br
 나머지는 AI 가 하고, 병합되면 알려 주고, 배포가 끝나면 다시 알려 줍니다.
 
 > **참고:** Python 3.11 이상(훅이 `py -3`, `python3`, `python` 순서로 찾습니다), git, GitHub, GitHub 명령줄 `gh` 가
-> 필요합니다. Codex 는 그 Python 에 `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.1"` 도 필요합니다
+> 필요합니다. Codex 는 그 Python 에 `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.2"` 도 필요합니다
 > (Windows 에서는 `py -3 -m pip install …`).
 
 * * *
@@ -189,9 +189,10 @@ AI 가 분명해질 때까지 묻고, 브라우저에 시안을 띄웁니다.<br
 
 | 버전 | 변경 내용 |
 |:--|:--|
-| **v1.1.1** | 시안이 사람이 확인하는 명세가 됩니다: 값마다 원천과 수식, 규칙마다 예. |
-| **v1.1.0** | 에이전트 계정: 에이전트가 사람의 요청으로 일하고, 그 사람이 머지 직전에 결과를 승인합니다. |
-| **v1.0.0** | 첫 공개 릴리스. |
+| **v1.1.2** | 작업 폴더 `.claude/worktrees/` — Claude Code 확인 창 없음 |
+| **v1.1.1** | 시안 = 명세(값마다 원천·수식, 규칙마다 예) |
+| **v1.1.0** | 에이전트 계정 |
+| **v1.0.0** | 첫 공개 |
 
 * * *
 
