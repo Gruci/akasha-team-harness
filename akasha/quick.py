@@ -2,30 +2,36 @@
 
 It needs no preview of the result and no plan. The agent engine makes the change first, then writes impact.md in the
 records folder: each changed file, who uses it, and why no other screen changes. The akasha-reviewer agent reviews
-the change with impact.md. Then `akasha preview` makes the preview from the change itself, and the person approves
-it in the chat, as for each task. The review and the approval hold the digest of the change: a later change needs
-both again.
+the change with impact.md. A change of only text for people (DOCS) needs no review: no code reads it, and the
+person reads all of it in the preview. A file that a tool or an agent reads (TOOL_TEXT), such as requirements.txt or
+CLAUDE.md, is not text for people: its change needs the review. Then `akasha preview` makes the preview from the change itself, and the person
+approves it in the chat, as for each task. The review and the approval hold the digest of the change: a later change
+needs both again.
 
 Akasha decides from what the change touches, not from its size: one line of a button that many screens use is not a
 quick change. A quick change only changes existing files; it adds and deletes no file, so a new screen never comes
 in without a preview. The server check examines the same rules on GitHub for each pull request whose records have
-impact.md."""
+impact.md. The watch asks for the review in the same way: only for a quick task that changed more than text."""
 
 from __future__ import annotations
 
 import hashlib
 import html
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 from akasha import core
 from akasha.checks import ADMIN_PATHS, matches, touches
 from akasha.config import Team
 from akasha.repo import default_branch, git, names
-from akasha.task import Task, record, records
+from akasha.task import Task, record, records, task_of
 
 IMPACT = "impact.md"
 DOCS = ("**/*.md", "**/*.txt", "**/*.rst", "**/*.adoc")      # text for people: no code imports it
+TOOL_TEXT = ("**/requirements*.txt", "**/constraints*.txt", "**/CMakeLists.txt", "**/robots.txt",    # read by tools
+             "**/CLAUDE.md", "**/AGENTS.md", "**/GEMINI.md", "**/SKILL.md", "**/agents/*.md",     # read by agents
+             "**/.claude/**", "**/.agents/**", "**/.codex/**", "**/.cursor/**")
 CHANGE_META = re.compile(r'<meta name="akasha-change" content="([0-9a-f]{12})">')
 MOST = 200_000                       # characters of the change that the preview shows
 
@@ -79,10 +85,35 @@ def problems(team: Team, tree: Path, start: str, end: str = "") -> list[str]:
     return found
 
 
+def _for_people(path: str) -> bool:
+    """True for text that only people read: DOCS, but not a file that a tool or an agent reads (TOOL_TEXT), such as
+    requirements.txt or CLAUDE.md."""
+    return any(matches(path, item) for item in DOCS) and not any(matches(path, item) for item in TOOL_TEXT)
+
+
+def text_only(changed: Iterable[str], records_dir: str) -> bool:
+    """True when each changed file outside the records is text for people. No code reads such a file, and the person
+    reads all of the change in the preview: a quick task of only such files needs no review of another AI."""
+    files = [path for path in changed if _outside(path, records_dir)]
+    return bool(files) and all(_for_people(path) for path in files)
+
+
+def needs_review(task: Task) -> bool:
+    """True when the quick task needs the review of the akasha-reviewer agent: its change is more than text."""
+    tree = Path(task.workcopy)
+    return not text_only(changes(tree, base(tree), task.records_dir), task.records_dir)
+
+
+def reviewed(task: Task, now: str) -> bool:
+    """True when the change needs no review, or the reviewer passed this version of it (digest `now`)."""
+    return not needs_review(task) or (task.review.get("verdict") == "PASS" and task.review.get("plan_sha") == now)
+
+
 def marked(team: Team, changed: list[str]) -> list[str]:
-    """The tasks that a pull request marks as quick: their records in the changed files have impact.md."""
+    """The tasks that a pull request marks as quick: their records in the changed files have impact.md. A records
+    folder with a date ([work] records_date) names its task without the date."""
     folder = team.records_dir.rstrip("/") + "/"
-    return sorted({path[len(folder):].split("/")[0] for path in changed
+    return sorted({task_of(path[len(folder):].split("/")[0]) for path in changed
                    if path.startswith(folder) and path[len(folder):].count("/") == 1 and path.endswith("/" + IMPACT)})
 
 
@@ -159,7 +190,7 @@ def missing(team: Team, task: Task) -> str:
     if not now:
         return (f"write {records(task)}/{IMPACT}: each changed file, which screens use it, and why no other screen "
                 "changes")
-    if task.review.get("verdict") != "PASS" or task.review.get("plan_sha") != now:
+    if not reviewed(task, now):
         return (f"the akasha-reviewer agent did not pass this version of the change (digest {now}). Ask it to "
                 f"review the quick task {task.id}")
     if not task.approval or task.approval.get("change_sha") != now:

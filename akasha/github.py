@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-from akasha import SOURCE, config, repo
+from akasha import VERSION, config, repo, source
 from akasha.config import CONFIG_FILE, HELP_LABEL, LABEL, Team
 
 TEMPLATES = Path(__file__).parent / "templates"
@@ -42,7 +42,8 @@ def runs_on(labels: tuple[str, ...]) -> str:
 
 def _template(name: str, team: Team) -> str:
     text = (TEMPLATES / name).read_text(encoding="utf-8")
-    for mark, value in ((RUNS_ON_MARK, runs_on(team.runs_on)), (PYTHON_MARK, team.python), (SOURCE_MARK, SOURCE)):
+    for mark, value in ((RUNS_ON_MARK, runs_on(team.runs_on)), (PYTHON_MARK, team.python),
+                        (SOURCE_MARK, source(team.version or VERSION))):
         text = text.replace(mark, value)
     return text
 

@@ -9,10 +9,11 @@ import time
 import webbrowser
 from pathlib import Path
 
-from akasha import agent, approval, board, checks, config, core, pr, quick, repo, review, spec, trace, work
+from akasha import (agent, approval, board, checks, config, core, pr, quick, repo, review, screen, spec, trace,
+                    version, work)
 from akasha.config import Team
-from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id, record,
-                         records, save)
+from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, folder_name, forget, load,
+                         new_id, record, records, save, task_of)
 
 STUCK = 3                      # failed checks in a row before Akasha suggests to ask an administrator
 DECISIONS = 'id="akasha-decisions"'       # the box of the questions and the answers of the person, in the preview
@@ -28,18 +29,17 @@ def rules(root: Path) -> Team:
 def gate(task: Task) -> str:
     """What the task still needs before its code can change, or "" when it is ready to build. A quick task changes
     its code first: its review and its approval come after the change (quick.missing). An agent task has no preview:
-    the request of the person decides what to make, and the person approves the result before the merge (agent.py)."""
+    the request of the person decides what to make, and the person approves the result before the merge (agent.py).
+    A task without a screen has no preview either: the person approves its plan after the review (screen.py)."""
     if agent.is_agent(task):
         if not record(task, agent.REQUEST).is_file():
             return (f"The request of the person is missing: {records(task)}/{agent.REQUEST}. Cancel the task, and "
                     "start it again right after the prompt of the request.")
-        if not review.passed(task):
-            return (f"The plan did not pass the review. Write research.md and plan.md in {records(task)}/, ask the "
-                    f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes."
-                    + review.told(task))
-        return ""
+        return _unreviewed(task)
     if quick.is_quick(task):
         return ""
+    if screen.is_no_screen(task):
+        return _plan_step(task)
     if task.status == "preview" or not task.approval:
         return (f"The person did not approve its preview yet. Write the preview at {records(task)}/{PREVIEW}, "
                 f"show it with `akasha preview {task.id}`, and ask the person in the chat. When their own message "
@@ -47,11 +47,34 @@ def gate(task: Task) -> str:
                 "not a message of the person).")
     if digest(record(task, PREVIEW)) != task.approval.get("preview_sha"):
         return f"The preview changed after the approval. Show it again with `akasha preview {task.id}`."
-    if not review.passed(task):
-        return (f"The plan did not pass the review. Write research.md and plan.md in {records(task)}/, ask the "
-                f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes."
-                + review.told(task))
-    return ""
+    return _unreviewed(task)
+
+
+def _unreviewed(task: Task) -> str:
+    """What the plan of the task still needs from the akasha-reviewer agent, or ""."""
+    if review.passed(task):
+        return ""
+    return (f"The plan did not pass the review. Write research.md and plan.md in {records(task)}/, ask the "
+            f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes."
+            + review.told(task))
+
+
+def _plan_step(task: Task) -> str:
+    """What a task without a screen still needs before the build, or "": the review of its plan, then the approval
+    of that plan by the person. A change of the plan after the approval needs both again."""
+    missing = _unreviewed(task)
+    if missing:
+        return missing
+    now = review.plan_digest(task)
+    if task.approval.get("plan_sha") == now:
+        return ""
+    if task.status != "preview" or not task.shown_at or task.preview_sha != now:
+        return (f"The person did not approve this plan yet. Show it with `akasha preview {task.id}`, then ask the "
+                "person in the chat.")
+    if time.time() - task.shown_at > approval.MAX_AGE:
+        return f"The person saw the plan more than a day ago. Show it again: `akasha preview {task.id}`."
+    return (f"Wait for the message of the person. When it approves the plan, run `akasha approve {task.id}`; else "
+            "change the plan as the person tells, and ask the akasha-reviewer agent again.")
 
 
 def next_step(task: Task) -> str:
@@ -65,6 +88,8 @@ def next_step(task: Task) -> str:
             f"Wait for the merge: `akasha land {task.id} --wait 540` (shell timeout 600000 ms)."
     if quick.is_quick(task):
         return _quick_step(task)
+    if screen.is_no_screen(task) and (waits := _plan_step(task)):
+        return waits
     if task.status == "preview":
         if not record(task, PREVIEW).is_file():
             return (f"Ask the person only what changes the result and what you cannot decide. Then write the preview "
@@ -117,7 +142,7 @@ def _quick_step(task: Task) -> str:
     if not now:
         return (f"Write {records(task)}/{quick.IMPACT}: each changed file, which screens use it, and why no other "
                 "screen changes.")
-    if task.review.get("verdict") != "PASS" or task.review.get("plan_sha") != now:
+    if not quick.reviewed(task, now):
         return (f"Ask the akasha-reviewer agent to review the change of the quick task {task.id} (change digest "
                 f"{now}), and repair the change until it passes." + review.told(task))
     if not task.approval or task.approval.get("change_sha") != now:
@@ -142,23 +167,41 @@ def _name_taken(root: Path, task: Task, branch: str, entries: list[board.Entry],
     if any(entry.task.id == task.id or entry.branch == task.branch for entry in entries):
         return True
     return online and (repo.git(root, "ls-remote", "--exit-code", "origin", f"refs/heads/{task.branch}").returncode == 0
-                       or repo.git(root, "cat-file", "-e", f"origin/{branch}:{records(task)}").returncode == 0)
+                       or _records_taken(root, task, branch))
+
+
+def _records_taken(root: Path, task: Task, branch: str) -> bool:
+    """True when the default branch keeps the records of an earlier task of the same id, with a date or without."""
+    listed = repo.git(root, "ls-tree", "--name-only", f"origin/{branch}:{task.records_dir}")
+    return listed.returncode == 0 and any(task.id in (name, task_of(name)) for name in listed.stdout.splitlines())
 
 
 def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
-          fast: bool = False) -> tuple[Task, list[str]]:
+          fast: bool = False, no_screen: bool = False) -> tuple[Task, list[str]]:
     """Record a new task: a work copy on a new branch from the latest default branch, and a draft pull request on
-    the board. Return the task and the other tasks that plan the same files. `fast` makes a quick task. An agent
+    the board. Return the task and the other tasks that plan the same files. `fast` makes a quick task, and
+    `no_screen` a task without a screen of an administrator, whose plan the person approves (screen.py). An agent
     account always makes an agent task, from the last prompt of its session (agent.py)."""
     team, branch = rules(root), repo.default_branch(root)
+    old = version.start_problem(team.version)        # an older Akasha than the team uses runs older rules
+    if old:
+        raise ValueError(old)
     online = board.available(root)
     if online and repo.fetch(root, branch).returncode:
         raise RuntimeError(f"git cannot fetch {branch} from origin. Examine the network and the GitHub login of git")
     owner = (repo.me(root) if online else "") or repo.person(root, kept=False)
+    patterns = [config.pattern(item) for item in scope]
+    if no_screen:
+        if fast:
+            raise ValueError("a quick task has no plan: start a task without a screen without --quick")
+        problem = screen.start_problem(team, owner, patterns, repo.names(root, "ls-files"))
+        if problem:
+            raise ValueError(problem)
     request = _request(root, team, owner, fast)
-    task = Task(id=new_id(title, name), title=title.strip(), scope=[config.pattern(item) for item in scope],
-                records_dir=team.records_dir, kind="agent" if request else "quick" if fast else "full")
+    task = Task(id=new_id(title, name), title=title.strip(), scope=patterns, records_dir=team.records_dir,
+                kind="agent" if request else "quick" if fast else screen.KIND if no_screen else "full")
     task.branch = team.branch_prefix + task.id
+    task.records_name = folder_name(task.id, team.records_date)     # the task keeps it, also when the setting changes
     entries = board.read(root) if online else []
     if entries is None:
         raise RuntimeError("gh cannot read the board. Log in to GitHub: gh auth login. Then do the step again")
@@ -176,6 +219,7 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
         agent.write_request(task, request)
     save(root, task)
     notes = [f"overlap — {line}" for line in board.overlaps(task, [], entries)]
+    notes += [f"version — {newer}"] if (newer := version.mismatch(team.version)) else []
     locked = checks.touches(task.scope, checks.locked(team, task.owner))
     if locked:
         notes.append(f"admin only — the task plans {', '.join(locked[:3])}, which only an administrator changes. "
@@ -189,7 +233,10 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
         notes.append(f"core — {', '.join(f'{name} ({why})' for name, why in planned.items())}. Add new code beside "
                      f"these files; a change of their existing lines waits for an approval of an administrator")
     planned_data = [] if request or fast else checks.touches(task.scope, team.data_paths)
-    if planned_data:
+    if planned_data and no_screen:
+        notes.append(f"data — the task plans {', '.join(planned_data[:3])}, which make data that people see. Define "
+                     "each value in plan.md: its source, formula, value now, and check")
+    elif planned_data:
         notes.append(f"data — the task plans {', '.join(planned_data[:3])}, which make data that people see. Mark each "
                      "value of the preview and define its source, formula, value, and check (akasha-build step 2)")
     if online:
@@ -248,7 +295,7 @@ def _simple_preview(title: str, text: str) -> str:
 
 def _quick_preview(root: Path, task: Task) -> None:
     """Make the preview of a quick task from its change. The change must be a quick one, with impact.md and a review
-    that passed."""
+    that passed, or of only text for people (quick.needs_review)."""
     tree = Path(task.workcopy)
     found = quick.problems(rules(root), tree, quick.base(tree))
     if found:
@@ -257,7 +304,7 @@ def _quick_preview(root: Path, task: Task) -> None:
     if not now:
         raise ValueError(f"write {records(task)}/{quick.IMPACT} first: each changed file, which screens use it, and "
                          "why no other screen changes")
-    if task.review.get("verdict") != "PASS" or task.review.get("plan_sha") != now:
+    if not quick.reviewed(task, now):
         raise ValueError(f"the akasha-reviewer agent did not pass this version of the change (digest {now}) yet")
     path = record(task, PREVIEW)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -271,6 +318,8 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
     holder = taken(root, task)
     if holder:
         raise ValueError(f"@{holder} holds task {task.id} now. Run `akasha tidy` to remove the copy on this computer")
+    if screen.is_no_screen(task):
+        return _show_plan(root, task)
     path = record(task, PREVIEW)
     if quick.is_quick(task):
         _quick_preview(root, task)
@@ -311,6 +360,33 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
                   "message that the person types counts.")
 
 
+def _show_plan(root: Path, task: Task) -> tuple[Task, str]:
+    """Show the plan of a task without a screen to the person, after the akasha-reviewer agent passed it. A plan
+    that changed after an approval needs a new approval."""
+    if not review.passed(task):
+        raise ValueError("the akasha-reviewer agent did not pass this version of the plan yet. " + _unreviewed(task))
+    sha = review.plan_digest(task)
+    changed = bool(task.approval) and task.approval.get("plan_sha") != sha
+    if changed or not task.approval:
+        task.approval, task.status = {}, "preview"
+    task.preview_sha, task.shown_at, task.shown_in = sha, time.time(), approval.session(root)
+    task.heard = {}
+    save(root, task)
+    if board.available(root) and task.number:
+        work.commit(Path(task.workcopy), f"akasha: plan of {task.title}")
+        try:
+            work.push(Path(task.workcopy), task.branch)
+        except RuntimeError:
+            pass                                      # the next push sends it
+        pr.update(root, task)
+    again = " The plan changed after the approval, so the person approves it again." if changed else ""
+    return task, (f"The plan {record(task, PLAN)} passed the review.{again} Show it to the person in the chat: the "
+                  "approach, each file and its change, the tests, the risks, and how to undo it, with the paths of "
+                  "research.md and plan.md. Then ask in plain chat whether to build it like this, or what to change. "
+                  f"When their own message approves it, run `akasha approve {task.id}`. Do not ask with "
+                  "AskUserQuestion or another choice tool: only a message that the person types counts.")
+
+
 def approve(root: Path, task_id: str) -> tuple[Task, str]:
     """Record the approval of the person from their last message after the preview, in this session."""
     task = load(root, task_id)
@@ -319,6 +395,10 @@ def approve(root: Path, task_id: str) -> tuple[Task, str]:
         raise ValueError(f"the change moved after the person saw it. Show it again with `akasha preview {task.id}` "
                          "and ask again")
     outcome = agent.digest(task) if agent.is_agent(task) else ""
+    if screen.is_no_screen(task):
+        if not review.passed(task):
+            raise ValueError("the plan changed after its review. " + _unreviewed(task))
+        outcome = review.plan_digest(task)
     problem = approval.approve(root, task, approval.session(root), outcome)
     if problem:
         raise ValueError(problem)
@@ -327,6 +407,10 @@ def approve(root: Path, task_id: str) -> tuple[Task, str]:
         save(root, task)
     if board.available(root) and task.number:
         pr.update(root, task)
+    if screen.is_no_screen(task):
+        return task, (f"Recorded the approval of the plan by {task.approval['by']}: \"{task.approval['words']}\". "
+                      "Next, without stopping: build as the plan says, run `akasha check`, write summary.md, and run "
+                      "`akasha land`. A change of the plan after now needs a new review and a new approval.")
     if outcome:
         return task, (f"Recorded the approval of {task.approval['by']}: \"{task.approval['words']}\". Next, without "
                       f"stopping: run `akasha land {task.id} --wait 540` (shell timeout 600000 ms). A change of the "
@@ -391,7 +475,15 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
         result.status[QUICK] = "FAIL" if found else "PASS"
         result.details[QUICK] = ("this is not a quick change: " + "; ".join(found[:5]) + f". Run `akasha upgrade "
                                  f"{task.id}` for a full task with a preview and a plan") if found else ""
-    touched = [] if only or quick.is_quick(task) or agent.is_agent(task) else checks.touches(changed, team.data_paths)
+    if screen.is_no_screen(task) and not only:
+        found = screen.problems(team, changed, task.records_dir)
+        result.status[screen.CHECK] = "FAIL" if found else "PASS"
+        result.details[screen.CHECK] = ("a task without a screen changes no file that makes a screen: "
+                                        + "; ".join(found[:5]) + f". Undo these changes, or cancel task {task.id} and "
+                                        "start it again with a preview") if found else ""
+    # The plan of a task without a screen defines its values, and the reviewer judges them (screen.py)
+    touched = [] if only or quick.is_quick(task) or agent.is_agent(task) or screen.is_no_screen(task) else \
+        checks.touches(changed, team.data_paths)
     if touched:
         page = record(task, PREVIEW)
         found = spec.value_problems(page.read_text(encoding="utf-8", errors="replace") if page.is_file() else "", True)

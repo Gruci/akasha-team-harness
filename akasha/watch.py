@@ -1,17 +1,18 @@
 """The watch: where GitHub cannot protect the default branch, a workflow examines each new commit after a push and
 reports each problem to the administrators: a commit that no merged pull request brought, a merge before the required
-checks passed, a pull request that was not an Akasha task or had no approved preview or no passed plan review, an
-agent task of a person or without an approved result, and a change by a teammate or an agent account of a file that
-only an administrator changes, or of existing lines of core code without an approval of an administrator. It changes
-no code: a revert would start a
-deployment that nobody asked for, and the administrators decide."""
+checks passed, a pull request that was not an Akasha task or had no approved preview or no passed plan review (a
+quick task of only text for people needs no review, as on the local side: quick.text_only), an agent task of a
+person or without an approved result, a task without a screen of a person who is not an administrator, without an
+approved plan, or with a change of a screen file, and a change by a teammate or an agent account of a file that only
+an administrator changes, or of existing lines of core code without an approval of an administrator. It changes no
+code: a revert would start a deployment that nobody asked for, and the administrators decide."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from akasha import checks, config, github, repo
+from akasha import checks, config, github, repo, quick, screen, version
 from akasha.config import HELP_LABEL, Team
 from akasha.task import parse_block
 
@@ -32,13 +33,14 @@ def _team_at(root: Path, commit: str) -> Team:
 
 
 def _passed(root: Path, slug: str, sha: str, names: tuple[str, ...]) -> list[str]:
-    """The required checks that did not pass on the commit. As in the landing, the latest run of a check that did not
-    skip decides: a skipped run alone is the draft, not a pass."""
+    """The required checks that did not pass on the commit. As in the landing, the latest run of a check that ended and
+    did not skip decides: a skipped run alone is the draft, not a pass, and a run that still runs on the same commit,
+    for example after the draft got ready, does not hide a run that passed."""
     runs = (_api(root, f"repos/{slug}/commits/{sha}/check-runs?per_page=100") or {}).get("check_runs") or []
     statuses = (_api(root, f"repos/{slug}/commits/{sha}/status") or {}).get("statuses") or []
     latest = {}
     for run in sorted(runs, key=lambda item: str(item.get("started_at") or "")):
-        if run.get("conclusion") != "skipped":
+        if run.get("conclusion") not in (None, "skipped"):      # a run that still runs has no conclusion yet
             latest[run.get("name")] = run.get("conclusion")
     good = {name for name, conclusion in latest.items() if conclusion in ("success", "neutral")}
     good |= {item.get("context") for item in statuses if item.get("state") == "success"}
@@ -69,11 +71,21 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
         return f"pull request #{pull['number']} of the agent account @{author} was not an agent task"
     if task.kind == "agent" and task.approval.get("source") != "result":
         return f"pull request #{pull['number']} merged without an approved result"
+    changed = repo.names(root, "diff", "--name-only", "--no-renames", f"{sha}^1", sha)
+    if screen.is_no_screen(task):
+        found = screen.problems(team, changed, task.records_dir)
+        if not screen.allowed(team, author):
+            return (f"pull request #{pull['number']} is marked as a task without a screen, but @{author} is not an "
+                    "administrator")
+        if task.approval.get("source") != "plan":
+            return f"pull request #{pull['number']} merged without an approved plan"
+        if found:
+            return f"pull request #{pull['number']} is a task without a screen, but {found[0]}"
     if not task.approval:
         return f"pull request #{pull['number']} merged without an approved preview"
-    if task.review.get("verdict") != "PASS":
+    text_only = task.kind == "quick" and quick.text_only(changed, team.records_dir)
+    if task.review.get("verdict") != "PASS" and not text_only:
         return f"pull request #{pull['number']} merged without a passed plan review"
-    changed = repo.names(root, "diff", "--name-only", "--no-renames", f"{sha}^1", sha)
     locked = checks.touches(changed, checks.locked(team, author))
     if locked:
         return f"pull request #{pull['number']} of @{author} changed {locked[0]}, which only an administrator changes"
@@ -89,6 +101,15 @@ def _issue(root: Path, slug: str, team: Team, title: str, text: str) -> None:
     repo.gh(root, "label", "create", HELP_LABEL, "--repo", slug, "--color", "d93f0b", "--force")
     repo.gh(root, "issue", "create", "--repo", slug, "--label", HELP_LABEL, "--title", f"[akasha] {title}",
             "--body", f"{people}\n\n{text}".strip())
+
+
+def version_problem(root: Path) -> str:
+    """Why the run of the watch fails after its examination: the Akasha that runs is not the version in akasha.toml
+    of the pushed commit, as in the server check (checks.ci). The run fails, and opens no issue for each push."""
+    try:
+        return version.server_problem((config.load(root).version,))
+    except config.ConfigError:
+        return ""
 
 
 def watch(root: Path, slug: str, branch: str, before: str, after: str, forced: bool, pusher: str) -> str:

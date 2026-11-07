@@ -17,13 +17,20 @@ def meta(task: Task) -> list[str]:
     """The lines that tell how the task was approved, reviewed, and checked."""
     lines = []
     if task.kind == "quick":
+        checked = ("the reviewer examined the change with impact.md" if task.review else
+                   "it changes only text for people, so it needs no review")
         lines.append("- Kind: quick change — no preview of the result and no plan. It changes only existing files "
-                     "that no other area uses; the reviewer examined the change with impact.md, and the person "
-                     "approved the change itself")
+                     f"that no other area uses; {checked}, and the person approved the change itself")
     if task.kind == "agent":
         lines.append("- Kind: agent task — an agent account worked from the request of a person (request.md), "
                      "without a preview. The person approves the result before the merge")
         lines.append(_result_line(task))
+    elif task.kind == "no-screen":
+        lines.append("- Kind: task without a screen — an administrator's change that touches no screen file "
+                     "(`[preview] screens`). The person approves the plan after its review, in place of a preview")
+        lines.append(f"- Plan approved by @{task.approval.get('by', '?')} at {task.approval.get('at', '?')} with "
+                     f"\"{task.approval.get('words', '')}\" (plan `{task.approval.get('plan_sha', '')}`)"
+                     if task.approval else "- Plan: not approved yet")
     elif task.approval:
         lines.append(f"- Preview approved by @{task.approval.get('by', '?')} at {task.approval.get('at', '?')} "
                      f"with \"{task.approval.get('words', '')}\" (preview `{task.approval.get('preview_sha', '')}`)")
@@ -44,8 +51,8 @@ def meta(task: Task) -> list[str]:
         lines.append(f"- Core changes: {', '.join(f'`{name}`' for name in found)} — {state}")
     if task.scope:
         lines.append(f"- Planned files: {', '.join(f'`{item}`' for item in task.scope)}")
-    kept = {"quick": "impact, preview, review, summary", "agent": "request, research, plan, review, summary"}.get(
-        task.kind, "preview, research, plan, review, summary")
+    kept = {"quick": "impact, preview, review, summary", "agent": "request, research, plan, review, summary",
+            "no-screen": "research, plan, review, summary"}.get(task.kind, "preview, research, plan, review, summary")
     lines.append(f"- Records: `{records(task)}/` ({kept})")
     return lines
 

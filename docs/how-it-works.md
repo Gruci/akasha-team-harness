@@ -12,7 +12,9 @@ the result. GitHub merges it.
 A team has three roles. A teammate asks for changes and approves their previews, and never reads code. An
 administrator sets up and maintains Akasha and the few risky parts (the database, the deployment), and helps when an
 AI is stuck. An agent account works from the requests of people that a program gives it, for example the diagnosis
-of a failed job: the person approves its result before the merge (see "An agent task"). Nobody reviews a task, except
+of a failed job: the person approves its result before the merge (see "An agent task"). An administrator is a
+developer: the AI talks technically with them, shows the research and the plan, and for a change without a screen
+asks them to approve the plan in place of a preview (see "A task without a screen"). Nobody reviews a task, except
 one kind of change: when a task changes existing lines of the core (code that other areas use), an administrator
 approves it on GitHub before it lands.
 
@@ -33,7 +35,7 @@ A task is one change of one person.
 |:--|:--|
 | The work copy | A git worktree in `.claude/worktrees/<task>`, on the branch `akasha/<task>` (`[work]` changes both). Claude Code moves a session into it without asking |
 | The board entry | A draft pull request with the label `akasha`, from the first minute. The open pull requests with the label are the board of the team |
-| The records | `.akasha/tasks/<task>/` in the branch (`[work] records` changes the folder): `preview.html`, `research.md`, `plan.md`, `summary.md`. They merge with the change, so each change keeps why it looks as it does |
+| The records | `.akasha/tasks/<task>/` in the branch (`[work] records` changes the folder, and `[work] records_date` puts the start date before the name: `2026-11-07-<task>/`): `preview.html`, `research.md`, `plan.md`, `summary.md`. They merge with the change, so each change keeps why it looks as it does |
 | The state on this computer | `.akasha/state/tasks/<task>.json`. Git ignores it |
 | The state for the other computers | A hidden block at the end of the body of the pull request |
 
@@ -53,6 +55,8 @@ The approval of the preview is the only decision of the person, so Akasha takes 
   it, within a day. The hook also runs for prompts that the person did not type, for example the notice of a
   background task: Akasha does not keep those. Where the agent engine gives no session (Codex), the work copy of the
   session decides, and only when one preview waits.
+- In a task without a screen, the person approves the plan in the same way, after its review: the approval holds
+  the digest of `plan.md` (see "A task without a screen").
 - A choice in a tool such as AskUserQuestion is not a message of the person: the AI asks for the approval in plain
   chat. The questions before the preview (who uses it, where, what) can use such a tool: they are not the approval.
 - At the top of the preview, a box (`<section id="akasha-decisions">`) shows each question that the AI asked and the
@@ -121,6 +125,13 @@ Another AI reviews the plan, in place of a person who reads it.
 - A PASS mark counts only when each item has a row that is PASS, or N/A where it may be. Else Akasha records CHANGES
   and the next step tells why. The whole answer goes into `review.md` in the records, and the pull request shows the
   verdict of the items, so each change keeps why its plan passed.
+- A review after a repair of the plan does not judge each item again. Akasha keeps the rows of the last review of the
+  reviewer and the plan that it read. `akasha status <task> --review` names the items that did not pass and shows the
+  change of `plan.md` since then. The reviewer judges those items again, and each item whose part of the plan changed,
+  and answers `KEPT` for each other item; any doubt means that it judges the item again. Akasha replaces a KEPT row
+  with the row of the last review only when that row was PASS or N/A, else the PASS mark does not count. So
+  `review.md` still has a row for each item (a kept row tells its round), and the verdict still holds the digest of
+  the current plan. A quick task keeps nothing.
 
 | Item | It passes when |
 |:--|:--|
@@ -145,18 +156,19 @@ does what the title says, and nothing more), Q2 Reach (it reaches no other scree
 ## A quick task
 
 A typo or one setting needs no preview of the result and no plan. A quick task (`akasha start --quick`) skips them,
-and keeps the review of another AI, the approval of the person, the checks, and the landing.
+and keeps the review of another AI (not for a change of only text), the approval of the person, the checks, and the
+landing.
 
 | Part | How it works |
 |:--|:--|
 | What is quick | Akasha decides from what the change touches, not from its size. A quick change only changes existing files: it adds and deletes no file, so a new screen never comes in without a preview. No changed file is a core file (`[core]`): one line of a button that many screens use is not quick, also a new line. It touches no file that only an administrator changes, and no file of `[preview] data`. A file other than code and text matches `[quick] paths` |
 | The same for each person | The administrators and the people of `[team] own_procedure` are free of the core approval, not of these rules: when they need more, they make a full task |
 | The order | The AI makes the change, then writes `impact.md` in the records: each changed file, which screens use it, and why no other screen changes |
-| The review | The akasha-reviewer agent reviews the change with `impact.md`, and finds the users that an import does not show (a setting key, a CSS class, a text key). Its mark holds the digest of the change and of `impact.md` |
+| The review | The akasha-reviewer agent reviews the change with `impact.md`, and finds the users that an import does not show (a setting key, a CSS class, a text key). Its mark holds the digest of the change and of `impact.md`. A change of only text for people (`*.md`, `*.txt`, `*.rst`, `*.adoc`) needs no review: no code reads it, and the person reads all of it in the preview. `impact.md` and the approval of the person are enough |
 | The approval | `akasha preview` makes the preview from the change itself, and the person approves it in the chat as for each task. The approval holds the digest of the change |
 | A later change | A change of the code after the review or the approval needs both again. The landing stops until they hold for the current change |
 | Not quick | `akasha check` fails the check `quick`, and the landing stops. `akasha upgrade <task>` makes it a full task: the change stays, and the person approves a preview first |
-| On GitHub | The server check runs the same rules for each pull request whose records have `impact.md`, and fails the check `quick` when the change is not a quick change. A team with its own CI runs `akasha check --ci` in it for this (`[ci] required`) |
+| On GitHub | The server check runs the same rules for each pull request whose records have `impact.md`, and fails the check `quick` when the change is not a quick change. A team with its own CI runs `akasha check --ci` in it for this (`[ci] required`). The watch asks for a passed review in the same way as `akasha status`: for each quick task, except one that changed only text for people |
 
 ## An agent task
 
@@ -181,12 +193,30 @@ once, at the end, on the result.
 Akasha trusts the relay to give only the words of a person as prompts. The relay keeps the GitHub key and the last
 word on the merge; the hooks keep a cooperative agent engine on the procedure.
 
+## A task without a screen
+
+A change of data, a batch job, an API, a rule, the speed, or the docs has no screen to show in a preview. For an
+administrator, the AI works in developer mode: it asks technical questions, discusses the approach, and shows
+`research.md` and `plan.md`. The administrator approves the plan in place of a preview. A teammate approves a preview,
+as before.
+
+| Part | How it works |
+|:--|:--|
+| Who | Only an administrator (`[team] admins`). The session start notice tells the AI that the account is an administrator, and the akasha-build skill switches to developer mode |
+| What has no screen | `[preview] screens` names the files that make a screen. `akasha start --no-screen` refuses a start without `--scope`, a scope that holds one of them, a team without `[preview] screens`, and `--quick` with it |
+| The order | The research, the plan, the review of the akasha-reviewer agent until PASS, then the approval of the plan by the person, then the build |
+| The plan | The specification: at its top each question and the answer of the person, then each value from data with its source, formula, value now, and check, and each behavior with an example. The reviewer judges R1 (scope), R5 (tests), and R8 (decisions) against it |
+| The approval | `akasha preview <task>` refuses a plan that did not pass the review, and records that the person sees this version. The person approves it in the chat, and `akasha approve <task>` records the approval with the digest of `plan.md` |
+| A later change | A change of the plan after the approval needs a new review and a new approval. Akasha stops the edits of the code, the next step, and the landing until both hold for the current plan |
+| The check `screen` | `akasha check` fails it when the change touches a file of `[preview] screens`. The check `data` does not run: the plan defines the values, and the reviewer judges them |
+| On GitHub | The server check (`akasha check --ci`) runs the same rule for each pull request whose records hold `plan.md` without `preview.html`, `request.md`, or `impact.md`. The watch reports such a task of a person who is not an administrator, without an approved plan, or with a change of a screen file |
+
 ## What Akasha stops
 
 | Before | Akasha stops | Why |
 |:--|:--|:--|
 | An edit | A change of the repository in the main checkout, or in a git worktree that is not a task, after the setup merged | Each change is a task, in its own work copy |
-| An edit | A change of the code of a task before the approval and the passed review | The person decides first, and the plan is right first |
+| An edit | A change of the code of a task before the approval and the passed review (a task without a screen: the passed review, then the approval of that plan) | The person decides first, and the plan is right first |
 | A preview | A preview of a full task without its rules, or with a value from data that it does not define (see "The preview specifies the change") | The person approves what to make, with a way to check it |
 | An edit | A change of `.env` and of `.akasha/state` | Secret values, and the records of Akasha |
 | An edit | In a teammate's task, a change of `akasha.toml`, `.github/`, CODEOWNERS, or a path of `[risk]` | The administrators maintain them. The AI asks with `akasha help`, and the check `admin_only` also fails on such a change |
@@ -250,7 +280,7 @@ follows the pull request:
 
 | What Akasha sees | What it does |
 |:--|:--|
-| A required check runs | Waits. A check that a draft skipped is not a pass: one run must really run and pass. When a check ran more than once on the head, the latest run decides, as on GitHub |
+| A required check runs | Waits. A check that a draft skipped is not a pass: one run must really run and pass. When a check ran more than once on the head, the latest run that ended decides. A run that passed while the pull request was a draft counts: a second run of the same commit, which marking it ready started, does not make the landing wait (see `[ci]` in [team config](team-config.md)) |
 | A required check failed | Stops with FAILED. The agent engine repairs, checks, and lands again |
 | A required check was cancelled | Starts it again once. Cancelled again: stops with FAILED and asks for an administrator |
 | A required check never ran, or waits for a runner | Waits; at the end of the wait it names the check, so that an administrator can correct `[ci] required` or the runner |

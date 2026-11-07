@@ -11,6 +11,7 @@ import json
 import re
 import secrets
 from dataclasses import asdict, dataclass, field, fields
+from datetime import date
 from pathlib import Path
 
 from akasha.config import RECORDS_DIR, STATE_DIR
@@ -19,7 +20,9 @@ from akasha.repo import write_whole
 STATUSES = ("preview", "approved", "landing", "merged", "closed")
 TASK_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,59}")
 LOCAL_ONLY = ("workcopy", "shown_in", "heard", "parts")  # this computer and this session only: never on GitHub
+REVIEW_LOCAL = ("plan", "rows")     # the plan and the rows that the last review read: too long for the PR body
 BLOCK = re.compile(r"<!-- akasha:task (\{.*?\}) -->", re.S)
+DATED = re.compile(r"\d{4}-\d{2}-\d{2}-(.+)")       # a records folder with the start date: YYYY-MM-DD-<task>
 PREVIEW, PLAN, RESEARCH, SUMMARY = "preview.html", "plan.md", "research.md", "summary.md"
 
 
@@ -45,6 +48,7 @@ class Task:
     failures: int = 0               # failed checks in a row
     stats: dict = field(default_factory=dict)               # for the retro: failed checks by name, review rounds
     records_dir: str = RECORDS_DIR  # the folder of the records of the tasks, as [work] records was at the start
+    records_name: str = ""          # the folder of this task in it: the task id, or with the date ([work] records_date)
     workcopy: str = ""
     # The parts of the work for workers at the same time (`akasha split`): name, branch, scope, workcopy. Each part
     # is a work copy on this computer only, on a local branch from the branch of the task; `akasha join` merges it
@@ -62,9 +66,21 @@ def new_id(title: str, name: str = "") -> str:
     return f"{slug}-{secrets.token_hex(2)}" if slug else f"task-{secrets.token_hex(4)}"
 
 
+def folder_name(task_id: str, dated: bool, day: date | None = None) -> str:
+    """The name of the records folder of a new task: its id, or with `dated` the start date before it."""
+    return f"{(day or date.today()).isoformat()}-{task_id}" if dated else task_id
+
+
+def task_of(folder: str) -> str:
+    """The task id of a records folder: the name without the date at the start."""
+    found = DATED.fullmatch(folder)
+    return found.group(1) if found else folder
+
+
 def records(task: Task) -> str:
-    """The folder of the records of the task in the repository: preview, research, plan, and summary."""
-    return f"{task.records_dir}/{task.id}"
+    """The folder of the records of the task in the repository: preview, research, plan, and summary. A task that
+    started before records_name existed has the folder of its id."""
+    return f"{task.records_dir}/{task.records_name or task.id}"
 
 
 def record(task: Task, name: str) -> Path:
@@ -125,6 +141,7 @@ def forget(root: Path, task_id: str) -> None:
 def block(task: Task) -> str:
     """The hidden block of the task in the body of its pull request."""
     data = {key: value for key, value in asdict(task).items() if key not in LOCAL_ONLY}
+    data["review"] = {key: value for key, value in data["review"].items() if key not in REVIEW_LOCAL}
     text = json.dumps(data, ensure_ascii=False).replace("-->", "--\\u003e")     # the comment must not end early
     return f"<!-- akasha:task {text} -->"
 

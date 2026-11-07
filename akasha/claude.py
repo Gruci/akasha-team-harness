@@ -12,6 +12,13 @@ from akasha.codex import END, PRECEDENCE, START, with_block
 SETTINGS = ".claude/settings.json"
 INSTRUCTIONS = "CLAUDE.md"
 MARKETPLACE, REPOSITORY, PLUGIN = "akasha", "Gruci/akasha-team-harness", "akasha@akasha"
+# Commands that only read, so that a teammate sees no permission prompt for them. The hooks of Akasha already allow
+# its own safe commands, and still stop each edit and command that a task must not make.
+READ_ONLY = tuple(f"Bash({command}:*)" for command in (
+    "git status", "git diff", "git log", "git show", "git grep", "git ls-files", "git rev-parse", "git branch --show-current",
+    "git worktree list", "gh pr view", "gh pr diff", "gh pr list", "gh pr checks", "gh run view", "gh run list",
+    "gh issue view", "gh issue list"))
+MODE = "acceptEdits"            # edits need no prompt: Akasha stops an edit before the approval, and outside the task
 RULES = f"""{START}
 ## Akasha
 
@@ -26,7 +33,8 @@ not there, the plugin is missing: stop, and ask the person to run `/plugin marke
 
 
 def settings_text(text: str | None) -> str | None:
-    """The settings with the marketplace and the plugin of Akasha, or None when the file is not a JSON object."""
+    """The settings with the marketplace and the plugin of Akasha, the read-only commands, and the mode of edits when
+    the team set none, or None when the file is not a JSON object."""
     try:
         data = json.loads(text) if text and text.strip() else {}
     except ValueError:
@@ -35,10 +43,16 @@ def settings_text(text: str | None) -> str | None:
         return None
     places = data.setdefault("extraKnownMarketplaces", {})
     plugins = data.setdefault("enabledPlugins", {})
-    if not isinstance(places, dict) or not isinstance(plugins, dict):
+    permissions = data.setdefault("permissions", {})
+    if not all(isinstance(item, dict) for item in (places, plugins, permissions)):
+        return None
+    allow = permissions.setdefault("allow", [])
+    if not isinstance(allow, list):
         return None
     places[MARKETPLACE] = {"source": {"source": "github", "repo": REPOSITORY}}
     plugins[PLUGIN] = True
+    allow += [rule for rule in READ_ONLY if rule not in allow]
+    permissions.setdefault("defaultMode", MODE)
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
 

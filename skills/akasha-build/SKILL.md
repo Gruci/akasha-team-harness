@@ -7,7 +7,8 @@ description: Build a change as an Akasha task, from the request to the merge. Us
 
 The person decides what to make, and approves a preview of it. That is their only step. You do everything else:
 the research, the plan, a review of the plan by another AI, the build, the checks, and the landing. Talk with the
-person in their language, in simple words, and never ask them a technical question.
+person in their language, in simple words, and never ask them a technical question. Only when the session start
+notice says that this account is an administrator, "Developer mode" below changes these limits.
 
 The session start notice gives the Akasha command; this skill writes it as `akasha`. It also tells the open tasks of
 the team, the guides of the team (`[guides]` of `akasha.toml`), and your own tasks with their next step. When it names
@@ -46,6 +47,47 @@ a task of yours, do its next step first.
    timeout of 600000 ms. It makes the work copy, and a draft pull request on the board. When it says that the plan
    needs a review, tell the person who will review. If the name is in use, give another name.
 
+## Developer mode: when the session start notice says that this account is an administrator
+
+An administrator is a developer. Talk with them as with a developer, in their language. Each other step of this skill
+stays as it is.
+
+1. In step 1, also ask technical questions with the choice tool: the approach, the files, the formulas, the data, the
+   edge cases, and the tests. Name the files, the functions, and the tables. Put the option that you think fits best
+   first, and ask only what you cannot decide from the code, the data, and the guides of the team.
+2. When the approach has a real choice, discuss it with the person before you write the plan. Tell what the research
+   found.
+3. Show `research.md` and `plan.md`. When the review passes (step 3.3), give the person their paths and a short
+   summary: the approach, each file and its change, the tests, and the risks. Take each remark: a remark that changes
+   the plan needs a new review.
+4. A change with a screen still has a preview (step 2), and only a message that the person types approves it.
+5. A change without a screen has a plan in place of a preview: see the next section.
+
+## A task without a screen: an administrator approves the plan
+
+Only for an administrator, and only for a change that no screen shows: data, a batch job, an API, a rule, the speed,
+or the docs. `[preview] screens` of `akasha.toml` names the files that make a screen. Akasha refuses the start when
+the scope holds one of them, and the check `screen` fails when the change touches one. Without `[preview] screens`,
+or when the change also needs a screen, make a full task with a preview.
+
+1. Do step 1 in developer mode. Then run `akasha start "<title in the words of the person>" --name <short-name>
+   --scope <file patterns> --no-screen` with a shell timeout of 600000 ms.
+2. Write `research.md` and `plan.md` as in steps 3.1 and 3.2. The plan is the specification, so put at its top the
+   decisions: each question that you asked and the answer of the person, one line each. For each value that comes
+   from data, the plan gives its source, its formula, its value now with the time that you read it, and the query or
+   command that gives it again. For each behavior that the person can notice, the plan gives when, then, and one real
+   example. Plan a test for each value and each example.
+3. Ask the akasha-reviewer agent to review the plan, as in step 3.3, until the mark is PASS.
+4. Run `akasha preview <task>`: Akasha records that the person sees this version of the plan. Show the plan in the
+   chat: the approach, each file and its change, the tests, the risks, and how to undo it, with the paths of
+   `research.md` and `plan.md`. Then ask in plain chat: "Shall I build it like this, or what should change?" Never ask
+   with AskUserQuestion or another choice tool: only a message that the person types counts.
+5. When the person asks for a change, change the plan, ask the reviewer again, run `akasha preview <task>` again, and
+   ask again. When the message of the person approves the plan as it is, run `akasha approve <task>`, as in step 2.6.
+6. Continue with step 4 and step 5. A change of the plan after the approval needs the review and the approval again:
+   Akasha stops the edits of the code until then. When the check `screen` fails, undo the change of that file, or
+   cancel the task and start a full task with a preview.
+
 ## A quick task: a typo or one setting
 
 A quick task has no preview of the result and no plan. Use it only for a small change of existing files that no other
@@ -62,12 +104,13 @@ Skip the questions of step 1 that the request already answers.
 4. Run `akasha status <task>` for the change digest. Ask the akasha-reviewer agent: "Review the change of the Akasha
    quick task <task>. Work copy: <path>. Change digest: <digest>. Akasha command: <the command of the session start
    notice>." Repair until the mark is PASS. When the reviewer says that the change reaches other screens, run
-   `akasha upgrade <task>`.
+   `akasha upgrade <task>`. When each changed file is text for people (`*.md`, `*.txt`, `*.rst`, `*.adoc`), skip
+   this step: no code reads such a file, and the person reads all of the change in step 5.
 5. Run `akasha preview <task>`: Akasha makes the preview from the change. Tell the person in a few short lines what
    changes, and ask in plain chat whether it is good. As in step 2, only a message that the person types approves it:
    then run `akasha approve <task>`.
 6. Continue with step 4.3 (check) and step 5 (land). A change of the code after the review or the approval needs both
-   again. When a check named `quick` fails, the change is not a quick change: run `akasha upgrade <task>`.
+   again (only the approval, for a change of only text). When a check named `quick` fails, the change is not a quick change: run `akasha upgrade <task>`.
 
 ## An agent task: when the session start notice says that this account is an agent
 
@@ -154,9 +197,12 @@ decisions and the rules, and a value of data without its definition.
    <task>. Work copy: <path>. Plan digest: <digest>. Akasha command: <the command of the session start notice>." It
    judges nine items, one row each, ends with a review mark, and Akasha records it with the answer in `review.md`.
    Only the akasha-reviewer agent counts. Repair each item that failed, and ask again with the new digest, until the
-   mark is PASS. When the next step says that a PASS mark did not count, an item had no row: ask again.
+   mark is PASS. On a review after a repair, the reviewer judges again only the items that failed and the items that
+   the change of the plan touches, and keeps the rest (`akasha status <task> --review` tells it which): do not ask it
+   to judge each item again. When the next step says that a PASS mark did not count, an item had no row or a kept
+   row had not passed: ask again.
 4. If the review shows that the result must differ from the approved preview, change the preview and get a new
-   approval from the person (step 2.4). Else do not ask the person anything.
+   approval from the person (step 2.4). Else do not ask the person anything (an administrator: "Developer mode" step 3).
 5. Only an agent app without the akasha-reviewer agent (for example Codex) reviews the plan itself, as strictly as
    the agent would, then runs `akasha review <task> --verdict pass`. Akasha refuses it in Claude Code.
 6. Core files: when `akasha start` or `akasha check` names a core file (code that other areas use, or a path of

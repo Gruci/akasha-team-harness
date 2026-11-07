@@ -32,6 +32,8 @@ def _parser() -> argparse.ArgumentParser:
     start.add_argument("--scope", nargs="*", default=[], help="the file patterns that the task plans to change")
     start.add_argument("--quick", action="store_true",
                        help="a quick task: a small change of existing files that no other area uses")
+    start.add_argument("--no-screen", action="store_true",
+                       help="an administrator: a task without a screen, whose plan the person approves")
     upgrade = commands.add_parser("upgrade", help="make a quick task a full task with a preview and a plan")
     upgrade.add_argument("task")
     splitting = commands.add_parser("split", help="make a part of a task for a worker at the same time as others")
@@ -64,6 +66,8 @@ def _parser() -> argparse.ArgumentParser:
     shown.add_argument("task")
     status = commands.add_parser("status", help="the tasks on this computer and the next step of each")
     status.add_argument("task", nargs="?")
+    status.add_argument("--review", action="store_true", help="for the reviewer: what to judge again since the last "
+                                                               "review, and the change of the plan")
     shown_board = commands.add_parser("board", help="the open tasks of the team")
     shown_board.add_argument("--scope", nargs="*", default=[],
                              help="only the open tasks that plan or change files of these patterns, before a start")
@@ -132,6 +136,10 @@ def main(argv: list[str] | None = None) -> int:
         from akasha import watch
         print(watch.watch(Path.cwd(), args.repository, args.branch, args.before, args.after,
                           args.forced.lower() == "true", args.pusher))
+        problem = watch.version_problem(Path.cwd())
+        if problem:
+            print(problem, file=sys.stderr)
+            return 1
         return 0
     if args.command == "check" and args.ci:
         team = config.load(Path.cwd(), args.config)
@@ -150,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{'OK ' if good else 'FIX'} {text}")
         return 0 if all(good for good, _text in found) else 1
     if args.command == "start":
-        task, notes = flow.start(root, args.title, args.name, tuple(args.scope), args.quick)
+        task, notes = flow.start(root, args.title, args.name, tuple(args.scope), args.quick, args.no_screen)
         print(f"Task {task.id}: {task.title}\n  work copy: {task.workcopy}\n  records: {records(task)}/"
               + (f"\n  board: {task.pr}" if task.pr else ""))
         print("\n".join(f"  {line}" for line in notes))
@@ -184,6 +192,11 @@ def main(argv: list[str] | None = None) -> int:
         print(flow.result(root, args.task))
         return 0
     if args.command == "status":
+        if args.review:
+            if not args.task:
+                raise ValueError("name the task: akasha status <task> --review")
+            print(flow.review.brief(load(root, args.task)))
+            return 0
         return _status(root, args.task)
     if args.command == "split":
         part, notes = flow.split(root, args.task, args.part, tuple(args.scope))

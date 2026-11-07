@@ -131,7 +131,10 @@ def _hand_over(root: Path, task: Task, akasha_merges: bool) -> tuple[str, list[s
         return CONFLICT, [f"the task conflicts with the latest {branch} in {', '.join(files[:8]) or 'some files'}. "
                           f"In {tree}, run `git merge origin/{branch}`, repair the conflicts (keep the changes of both "
                           f"sides when they add different things), run `akasha check {task.id}`, then land again"]
-    repo.gh(root, "pr", "ready", str(task.number))        # first, so that the run of the push is a real run
+    # Ready only now: a draft is a task in work on the board, and ready asks the code owners for a review. First, so
+    # that the run of the push is a real run where the CI skips drafts; where the CI runs on drafts, a run that passed
+    # on the draft counts (_states), so ready starts no wait for a second run of the same commit.
+    repo.gh(root, "pr", "ready", str(task.number))
     work.push(tree, task.branch)
     task.status = "landing"
     task.checks["landed"] = work.head(tree)
@@ -166,9 +169,12 @@ def _states(view: dict, names: tuple[str, ...]) -> dict[str, str]:
     """The state of each required check of the team on the head of the pull request: PASS, FAIL, CANCELLED, WAIT, or
     MISSING (no run of that name).
 
-    One check can have several runs on the head: a run that a draft skipped, a run that a newer run cancelled, and a
-    run again. A run that did not end decides first. Else the latest run that did not skip decides, as on GitHub. A
-    skipped run alone is the draft: the real run has not started yet."""
+    One check can have several runs on the head: a run that a draft skipped, a run that a newer run cancelled, a run
+    again, and a run that marking the draft ready started. The latest run that ended and did not skip decides. When it
+    passed, a run that still runs on the same commit does not hide it: a run on the draft that passed counts, so the
+    landing does not wait for a second run of the same commit. Else a run that did not end decides first, for example
+    the run again after a cancel. A skipped run alone is the draft: the real run has not started yet. The watch
+    (watch.py) counts the runs in the same way."""
     runs: dict[str, list[tuple[str, str]]] = {}
     for item in view.get("statusCheckRollup") or []:
         name = item.get("name") or item.get("context") or ""
@@ -180,10 +186,10 @@ def _states(view: dict, names: tuple[str, ...]) -> dict[str, str]:
         done = [run for run in found or [] if run[1] not in ("WAIT", "SKIPPED")]
         if not found:
             states[name] = "MISSING"
-        elif any(result == "WAIT" for _start, result in found) or not done:
-            states[name] = "WAIT"
         else:
-            latest = sorted(done, key=lambda run: run[0])[-1][1]
+            latest = sorted(done, key=lambda run: run[0])[-1][1] if done else "WAIT"
+            if latest != "RAN" and any(result == "WAIT" for _start, result in found):
+                latest = "WAIT"
             states[name] = "PASS" if latest == "RAN" else latest
     return states
 

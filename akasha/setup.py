@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from akasha import checks, claude, codex, config, github, langs, repo
+from akasha import VERSION, checks, claude, codex, config, github, langs, repo, version
 from akasha.config import CONFIG_FILE, STATE_DIR
 from akasha.task import all_local
 
@@ -32,7 +32,9 @@ def first_config(root: Path) -> str:
     lines = ["# The team rules of Akasha. An administrator changes them with a pull request.", "",
              "[team]", f"admins = [{admins}]          # GitHub names: they set up and maintain Akasha, and help when "
              "the AI is stuck",
-             "own_procedure = []      # GitHub names that keep the own procedure of the repository outside Akasha", "",
+             "own_procedure = []      # GitHub names that keep the own procedure of the repository outside Akasha",
+             f'version = "{VERSION}"' + " " * max(1, 24 - len(f'version = "{VERSION}"')) + "# the Akasha of the team: "
+             "the CI and the watch install it, and each computer runs it. `akasha setup` writes it", "",
              "[risk]", 'paths = []              # for example ["db/**", "deploy/**"]: only an administrator changes '
              "them", "",
              "[checks]"]
@@ -72,6 +74,15 @@ def _ignore(root: Path, team: config.Team) -> bool:
     return bool(missing)
 
 
+def _raise_version(root: Path, team: config.Team) -> config.Team:
+    """Write this Akasha into [team] version, so that the workflows install it and each computer runs it. A setup
+    never lowers the version of the team: an older Akasha would write older rules."""
+    if version.older(team.version):
+        raise ValueError(version.mismatch(team.version) + " Then run `akasha setup` again.")
+    config.set_value(root, "team", "version", VERSION)
+    return config.load(root)
+
+
 def write_files(root: Path) -> list[str]:
     """Write the files of Akasha into the checkout. Return the files that changed, and the problems."""
     changed = []
@@ -80,6 +91,9 @@ def write_files(root: Path) -> list[str]:
         path.write_text(first_config(root), encoding="utf-8")
         changed.append(path.relative_to(root).as_posix())
     team = config.load(root)
+    if team.version != VERSION:
+        team = _raise_version(root, team)
+        changed += [] if changed else [path.relative_to(root).as_posix()]
     if _ignore(root, team):
         changed.append(".gitignore")
     for name, text in github.workflows(team).items():
@@ -234,6 +248,9 @@ def doctor(root: Path) -> list[tuple[bool, str]]:
     if team.unknown:
         found.append((False, f"Akasha is older than {CONFIG_FILE}, which has {', '.join(team.unknown[:3])} (update "
                              "the plugin: /plugin marketplace update akasha, then /plugin update akasha@akasha)"))
+    if team.version:
+        found.append((not version.older(team.version), version.mismatch(team.version) or     # newer only warns
+                      f"Akasha {VERSION}, the version of the team"))
     for name in team.required_checks:
         ready = _check_ready(root, name, team.checks.get(name), "join" in team.guides)
         found += [ready] if ready else []

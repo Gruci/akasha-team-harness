@@ -26,7 +26,7 @@ SERVER_RULES = ("github", "akasha")          # who stops a merge without the che
 GUIDE_STEPS = ("join", "preview", "plan", "build", "review")
 CHECK_KEYS = ("command", "cwd", "only_when", "command_windows", "ready")
 CHECK_SETTINGS = ("required", "setup", "run_all_when")
-RESERVED_CHECKS = CHECK_SETTINGS + ("secrets", "data")     # data: the check of the values of the preview (flow.py)
+RESERVED_CHECKS = CHECK_SETTINGS + ("secrets", "data", "screen", "version")   # checks of flow.py and of the server
 ONE_LINE_CHECKS = ("tests", "lint")          # a check with one command line: tests = "<command>"
 CHECK_NAME = re.compile(r"[A-Za-z0-9_-]+")
 NOT_IN_BRANCH = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{")
@@ -40,20 +40,21 @@ RUNS_ON = ("ubuntu-latest",)
 PYTHON = "3.12"
 LOWEST_PYTHON = (3, 11)
 PYTHON_VERSION = re.compile(r"(\d+)\.(\d+)(?:\.\d+)?")
+AKASHA_VERSION = re.compile(r"v?(\d+\.\d+\.\d+)")
 AKASHA_CHECK = "akasha"                      # the name of the check of .github/workflows/akasha.yml
 
 _KEYS: dict[str, set[str] | None] = {
-    "team": {"admins", "own_procedure", "agents"},
+    "team": {"admins", "own_procedure", "agents", "version"},
     "risk": {"paths"},
     "checks": None,                          # the team names its checks
     "ci": {"required", "runs-on", "python"},
-    "work": {"folder", "branch_prefix", "records"},
+    "work": {"folder", "branch_prefix", "records", "records_date"},
     "guides": set(GUIDE_STEPS),
     "server": {"rules"},
     "core": {"paths", "areas", "used_by"},
     "deploy": {"workflow", "verify"},
     "quick": {"paths"},
-    "preview": {"data"},
+    "preview": {"data", "screens"},
 }
 
 
@@ -78,6 +79,9 @@ class Team:
     # GitHub names of agent accounts: they work from the request of a person, without a preview, and that person
     # approves the result before the merge (agent.py)
     agents: tuple[str, ...] = ()
+    # The version of Akasha that the team uses, for example 1.1.3: the CI and the watch install it, and each computer
+    # compares its own with it (version.py). "" compares nothing
+    version: str = ""
     risk_paths: tuple[str, ...] = ()         # only an administrator changes these files, for example the database
     required_checks: tuple[str, ...] = ("secrets",)
     checks: dict[str, Check] = field(default_factory=dict)
@@ -89,6 +93,7 @@ class Team:
     work_dir: str = WORK_DIR
     branch_prefix: str = BRANCH_PREFIX
     records_dir: str = RECORDS_DIR
+    records_date: bool = False               # the records folder of a new task: YYYY-MM-DD-<task>, its start date
     guides: dict[str, tuple[str, ...]] = field(default_factory=dict)    # step -> team files to read in that step
     server_rules: str = "github"
     deploy_workflow: str = ""                # the workflow that puts a merged change live, for example "Deploy"
@@ -98,6 +103,7 @@ class Team:
     core_used_by: int = 2                    # a file that so many other areas import is core
     quick_paths: tuple[str, ...] = ()        # files other than code and text that a quick task can change
     data_paths: tuple[str, ...] = ()         # files that make data people see: their task defines its values (spec.py)
+    screen_paths: tuple[str, ...] = ()       # files that make a screen: a task without one changes none (screen.py)
     unknown: tuple[str, ...] = ()            # settings of a newer Akasha that this one does not know
 
     @property
@@ -139,6 +145,12 @@ def _patterns(value: object, where: str) -> tuple[str, ...]:
 def _count(value: object, where: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise ConfigError(f"{CONFIG_FILE}: {where} must be a whole number of 1 or more")
+    return value
+
+
+def _flag(value: object, where: str) -> bool:
+    if not isinstance(value, bool):
+        raise ConfigError(f"{CONFIG_FILE}: {where} must be true or false")
     return value
 
 
@@ -211,6 +223,13 @@ def _python(value: object) -> str:
     return value.strip()
 
 
+def _version(value: object) -> str:
+    found = AKASHA_VERSION.fullmatch(value.strip()) if isinstance(value, str) else None
+    if not found:
+        raise ConfigError(f'{CONFIG_FILE}: [team] version must be the text of a version of Akasha, for example "1.1.3"')
+    return found[1]
+
+
 def _guides(section: dict) -> dict[str, tuple[str, ...]]:
     return {step: tuple(pattern(item) for item in _strings(files, f"[guides] {step}"))
             for step, files in section.items()}
@@ -262,6 +281,7 @@ def team_from(data: dict) -> Team:
         admins=admins,
         own_procedure=own,
         agents=agents,
+        version=_version(team["version"]) if "version" in team else "",
         risk_paths=_patterns(risk.get("paths", []), "[risk] paths"),
         required_checks=_strings(checks.get("required", ["secrets"]), "[checks] required") or ("secrets",),
         checks=named,
@@ -274,6 +294,7 @@ def team_from(data: dict) -> Team:
         work_dir=work_dir,
         branch_prefix=_prefix(work.get("branch_prefix", BRANCH_PREFIX)),
         records_dir=_folder(work.get("records", RECORDS_DIR), "records", "docs/tasks", (work_dir,)),
+        records_date=_flag(work.get("records_date", False), "[work] records_date"),
         guides=_guides(data.get("guides", {})),
         server_rules=rules,
         deploy_workflow=_text(deploy["workflow"], "[deploy] workflow") if "workflow" in deploy else "",
@@ -283,6 +304,7 @@ def team_from(data: dict) -> Team:
         core_used_by=_count(core.get("used_by", 2), "[core] used_by"),
         quick_paths=_patterns(data.get("quick", {}).get("paths", []), "[quick] paths"),
         data_paths=_patterns(data.get("preview", {}).get("data", []), "[preview] data"),
+        screen_paths=_patterns(data.get("preview", {}).get("screens", []), "[preview] screens"),
         unknown=tuple(unknown),
     )
 
@@ -331,14 +353,24 @@ def on_server(root: Path, branch: str) -> bool:
     return bool(branch) and shown(root, f"origin/{branch}") is not None
 
 
-def set_server_rules(root: Path, rules: str) -> None:
-    """Write [server] rules into akasha.toml and keep each other line."""
+def set_value(root: Path, section: str, key: str, value: str) -> None:
+    """Write `key = "value"` into the section of akasha.toml, and keep each other line and the comment of the key."""
     path = place(root)
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    line = f'rules = "{rules}"'
-    if re.search(r"(?m)^\[server\]\s*$", text):
-        text = re.sub(r"(?m)^rules\s*=.*$", line, text, count=1) if re.search(r"(?m)^rules\s*=", text) else \
-            re.sub(r"(?m)^\[server\]\s*$", f"[server]\n{line}", text, count=1)
+    line = f'{key} = "{value}"'
+    head = re.search(rf"(?m)^\[{section}\][ \t]*$", text)
+    if not head:
+        text = text.rstrip("\n") + ("\n\n" if text.strip() else "") + f"[{section}]\n{line}\n"
     else:
-        text = text.rstrip("\n") + ("\n\n" if text.strip() else "") + f"[server]\n{line}\n"
+        after = re.search(r"(?m)^\[", text[head.end():])
+        end = head.end() + after.start() if after else len(text)
+        body = text[head.end():end]
+        old = re.search(rf'(?m)^{key}[ \t]*=[ \t]*("[^"\n]*"|[^#\n]*?)(?=[ \t]*(#|$))', body)
+        body = body[:old.start()] + line + body[old.end():] if old else f"\n{line}" + body
+        text = text[:head.end()] + body + text[end:]
     path.write_text(text, encoding="utf-8")
+
+
+def set_server_rules(root: Path, rules: str) -> None:
+    """Write [server] rules into akasha.toml and keep each other line."""
+    set_value(root, "server", "rules", rules)

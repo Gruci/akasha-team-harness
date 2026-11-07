@@ -1,10 +1,12 @@
 # Akasha installs this file when the team has no CI of its own ([ci] required in akasha.toml is empty).
-# It runs the required checks of akasha.toml on each pull request that is ready for review. The rules come from the
-# default branch, so a pull request cannot make its own checks weaker. A draft does not run it.
+# It runs the required checks of akasha.toml on each push to a pull request, also to a draft: Akasha pushes a task only
+# after its checks passed on the computer, and the landing counts the run on the draft, so marking the draft ready
+# starts no second run of the same commit. The rules come from the default branch, so a pull request cannot make its
+# own checks weaker.
 name: akasha
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]
   merge_group:
 permissions:
   contents: read
@@ -13,7 +15,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   akasha:
-    if: github.event_name == 'merge_group' || !github.event.pull_request.draft
     runs-on: @@AKASHA_RUNS_ON@@
     defaults:
       run:

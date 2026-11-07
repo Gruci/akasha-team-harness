@@ -11,6 +11,7 @@ the merged rules, also when its checkout is old.
 [team]
 admins = ["lead", "dba"]           # GitHub names: they set up and maintain Akasha, and help when the AI is stuck
 agents = ["ops-bot"]               # GitHub names of agent accounts: a person approves their result before the merge
+version = "1.1.3"                  # the Akasha of the team: the CI and the watch install it. `akasha setup` writes it
 
 [risk]
 paths = ["db/**", "**/migrations/**", "deploy/**"]     # only an administrator changes them
@@ -22,6 +23,7 @@ used_by = 2                               # a file that 2 or more other areas im
 
 [preview]
 data = ["src/queries/**"]          # files that make data: their previews define each value that they show
+screens = ["frontend/**", "**/*.html"]   # files that make a screen: an administrator's task without them has no preview
 
 [checks]
 required = ["secrets", "tests", "front"]
@@ -50,6 +52,7 @@ review = ["docs/RULES.md"]
 folder = ".claude/worktrees"
 branch_prefix = "akasha/"
 records = "docs/tasks/akasha"      # a folder that the own checkers of the team skip
+records_date = false               # true: docs/tasks/akasha/2026-11-07-<task>/
 
 [deploy]
 workflow = "Deploy"                # the workflow that deploys each merge
@@ -69,9 +72,10 @@ approves the preview of their own request; the person who asked an agent account
 
 | Key | Value |
 |:--|:--|
-| `admins` | The GitHub names of the administrators. Only they change `akasha.toml`, `.github/`, CODEOWNERS, and the paths of `[risk]`. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch |
+| `admins` | The GitHub names of the administrators. Only they change `akasha.toml`, `.github/`, CODEOWNERS, and the paths of `[risk]`. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch. The AI talks with them as with developers, and they can make a task without a screen (`[preview] screens`) |
 | `own_procedure` | The GitHub names of the people who keep the own procedure of the repository outside Akasha, for example the administrator who built it. Akasha does not stop their work outside its tasks (their own work copies, edits in the main checkout, their merges), and the watch accepts their pull requests when the checks passed. The other rules (a force push, a push to the default branch, `.env`) stay |
 | `agents` | The GitHub names of agent accounts: a program (the relay) runs their sessions and gives them the requests of people. Each task of such an account is an agent task, without a preview: the person approves the result before the merge. An agent account has the rules of a teammate, so it cannot also be in `admins` or `own_procedure`. An older Akasha does not know this key: it treats an agent account as a teammate, which needs a preview |
+| `version` | The version of Akasha that the team uses, for example `"1.1.3"`. `akasha setup` writes the version that runs it, and the CI and the watch install that version. It never lowers it: an older Akasha refuses the setup. Each computer compares its own Akasha with it: the session start notice names a difference with the commands that fix it, `akasha doctor` fails, and `akasha start` refuses a task while the computer runs an older Akasha (a newer one only warns). The server check and the watch fail when the Akasha on the server is another version, for example after a change of the repository variable `AKASHA_SOURCE`; the pull request that raises it passes with its new version. Without it, nothing is compared |
 
 ## `[risk]`
 
@@ -107,6 +111,26 @@ of file, for example a CSS file, a template, or a settings file: a quick task ch
 |:--|:--|
 | `paths` | File patterns of files other than code and text that a quick task can change, for example `["config/messages/*.json", "src/pages/*/*.css"]`. Do not put files that many screens read here, for example a global style sheet |
 
+Put only files that one screen or one area reads. For example, a team whose pages each have their own style sheet and
+whose settings of one job are in their own file:
+
+```toml
+[quick]
+paths = [
+  "src/pages/*/*.module.css",   # the style of one page: only that page imports it
+  "config/jobs/*.yaml",         # the settings of one job: only that job reads its file
+  "locales/*/help.json",        # the help text of the help screen
+]
+```
+
+Here `src/styles/global.css` and `config/app.yaml` stay out: each screen reads them, so a change of them needs a full
+task with a preview. A pattern that ends with `/` means each file under that folder.
+
+Code of Python, JavaScript, and TypeScript needs no pattern: Akasha finds its users from the imports. Text for people
+needs no pattern either. A quick task that changes only text for people needs no review of the akasha-reviewer agent:
+`impact.md` and the approval of the person are enough. Each other quick task, also one of a file of `paths`, needs the
+review.
+
 ## `[preview]`
 
 Each preview of a full task specifies the change: its rules, and the source, formula, value now, and check of each
@@ -115,6 +139,7 @@ section makes Akasha sure that a change of data shows its values: the AI cannot 
 
 | Key | Value |
 |:--|:--|
+| `screens` | File patterns of the files that make a screen, for example `["frontend/**", "templates/**", "**/*.css"]`. An administrator can start a task whose scope holds none of them with `akasha start --no-screen`: the person approves its plan in place of a preview, and the check `screen` fails when its change touches one (see "A task without a screen" in [how it works](how-it-works.md)). Name each kind of file that a screen shows: a file that this list misses can change without a preview. Without it, each task of a person has a preview |
 | `data` | File patterns of files that make data that people see, for example `["src/queries/**", "src/reports/**"]`. A task that plans one must mark one value or more in its preview, `akasha check` fails the check `data` when the change touches one and the preview defines no value, and a quick task never changes one. How a teammate reads the data for a preview (a copy of the database, a read-only account, an API) goes into a file of `[guides] preview` and `[guides] join` |
 
 ## `[checks]`
@@ -145,9 +170,22 @@ file in the folder.
 
 | Key | Value |
 |:--|:--|
-| `required` | The names of the required checks of the own CI of the team, as GitHub shows them. With it, Akasha installs no check of its own. Each named check must really run on a pull request that is ready: a check that only skips never passes for Akasha. The CI of the team then runs `python -m akasha check --ci --config <akasha.toml of the base branch> --base origin/<base branch>` too, for the quick check of quick tasks on the server |
+| `required` | The names of the required checks of the own CI of the team, as GitHub shows them. With it, Akasha installs no check of its own. Each named check must really run: a check that only skips never passes for Akasha. The CI of the team then runs `python -m akasha check --ci --config <akasha.toml of the base branch> --base origin/<base branch>` too. It runs the checks of Akasha on the server: the quick check of quick tasks, the screen check of tasks without a screen, and first the version check (it fails when the Akasha on the server is not `[team] version`) |
 | `runs-on` | The machine of the check of Akasha: a label, or a list of labels of a runner of the team. The default is `ubuntu-latest` |
 | `python` | The Python of the check of Akasha, as text, 3.11 or higher. The default is `"3.12"` |
+
+Akasha opens a task as a draft pull request, pushes it only after `akasha check` passed on the computer, and marks it
+ready at the landing. The landing counts a run of a check that passed on the same commit while the pull request was a
+draft. So the CI of the team can run during the build, not only at the end. To get this, change the workflow of the
+own CI:
+
+- Run it on draft pull requests: remove a condition such as `if: github.event.pull_request.draft == false`.
+- Do not start it again when a draft gets ready: remove `ready_for_review` from `on: pull_request: types`. Keep
+  `opened`, `synchronize`, and `reopened`. Where GitHub protects the default branch, GitHub decides with the latest run
+  of a required check on the head, so a second run of the same commit makes the merge wait again.
+
+A CI that skips drafts still works: its checks run once, after the landing marks the pull request ready. The check
+of Akasha (without `[ci] required`) already runs on drafts.
 
 ## `[guides]`
 
@@ -168,6 +206,7 @@ The files of the team that the AI reads in each step. The session start notice n
 | `folder` | The folder of the work copies, in the repository. The default is `.claude/worktrees`: Claude Code moves a session into a folder there without asking, and asks once for each task anywhere else. Git must not track files in it |
 | `branch_prefix` | The prefix of the task branches. The default is `akasha/` |
 | `records` | The folder of the records of the tasks (preview, research, plan, summary), which go into git. The default is `.akasha/tasks`. Choose a folder that the own checkers of the team skip, for example a Markdown checker. A task keeps the folder that was set when it started |
+| `records_date` | `true` puts the start date before the name of the records folder of each new task, as in an archive: `docs/tasks/2026-11-07-login/` for the task `login`. The task name and the branch stay the same. Akasha never moves the records, so the folder keeps this name after the merge. The default is `false`: the folder has the task name only. A task keeps the folder that it started with, also when the setting changes |
 
 ## `[deploy]`
 

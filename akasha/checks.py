@@ -11,7 +11,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from akasha import secrets
+from akasha import config, secrets, version
 from akasha.config import CONFIG_FILE, Check, Team
 from akasha.repo import GROUP, names, stop
 
@@ -127,17 +127,34 @@ def passed(status: dict[str, str]) -> bool:
     return bool(status) and all(item in PASSING for item in status.values())
 
 
+def _head_version(root: Path) -> str:
+    """The version of the team in the pull request itself: the task of an administrator that raises it installs the
+    new version in its own workflows, while the rules still come from the base branch."""
+    try:
+        return config.load(root).version
+    except config.ConfigError:
+        return ""
+
+
 def ci(team: Team, root: Path, base: str) -> Result:
     """The server check: the checks on the files that the pull request changes. The setup command runs first. A
-    pull request of a quick task also passes the quick check: its change must be a quick change (quick.py)."""
+    pull request of a quick task also passes the quick check: its change must be a quick change (quick.py). A pull
+    request of a task without a screen passes the screen check: its change touches no screen file (screen.py). The
+    Akasha that runs must be the version of the team, else the server runs other rules than the computers."""
+    found = version.server_problem((team.version, _head_version(root)))
+    if found:
+        return Result({version.CHECK: "FAIL"}, {version.CHECK: found})
     changed = names(root, "diff", "--name-only", "--no-renames", f"{base}...HEAD")
     if team.setup:
         status, detail = shell(team.setup, root)
         if status != "PASS":
             return Result({"setup": status}, {"setup": detail})
     result = run(team, root, changed)
-    from akasha import quick                      # quick uses this module
+    from akasha import quick, screen              # they use this module
     found = quick.server(team, root, base, changed)
     if found:
         result.status["quick"], result.details["quick"] = found
+    found = screen.server(team, changed, root)
+    if found:
+        result.status[screen.CHECK], result.details[screen.CHECK] = found
     return result

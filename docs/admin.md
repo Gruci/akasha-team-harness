@@ -37,7 +37,7 @@ a long list of rules on the first day stops each task.
    | `.gitignore` | Ignores `.akasha/state/`, the work folder, the own agent settings of each person (`.claude/settings.local.json`, `CLAUDE.local.md`), and the files that tests and builds make |
    | `.github/workflows/akasha.yml` | The check of Akasha, when the team has no CI of its own |
    | `.github/workflows/akasha-watch.yml` | The watch, where GitHub does not protect the default branch |
-   | `.claude/settings.json` | Registers the marketplace of Akasha and turns the plugin on for each teammate |
+   | `.claude/settings.json` | Registers the marketplace of Akasha and turns the plugin on for each teammate. Allows the git and gh commands that only read, and lets edits pass without a prompt (`acceptEdits`) when the team set no mode: Akasha still stops each edit that a task must not make. The other keys stay |
    | `CLAUDE.md` | The Akasha block for Claude Code: use the akasha-build skill, and this procedure comes first. The other text stays |
    | `AGENTS.md`, `.codex/hooks.json` | The rules and the hooks of Akasha for Codex. The other text and hooks stay |
 
@@ -104,17 +104,18 @@ administrator counts. The changes of the administrators and of the people of `[t
 ## A team that has its own CI
 
 Write the names of its required checks in `[ci] required`, as GitHub shows the jobs (for example `checks`, not the name
-of the workflow). Akasha keeps its own check away, and waits for these checks on GitHub. Each push of a draft pull
-request starts the CI too. To save the runners, the CI can skip drafts:
+of the workflow). Akasha keeps its own check away, and waits for these checks on GitHub. Let the CI run on draft
+pull requests, and do not start it again when a draft gets ready:
 
 ```yaml
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-jobs:
-  checks:
-    if: ${{ !github.event.pull_request.draft }}
+    types: [opened, synchronize, reopened]
 ```
+
+Akasha pushes a draft only after `akasha check` passed on the computer, and the landing counts a run that passed on
+the same commit while the pull request was a draft. A second run on `ready_for_review` makes the merge wait again.
+See `[ci]` in [team-config.md](team-config.md#ci).
 
 ## Teammates
 
@@ -126,7 +127,7 @@ Each teammate installs the plugin once (`/plugin marketplace add Gruci/akasha-te
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.2"`, elsewhere `python3 -m pip install …`.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.3"`, elsewhere `python3 -m pip install …`.
 Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
 
 ## Agent accounts
@@ -162,5 +163,18 @@ After the first setup, a change of the rules is a task of an administrator like 
 the work copy), then check and land it. The same holds for the database and the deployment: when a teammate's task
 needs a change there, the AI asks with `akasha help`, and an administrator makes it in a task of their own.
 
-Each release of Akasha has its own tag. To update, each teammate updates the plugin, and one task runs `akasha setup`
-with the new Akasha: it writes the new version into the workflows.
+Each release of Akasha has its own tag. `[team] version` in `akasha.toml` holds the version of the team: the CI and
+the watch install it, and each computer must run it, so that the computers and the server run the same rules. To
+update:
+
+1. Update your own Akasha (Claude Code: `claude plugin marketplace update akasha`, then
+   `claude plugin update akasha@akasha`, and restart the app).
+2. Start a task, and run `akasha setup` in its work copy. It writes the new version into `[team] version` and into the
+   workflows. Check and land it. Its own server check runs the new version.
+3. After the merge, the session start notice of each teammate names the difference with the commands that fix it.
+   `akasha doctor` fails, and `akasha start` refuses a new task, until the computer runs the version of the team.
+   Codex: `pip install "git+https://github.com/Gruci/akasha-team-harness@v<version>"`.
+
+When the server check or the watch fails with "The server runs Akasha …", the Akasha on the server differs from
+`[team] version`: run `akasha setup` again in a task, and remove the repository variable `AKASHA_SOURCE` or set it to
+the same version.

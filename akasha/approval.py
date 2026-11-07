@@ -13,7 +13,10 @@ When the preview changes after the approval, the task needs a new approval.
 
 An agent task (agent.py) has no preview: the person approves its result before the merge, in the same way. The
 approval holds the digest of the change and of summary.md, and the relay can name the person on the first line of the
-prompt: `[akasha-from: <name>]`."""
+prompt: `[akasha-from: <name>]`.
+
+A task without a screen (screen.py) of an administrator has no preview either: the person approves its plan after the
+review, and the approval holds the digest of plan.md."""
 
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ import sys
 import time
 from pathlib import Path
 
-from akasha import repo
+from akasha import repo, screen
 from akasha.config import STATE_DIR
 from akasha.repo import write_whole
 from akasha.task import PREVIEW, Task, all_local, digest, record, save
@@ -101,7 +104,7 @@ def on_prompt(root: Path, cwd: Path, prompt: str, session: str = "") -> str:
         old = [item for item in all_local(root) if item.status == _wanted(item) and session and item.shown_in == session]
         if not old:
             return ""
-        what, again = _shown(old[0])
+        what, again = shown(old[0])
         return (f"[AKASHA] The {what} of task {old[0].id} is more than a day old. If the person answers it, show it "
                 f"again with `{again}` and ask again.")
     named = FROM.match(prompt.strip())
@@ -115,6 +118,12 @@ def on_prompt(root: Path, cwd: Path, prompt: str, session: str = "") -> str:
                 f"change or asks a question, it is feedback: change the work, run `akasha check {task.id}`, and land "
                 "again, which asks the person again. When you cannot tell, ask the person in your answer. Never "
                 "approve for the person.")
+    if screen.is_no_screen(task):
+        return (f"[AKASHA] Task {task.id} ({task.title}) waits for the approval of its plan. If this message of the "
+                f"person approves the plan as it is, in any language and without asking for a change, run `akasha "
+                f"approve {task.id}`. If it asks for a change or asks a question, it is feedback: change the plan, ask "
+                f"the akasha-reviewer agent again, show it again with `akasha preview {task.id}`, and ask again. When "
+                "you cannot tell, ask the person. Never approve for the person.")
     return (f"[AKASHA] Task {task.id} ({task.title}) waits for the approval of its preview. If this message of the "
             f"person approves the preview as it is, in any language and without asking for a change, run `akasha "
             f"approve {task.id}`. If it asks for a change or asks a question, it is feedback: change the preview, show "
@@ -122,18 +131,21 @@ def on_prompt(root: Path, cwd: Path, prompt: str, session: str = "") -> str:
             "approve for the person.")
 
 
-def _shown(task: Task) -> tuple[str, str]:
+def shown(task: Task) -> tuple[str, str]:
     """What the person approves, and the command that shows it again."""
     if task.kind == "agent":
         return "result", f"akasha result {task.id}"
+    if screen.is_no_screen(task):
+        return "plan", f"akasha preview {task.id}"
     return "preview", f"akasha preview {task.id}"
 
 
 def approve(root: Path, task: Task, session: str, current: str = "") -> str:
     """Record the approval from the last message of the person. `current` is the digest of what the person approves
-    now: the result of an agent task, else the preview file. Return what is missing, or ""."""
+    now: the result of an agent task, the plan of a task without a screen, else the preview file. Return what is
+    missing, or ""."""
     heard = task.heard or {}
-    what, again = _shown(task)
+    what, again = shown(task)
     if task.status != _wanted(task) or not task.shown_at:
         return f"task {task.id} does not wait for an approval of its {what}"
     if time.time() - task.shown_at > MAX_AGE:
@@ -152,6 +164,9 @@ def approve(root: Path, task: Task, session: str, current: str = "") -> str:
         # The landing merges next, so the task stays in landing
         task.approval = {"by": str(heard.get("from") or me), "through": me, "at": at, "change_sha": now,
                          "words": words, "source": "result"}
+    elif screen.is_no_screen(task):
+        task.approval = {"by": me, "at": at, "plan_sha": now, "words": words, "source": "plan"}
+        task.status = "approved"
     else:
         task.approval = {"by": me, "at": at, "preview_sha": now, "words": words, "source": "prompt"}
         task.status = "approved"
