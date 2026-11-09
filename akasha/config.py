@@ -358,7 +358,7 @@ def set_value(root: Path, section: str, key: str, value: str) -> None:
     path = place(root)
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     line = f'{key} = "{value}"'
-    head = re.search(rf"(?m)^\[{section}\][ \t]*$", text)
+    head = re.search(rf"(?m)^\[{section}\][ \t]*(#[^\n]*)?$", text)      # a comment may follow the header
     if not head:
         text = text.rstrip("\n") + ("\n\n" if text.strip() else "") + f"[{section}]\n{line}\n"
     else:

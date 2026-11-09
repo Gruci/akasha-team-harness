@@ -182,13 +182,14 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
     the board. Return the task and the other tasks that plan the same files. `fast` makes a quick task, and
     `no_screen` a task without a screen of an administrator, whose plan the person approves (screen.py). An agent
     account always makes an agent task, from the last prompt of its session (agent.py)."""
-    team, branch = rules(root), repo.default_branch(root)
-    old = version.start_problem(team.version)        # an older Akasha than the team uses runs older rules
-    if old:
-        raise ValueError(old)
+    branch = repo.default_branch(root)
     online = board.available(root)
     if online and repo.fetch(root, branch).returncode:
         raise RuntimeError(f"git cannot fetch {branch} from origin. Examine the network and the GitHub login of git")
+    team = rules(root)                                 # the rules after the fetch: a raise of the version counts now
+    old = version.mismatch(team.version, root=root)    # an Akasha of another version runs other rules than the server
+    if old:
+        raise ValueError(old)
     owner = (repo.me(root) if online else "") or repo.person(root, kept=False)
     patterns = [config.pattern(item) for item in scope]
     if no_screen:
@@ -219,7 +220,6 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
         agent.write_request(task, request)
     save(root, task)
     notes = [f"overlap — {line}" for line in board.overlaps(task, [], entries)]
-    notes += [f"version — {newer}"] if (newer := version.mismatch(team.version)) else []
     locked = checks.touches(task.scope, checks.locked(team, task.owner))
     if locked:
         notes.append(f"admin only — the task plans {', '.join(locked[:3])}, which only an administrator changes. "
@@ -601,6 +601,10 @@ def resume(root: Path, ref: str, force: bool = False) -> tuple[Task, list[str]]:
                          f"{entry.task.id}`. If they agree or are gone, run `akasha resume {ref} --force`")
     if any(task.id == entry.task.id and task.workcopy for task in all_local(root)):
         raise ValueError(f"task {entry.task.id} is already on this computer")
+    repo.fetch(root, repo.default_branch(root))
+    old = version.mismatch(rules(root).version, root=root)    # taking over a task is starting it on this computer
+    if old:
+        raise ValueError(old)
     others = [name for name in entry.assignees if name != me]
     repo.gh(root, "pr", "edit", str(entry.number), "--add-assignee", "@me",
             *(item for name in others for item in ("--remove-assignee", name)))

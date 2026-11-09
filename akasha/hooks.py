@@ -99,12 +99,16 @@ def _team_lines(root: Path) -> list[str]:
     names = {"join": "for a new teammate", "preview": "before the preview", "plan": "before the plan",
              "build": "while you build", "review": "for the AI that checks the plan"}
     lines = [f"[AKASHA] Team guide {names[step]}: {', '.join(files)}" for step, files in team.guides.items()]
-    if team.unknown:
-        lines.append(f"[AKASHA] akasha.toml has settings that this Akasha does not know ({', '.join(team.unknown[:3])}). "
-                     f"Ask the person to update it: {UPDATE}")
-    differs = version.mismatch(team.version)
+    differs = version.mismatch(team.version, root=root)
     if differs:
         lines.append(f"[AKASHA] {differs} Tell the person.")
+    elif team.unknown and team.version:
+        lines.append(f"[AKASHA] akasha.toml has settings that Akasha {team.version}, the version of the team, does not "
+                     f"know ({', '.join(team.unknown[:3])}). Tell an administrator: they remove them, or raise [team] "
+                     "version to an Akasha that knows them.")
+    elif team.unknown:
+        lines.append(f"[AKASHA] akasha.toml has settings that this Akasha does not know ({', '.join(team.unknown[:3])}). "
+                     f"Ask the person to update it: {UPDATE}")
     return lines
 
 

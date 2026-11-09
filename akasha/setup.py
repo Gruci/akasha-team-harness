@@ -34,7 +34,7 @@ def first_config(root: Path) -> str:
              "the AI is stuck",
              "own_procedure = []      # GitHub names that keep the own procedure of the repository outside Akasha",
              f'version = "{VERSION}"' + " " * max(1, 24 - len(f'version = "{VERSION}"')) + "# the Akasha of the team: "
-             "the CI and the watch install it, and each computer runs it. `akasha setup` writes it", "",
+             "each computer, the CI, and the watch run only this version. An administrator changes it", "",
              "[risk]", 'paths = []              # for example ["db/**", "deploy/**"]: only an administrator changes '
              "them", "",
              "[checks]"]
@@ -74,26 +74,19 @@ def _ignore(root: Path, team: config.Team) -> bool:
     return bool(missing)
 
 
-def _raise_version(root: Path, team: config.Team) -> config.Team:
-    """Write this Akasha into [team] version, so that the workflows install it and each computer runs it. A setup
-    never lowers the version of the team: an older Akasha would write older rules."""
-    if version.older(team.version):
-        raise ValueError(version.mismatch(team.version) + " Then run `akasha setup` again.")
-    config.set_value(root, "team", "version", VERSION)
-    return config.load(root)
-
-
 def write_files(root: Path) -> list[str]:
-    """Write the files of Akasha into the checkout. Return the files that changed, and the problems."""
+    """Write the files of Akasha into the checkout, at the version of the team. Return the files that changed, and the
+    problems. Only an empty version takes this Akasha: an administrator changes the version of the team by hand."""
     changed = []
     path = config.place(root)
     if not path.is_file():
         path.write_text(first_config(root), encoding="utf-8")
         changed.append(path.relative_to(root).as_posix())
     team = config.load(root)
-    if team.version != VERSION:
-        team = _raise_version(root, team)
+    if not team.version:                    # an akasha.toml of Akasha 1.1.2 or older: this Akasha is the first pin
+        config.set_value(root, "team", "version", VERSION)
         changed += [] if changed else [path.relative_to(root).as_posix()]
+        team = config.load(root)
     if _ignore(root, team):
         changed.append(".gitignore")
     for name, text in github.workflows(team).items():
@@ -107,7 +100,7 @@ def write_files(root: Path) -> list[str]:
         if target.is_file() and target.read_text(encoding="utf-8").startswith("# Akasha installs"):
             target.unlink()
             changed.append(f"{name} (removed: the team does not need it now)")
-    return changed + codex.write(root) + claude.write(root)
+    return changed + codex.write(root, team.version) + claude.write(root, team.version)
 
 
 def run(root: Path, apply: bool = False) -> list[str]:
@@ -118,6 +111,11 @@ def run(root: Path, apply: bool = False) -> list[str]:
             return [f"{branch} on the server already uses Akasha. Do not set it up again: pull it, git pull origin "
                     f"{branch}"]
     report = []
+    # Before any file: a version without a release tag cannot install on the CI (once, also when write_files runs twice)
+    wanted = (config.load(root).version if config.place(root).is_file() else "") or VERSION
+    problem = version.release_problem(root, wanted) if repo.origin(root) else ""
+    if problem:
+        raise ValueError(problem)
     if apply:
         rules, problems = github.apply(root)
         report.append(f"GitHub: server rules {rules}. " + ("GitHub stops a merge before the checks pass."
@@ -136,6 +134,11 @@ def run(root: Path, apply: bool = False) -> list[str]:
                       "watch reports a change that went around it. `akasha setup --apply` turns the protection on "
                       "where the plan of GitHub allows it.")
     report += [f"wrote {name}" for name in changed] or ["the files of Akasha are up to date"]
+    if wanted != VERSION:
+        report.append(f"The team uses Akasha {wanted}, and this computer runs {VERSION}: the files pin {wanted}, and "
+                      f"the workflows and the agent instructions (AGENTS.md, CLAUDE.md, .codex/hooks.json) come from "
+                      f"{VERSION}. After the merge each computer moves to {wanted}. When `akasha doctor` then names old "
+                      "server rules, run `akasha setup` again in a task.")
     main = repo.main_root(root)
     in_task = main is not None and any(task.workcopy and Path(task.workcopy).resolve() == root.resolve()
                                        for task in all_local(main))
@@ -245,12 +248,16 @@ def doctor(root: Path) -> list[tuple[bool, str]]:
         team = config.shared(root, branch)
     except config.ConfigError as error:
         return found + [(False, f"{CONFIG_FILE}: {error}")]
-    if team.unknown:
+    if team.version:
+        found.append((team.version == VERSION, version.mismatch(team.version, root=root) or
+                      f"Akasha {VERSION}, the version of the team"))
+        if team.unknown and team.version == VERSION:
+            found.append((False, f"{CONFIG_FILE} has {', '.join(team.unknown[:3])}, which Akasha {VERSION}, the "
+                                 "version of the team, does not know (an administrator removes them, or raises "
+                                 "[team] version)"))
+    elif team.unknown:
         found.append((False, f"Akasha is older than {CONFIG_FILE}, which has {', '.join(team.unknown[:3])} (update "
                              "the plugin: /plugin marketplace update akasha, then /plugin update akasha@akasha)"))
-    if team.version:
-        found.append((not version.older(team.version), version.mismatch(team.version) or     # newer only warns
-                      f"Akasha {VERSION}, the version of the team"))
     for name in team.required_checks:
         ready = _check_ready(root, name, team.checks.get(name), "join" in team.guides)
         found += [ready] if ready else []

@@ -2,6 +2,7 @@
 name: akasha-reviewer
 description: Reviews the research and the plan of an Akasha task against the preview that the person approved and against the code, in place of a person. Use it after the person approved the preview and before the build, and again after each repair of the plan. For a quick task, it reviews the change itself with impact.md. For an agent task, it reviews the plan against the request of the person (request.md). For a task without a screen, it reviews the plan before the person approves it.
 model: opus
+effort: medium
 tools: Read, Grep, Glob, Bash
 ---
 

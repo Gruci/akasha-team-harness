@@ -10,7 +10,7 @@ When people who don't code build with AI on their own, the product drifts:<br>
 odd results, and changes nobody asked for.<br>
 With Akasha, each person approves one preview, and only that gets built, under your team's rules.
 
-<img src="https://img.shields.io/badge/version-1.1.3-7c3aed" alt="Version 1.1.3">
+<img src="https://img.shields.io/badge/version-1.1.4-7c3aed" alt="Version 1.1.4">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -69,7 +69,7 @@ Approve it in your own words, in any language, or tell what to change.<br>
 The AI does the rest, and tells you when the change is merged and when it is live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.3"` in that Python
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.4"` in that Python
 > (on Windows `py -3 -m pip install …`).
 
 * * *
@@ -182,6 +182,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
+| **v1.1.4** | Only the version of the team runs: the plugin is pinned, another version starts no task, an administrator raises it · a lighter plan review |
 | **v1.1.3** | Developer mode for administrators; plan approval for a task without a screen; shorter re-review; a CI run on a draft counts at the landing; docs-only quick tasks without review; dated records folders; one Akasha version for the team; no permission prompt for read-only commands and edits |
 | **v1.1.2** | Work copies in `.claude/worktrees/`: no Claude Code prompt |
 | **v1.1.1** | Preview as spec: values with source and formula, rules with examples |

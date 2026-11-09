@@ -196,8 +196,14 @@ decisions and the rules, and a value of data without its definition.
 3. Run `akasha status <task>` for the plan digest. Ask the akasha-reviewer agent: "Review the plan of Akasha task
    <task>. Work copy: <path>. Plan digest: <digest>. Akasha command: <the command of the session start notice>." It
    judges nine items, one row each, ends with a review mark, and Akasha records it with the answer in `review.md`.
-   Only the akasha-reviewer agent counts. Repair each item that failed, and ask again with the new digest, until the
-   mark is PASS. On a review after a repair, the reviewer judges again only the items that failed and the items that
+   Only the akasha-reviewer agent counts. Repair each item that failed, run `akasha status <task>` for the new plan
+   digest, and ask again until the mark is PASS. Ask again by sending this to the same akasha-reviewer agent with
+   SendMessage, when this session started it: "Plan digest is now <digest>. Run `<Akasha command> status <task>
+   --review` again, judge what it names, and answer in the full form with the mark for <digest>." It keeps what it
+   read. Ask a new akasha-reviewer agent with the request above instead when SendMessage fails, when that agent
+   already reviewed three rounds (a long conversation loses the code that it read), or when after its answer
+   `akasha status <task> --review` shows neither `Round … passed this version of the plan` nor
+   `Last review: … plan digest <digest>`. On a review after a repair, the reviewer judges again only the items that failed and the items that
    the change of the plan touches, and keeps the rest (`akasha status <task> --review` tells it which): do not ask it
    to judge each item again. When the next step says that a PASS mark did not count, an item had no row or a kept
    row had not passed: ask again.
@@ -259,6 +265,10 @@ decisions and the rules, and a value of data without its definition.
      names steps that only an administrator can do (for example a secret value on the server, or a first run of a job),
      run `akasha help <task> "<the steps>"` and tell the person that the result shows after them. If Akasha says that
      the work copy has changes that are not on GitHub, tell the person, and start a new task for them.
+   - When the landing ended (MERGED in a team without a deployment, DEPLOYED, or DEPLOY_FAILED or VERIFY_FAILED
+     after `akasha help`), and the task is not an agent task: tell the person that the next task starts best in a
+     new session (/clear). The records of this task keep what it decided, and a long session reads its whole past
+     again at each answer.
 3. Never ask the person to merge, to approve, or to mark the pull request ready on GitHub. Akasha lands each task.
 
 ## Between people and computers

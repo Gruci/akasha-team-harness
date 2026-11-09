@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from akasha import SOURCE
+from akasha import SOURCE, VERSION, source
 
 FILES = ("AGENTS.md", ".codex/hooks.json")
 START, END = "<!-- akasha:start -->", "<!-- akasha:end -->"
@@ -114,14 +114,16 @@ def with_block(text: str | None, rules: str) -> str:
     return text.rstrip() + "\n"
 
 
-def agents_text(text: str | None) -> str:
-    return with_block(text, RULES)
+def agents_text(text: str | None, wanted: str = VERSION) -> str:
+    """AGENTS.md with the Akasha block, whose pip line installs the version `wanted` of the team."""
+    return with_block(text, RULES.replace(SOURCE, source(wanted)))
 
 
-def write(root: Path) -> list[str]:
-    """Write the Akasha part of each file. Return the files that changed and the problems."""
+def write(root: Path, wanted: str = VERSION) -> list[str]:
+    """Write the Akasha part of each file, at the version `wanted` of the team. Return the files that changed and the
+    problems."""
     changed = []
-    for name, maker in (("AGENTS.md", agents_text), (".codex/hooks.json", hooks_text)):
+    for name, maker in (("AGENTS.md", lambda text: agents_text(text, wanted)), (".codex/hooks.json", hooks_text)):
         path = root / name
         old = path.read_text(encoding="utf-8") if path.is_file() else None
         new = maker(old)

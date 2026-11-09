@@ -20,7 +20,7 @@ import re
 import time
 from pathlib import Path
 
-from akasha import agent, board, checks, core, github, pr, quick, repo, trace, work
+from akasha import agent, board, checks, core, github, pr, quick, repo, trace, version, work
 from akasha.config import Team
 from akasha.flow import ask_help, drop, gate, rules, taken
 from akasha.task import SUMMARY, Task, load, record, records, save
@@ -123,6 +123,9 @@ def _hand_over(root: Path, task: Task, akasha_merges: bool) -> tuple[str, list[s
         return "", []                                 # merged or closed on GitHub: follow ends the task
     tree, branch = Path(task.workcopy), repo.default_branch(root)
     repo.fetch(root, branch)
+    old = version.mismatch(rules(root).version, root=root)    # the rules after the fetch: a raise of the version counts
+    if old:
+        return BLOCKED, [old]
     work.pull(tree, task.branch)
     merged = repo.git(tree, "merge", "-q", "--no-edit", f"origin/{branch}")
     if merged.returncode:

@@ -175,7 +175,9 @@ def _keep(task: Task, verdict: str, sha: str, text: str) -> None:
 
 def _answers(path: str) -> tuple[str, str]:
     """The text of the last answer of the agent in a transcript file (JSON lines), and the last report that it
-    handed back with the SubagentHandback tool (in auto mode the report goes there)."""
+    handed back with the SubagentHandback tool (in auto mode the report goes there). Both come from the last round
+    only: an agent that was asked again keeps its earlier rounds in the file, and an earlier report is not this
+    answer."""
     try:
         lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines() if path else []
     except OSError:
@@ -187,6 +189,12 @@ def _answers(path: str) -> tuple[str, str]:
         except ValueError:
             continue
         message = entry.get("message") if isinstance(entry, dict) else None
+        if isinstance(message, dict) and message.get("role") == "user" and not entry.get("isMeta"):
+            content = message.get("content")
+            if isinstance(content, str) or any(isinstance(block, dict) and block.get("type") == "text"
+                                               for block in content or []):
+                break                      # the request of this round: an earlier round is not this answer
+            continue                       # a tool result inside this round
         if not isinstance(message, dict) or message.get("role") != "assistant":
             continue
         content = message.get("content")

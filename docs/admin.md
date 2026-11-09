@@ -119,15 +119,15 @@ See `[ci]` in [team-config.md](team-config.md#ci).
 
 ## Teammates
 
-Each teammate installs the plugin once (`/plugin marketplace add Gruci/akasha-team-harness`, then
-`/plugin install akasha@akasha`), logs in with `gh auth login`, and opens the repository. The committed
-`.claude/settings.json` registers the marketplace when they trust the folder. The akasha-join skill reads
+Each teammate installs the plugin once (`/plugin marketplace add Gruci/akasha-team-harness#v<version of the team>`,
+then `/plugin install akasha@akasha`), logs in with `gh auth login`, and opens the repository. The committed
+`.claude/settings.json` registers the marketplace at the version of the team when they trust the folder. The akasha-join skill reads
 `[guides] join` and checks the rest with `akasha doctor`: Python 3.11 or higher for the hooks (they try `py -3`,
 `python3`, and `python`), the name of git, the GitHub CLI and its login for git, write access, and each check of the
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.3"`, elsewhere `python3 -m pip install …`.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.4"`, elsewhere `python3 -m pip install …`.
 Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
 
 ## Agent accounts
@@ -163,17 +163,22 @@ After the first setup, a change of the rules is a task of an administrator like 
 the work copy), then check and land it. The same holds for the database and the deployment: when a teammate's task
 needs a change there, the AI asks with `akasha help`, and an administrator makes it in a task of their own.
 
-Each release of Akasha has its own tag. `[team] version` in `akasha.toml` holds the version of the team: the CI and
-the watch install it, and each computer must run it, so that the computers and the server run the same rules. To
-update:
+Each release of Akasha has its own tag. `[team] version` in `akasha.toml` holds the version of the team, and an
+administrator chooses it. Each computer, the CI, and the watch run that version only, so that the computers and the
+server run the same rules: an Akasha of another version, older or newer, also of an administrator, starts no task,
+takes over no task, and hands no task over to the merge. `akasha setup` pins it in three places: the marketplace of
+Claude Code in `.claude/settings.json` (`"ref": "v<version>"`), the pip line of Codex in `AGENTS.md`, and the
+workflows. It writes this Akasha into `[team] version` only when the setting is empty. To raise the version:
 
-1. Update your own Akasha (Claude Code: `claude plugin marketplace update akasha`, then
-   `claude plugin update akasha@akasha`, and restart the app).
-2. Start a task, and run `akasha setup` in its work copy. It writes the new version into `[team] version` and into the
-   workflows. Check and land it. Its own server check runs the new version.
-3. After the merge, the session start notice of each teammate names the difference with the commands that fix it.
-   `akasha doctor` fails, and `akasha start` refuses a new task, until the computer runs the version of the team.
-   Codex: `pip install "git+https://github.com/Gruci/akasha-team-harness@v<version>"`.
+1. On a computer that runs the version of the team now, start a task.
+2. In its work copy, change `[team] version` in `akasha.toml` to the new version, and run `akasha setup` there. It
+   refuses a version without a release tag in the public repository. The pins name the new version; the workflows and
+   the agent instructions still come from the Akasha that ran, and the setup says so.
+3. Check and land it. Its own server check runs the new version.
+4. After the merge, each computer pulls the default branch and restarts the agent app: Claude Code loads the pinned
+   version. The session start notice names a difference with the commands that fix it, and `akasha doctor` fails until
+   the computer runs the version of the team. Codex: `pip install "git+https://github.com/Gruci/akasha-team-harness@v<version>"`.
+5. When `akasha doctor` of the new version names old server rules, run `akasha setup` again in a task.
 
 When the server check or the watch fails with "The server runs Akasha …", the Akasha on the server differs from
 `[team] version`: run `akasha setup` again in a task, and remove the repository variable `AKASHA_SOURCE` or set it to
