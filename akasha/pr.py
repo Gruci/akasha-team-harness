@@ -28,12 +28,12 @@ def meta(task: Task) -> list[str]:
     elif task.kind == "no-screen":
         lines.append("- Kind: task without a screen — an administrator's change that touches no screen file "
                      "(`[preview] screens`). The person approves the plan after its review, in place of a preview")
-        lines.append(f"- Plan approved by @{task.approval.get('by', '?')} at {task.approval.get('at', '?')} with "
-                     f"\"{task.approval.get('words', '')}\" (plan `{task.approval.get('plan_sha', '')}`)"
+        lines.append(f"- Plan approved by @{task.approval.get('by', '?')} at {task.approval.get('at', '?')} "
+                     f"(plan `{task.approval.get('plan_sha', '')}`)"
                      if task.approval else "- Plan: not approved yet")
     elif task.approval:
         lines.append(f"- Preview approved by @{task.approval.get('by', '?')} at {task.approval.get('at', '?')} "
-                     f"with \"{task.approval.get('words', '')}\" (preview `{task.approval.get('preview_sha', '')}`)")
+                     f"(preview `{task.approval.get('preview_sha', '')}`)")
     else:
         lines.append("- Preview: not approved yet")
     if task.review:
@@ -80,8 +80,7 @@ def _result_line(task: Task) -> str:
         return "- Result: not approved yet"
     through = str(found.get("through") or "?")
     who = f"@{through}" if found.get("by") == through else f"{found.get('by')} through @{through}"
-    return (f"- Result approved by {who} at {found.get('at', '?')} with \"{found.get('words', '')}\" (change "
-            f"`{found.get('change_sha', '')}`)")
+    return f"- Result approved by {who} at {found.get('at', '?')} (change `{found.get('change_sha', '')}`)"
 
 
 def summary(task: Task) -> str:

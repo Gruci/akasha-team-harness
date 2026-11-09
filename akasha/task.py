@@ -21,6 +21,7 @@ STATUSES = ("preview", "approved", "landing", "merged", "closed")
 TASK_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,59}")
 LOCAL_ONLY = ("workcopy", "shown_in", "heard", "parts")  # this computer and this session only: never on GitHub
 REVIEW_LOCAL = ("plan", "rows")     # the plan and the rows that the last review read: too long for the PR body
+APPROVAL_LOCAL = ("words",)         # the words of the approval stay on this computer: GitHub names who and when
 BLOCK = re.compile(r"<!-- akasha:task (\{.*?\}) -->", re.S)
 DATED = re.compile(r"\d{4}-\d{2}-\d{2}-(.+)")       # a records folder with the start date: YYYY-MM-DD-<task>
 PREVIEW, PLAN, RESEARCH, SUMMARY = "preview.html", "plan.md", "research.md", "summary.md"
@@ -142,6 +143,7 @@ def block(task: Task) -> str:
     """The hidden block of the task in the body of its pull request."""
     data = {key: value for key, value in asdict(task).items() if key not in LOCAL_ONLY}
     data["review"] = {key: value for key, value in data["review"].items() if key not in REVIEW_LOCAL}
+    data["approval"] = {key: value for key, value in data["approval"].items() if key not in APPROVAL_LOCAL}
     text = json.dumps(data, ensure_ascii=False).replace("-->", "--\\u003e")     # the comment must not end early
     return f"<!-- akasha:task {text} -->"
 

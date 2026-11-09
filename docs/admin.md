@@ -127,7 +127,7 @@ then `/plugin install akasha@akasha`), logs in with `gh auth login`, and opens t
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.4"`, elsewhere `python3 -m pip install …`.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.5"`, elsewhere `python3 -m pip install …`.
 Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
 
 ## Agent accounts

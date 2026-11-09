@@ -147,9 +147,9 @@ decisions and the rules, and a value of data without its definition.
 2. Write one self-contained HTML file named `preview.html` in the records folder of the task (`akasha start` and
    `akasha status` name it), in the work copy. No links to other files or sites:
    - The decisions, at the very top: a box `<section id="akasha-decisions">` with a title of one line (what changes),
-     and each question that you asked with the answer of the person, one line each, in their words (for a choice,
-     the option that they chose, or the words that they typed). The approval of the preview is the record of these
-     answers.
+     and each question that you asked with the answer of the person, one line each: for a choice, the option that
+     they chose; for typed words, what they decided, in plain words and never as a quote (the preview goes into git).
+     The approval of the preview is the record of these answers.
    - The look: for a screen, a mockup with the real words of the screen and the states that matter (empty, loading,
      error). Draw it with the parts, the colors, the spacing, and the controls that the app already has: the task
      builds it as it is. For a change without a screen (data, a batch job, an API, a rule), a diagram of the flow and
@@ -181,7 +181,8 @@ decisions and the rules, and a value of data without its definition.
 5. When the person asks for a change or asks a question, change the preview or answer, run `akasha preview <task>`
    again after a change, and ask again.
 6. When the message of the person approves the preview as it is, in any words and any language, run
-   `akasha approve <task>`. It records the approval with the exact words of the person. When a message mixes a yes
+   `akasha approve <task>`. It records the approval with the exact words of the person on this computer; the pull
+   request names only who approved and when. When a message mixes a yes
    with a change ("good, but move the table"), it is a change. When you cannot tell, ask. Never approve for the
    person, and never run it without a message of the person.
 

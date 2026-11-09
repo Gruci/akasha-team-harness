@@ -48,8 +48,8 @@ The approval of the preview is the only decision of the person, so Akasha takes 
 - The person answers in the chat, in their own words and in any language. The hook of the prompt
   (`UserPromptSubmit`) keeps the message, and only that hook writes it: the agent engine cannot make one up.
 - The agent engine reads the message. When it approves the preview as it is, without asking for a change, the agent
-  engine runs `akasha approve <task>`. Akasha records the approval with the exact words of the person, and the pull
-  request shows them. A message that asks for a change or asks a question is feedback, and the agent engine changes
+  engine runs `akasha approve <task>`. Akasha records the approval with the exact words of the person on this
+  computer (`.akasha/state`). The pull request and the squash commit name who approved and when, not the words. A message that asks for a change or asks a question is feedback, and the agent engine changes
   the preview.
 - `akasha approve` refuses without a message of the person after the preview was shown, in the session that showed
   it, within a day. The hook also runs for prompts that the person did not type, for example the notice of a
