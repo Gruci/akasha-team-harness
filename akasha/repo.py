@@ -8,10 +8,12 @@ import re
 import secrets
 import signal
 import subprocess
+import tempfile
 import time
+from collections.abc import Iterable
 from pathlib import Path
 
-from akasha.config import STATE_DIR
+from akasha.config import STATE_DIR, remembered
 
 _GITHUB = re.compile(r"^(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?(?:www\.|ssh\.)?github\.com(?::\d+)?[:/]+"
                      r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/*$", re.I)
@@ -33,10 +35,11 @@ def stop(process: subprocess.Popen) -> None:
             pass
 
 
-def git(cwd: Path, *args: str, timeout: float | None = None) -> subprocess.CompletedProcess:
-    """Run git. With a timeout, git and the programs that it started stop after that many seconds."""
+def git(cwd: Path, *args: str, timeout: float | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
+    """Run git. With a timeout, git and the programs that it started stop after that many seconds. `env` adds
+    variables of the environment."""
     process = subprocess.Popen(["git", *args], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                               encoding="utf-8", errors="replace", env=_QUIET, **GROUP)
+                               encoding="utf-8", errors="replace", env={**_QUIET, **(env or {})}, **GROUP)
     try:
         output, errors = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -46,12 +49,41 @@ def git(cwd: Path, *args: str, timeout: float | None = None) -> subprocess.Compl
     return subprocess.CompletedProcess(["git", *args], process.returncode, output, errors)
 
 
-def names(cwd: Path, *args: str) -> list[str]:
-    """File names from a git listing. Names with Korean or other non-ASCII letters stay as they are."""
-    listed = git(cwd, "-c", "core.quotePath=false", *args, "-z")
+def names(cwd: Path, *args: str, env: dict | None = None) -> list[str]:
+    """File names from a git listing. Names with Korean or other non-ASCII letters stay as they are. The option -z
+    goes before `--`: after it, git takes -z as a file pattern and gives an empty listing without an error."""
+    words = list(args)
+    words.insert(words.index("--") if "--" in words else len(words), "-z")
+    listed = git(cwd, "-c", "core.quotePath=false", *words, env=env)
     if listed.returncode:
         raise RuntimeError(f"git {args[0]} failed: {listed.stderr.strip()[:300]}")
     return [name for name in listed.stdout.split("\0") if name.strip()]
+
+
+def _without(skip: Iterable[str]) -> list[str]:
+    """The end of a git listing that leaves out the folders `skip`. Git leaves them out itself: Akasha never gets
+    the names of the records of the other tasks."""
+    skip = [folder.strip("/") for folder in skip if folder.strip("/")]
+    return ["--", ".", *(f":(exclude){folder}" for folder in skip)] if skip else []
+
+
+def paths(tree: Path, skip: Iterable[str] = (), others: bool = False) -> list[str]:
+    """The files of the checkout that git tracks, with `others` also the new files that git does not ignore,
+    without the folders `skip`. The index holds each file of the repository, also where the checkout has no
+    file of the archive."""
+    kinds = ["--cached", "--others", "--exclude-standard"] if others else []
+    return names(tree, "ls-files", *kinds, *_without(skip))
+
+
+def paths_at(tree: Path, commit: str, skip: Iterable[str] = ()) -> list[str]:
+    """The files of a commit, without the folders `skip`. `git ls-tree` takes no pattern that leaves a folder out,
+    so git reads the commit into an index of its own, apart from the index and the files of the checkout."""
+    with tempfile.TemporaryDirectory() as folder:
+        env = {"GIT_INDEX_FILE": str(Path(folder) / "index")}
+        read = git(tree, "read-tree", commit, env=env)
+        if read.returncode:
+            raise RuntimeError(f"git read-tree {commit} failed: {read.stderr.strip()[:300]}")
+        return names(tree, "ls-files", *_without(skip), env=env)
 
 
 def main_root(cwd: Path) -> Path | None:
@@ -129,6 +161,10 @@ def person(root: Path, kept: bool = True) -> str:
 
 def default_branch(root: Path) -> str:
     """The default branch of origin as git knows it, without the network. "main" when git does not know it."""
+    return remembered(("branch", str(root)), lambda: _default_branch(root))
+
+
+def _default_branch(root: Path) -> str:
     head = git(root, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD").stdout.strip()
     if head.startswith("origin/"):
         return head.removeprefix("origin/")

@@ -1,6 +1,6 @@
 """Akasha: a light team harness for coding agents. A person approves a preview at the start; the AI does the rest."""
 
-VERSION = "1.1.5"
+VERSION = "2.0.0"
 REPOSITORY = "Gruci/akasha-team-harness"     # the public repository: the marketplace, the release tags, and pip
 
 

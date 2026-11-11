@@ -24,6 +24,12 @@ _VALUE = re.compile(r'\bdata-akasha-value="([^"]+)"', re.I)
 _FIELD = re.compile(r'<td\b[^>]*\bdata-akasha-field="([a-z]+)"[^>]*>(.*?)</td>', re.I | re.S)
 _FROM = re.compile(r'\bdata-akasha-from="(person|ai)"', re.I)
 _TAG = re.compile(r"<[^>]+>")
+_COMMENT = re.compile(r"<!--.*?-->", re.S)
+
+
+def plain(text: str) -> str:
+    """The page without its HTML comments: a row that a comment shows as an example is no row of the page."""
+    return _COMMENT.sub("", text)
 
 
 def _box(text: str, name: str) -> str | None:
@@ -51,12 +57,13 @@ def _empty(rows: dict[str, dict[str, str]], fields: tuple[str, ...]) -> list[str
 
 def shown(text: str) -> list[str]:
     """The keys of the values that the preview marks, in their order."""
-    return list(dict.fromkeys(_VALUE.findall(text)))
+    return list(dict.fromkeys(_VALUE.findall(plain(text))))
 
 
 def value_problems(text: str, required: bool = False) -> list[str]:
     """Why the values of the preview are not defined, or []. `required`: the task changes files that make data
     ([preview] data), so the preview must mark one value or more."""
+    text = plain(text)
     keys = shown(text)
     if not keys:
         return (['the task changes files that make data, and the preview marks no value. Put data-akasha-value="<key>" '
@@ -75,7 +82,7 @@ def value_problems(text: str, required: bool = False) -> list[str]:
 def rule_problems(text: str) -> list[str]:
     """Why the rules of the preview are missing, or []: one rule or more, each with when, then, an example, and who
     decided it (the person, or the AI that proposes it)."""
-    body = _box(text, "rules")
+    body = _box(plain(text), "rules")
     rows = _rows(body, "data-akasha-rule") if body is not None else {}
     if not rows:
         return ['the preview has no rule: add <section id="akasha-rules"> with one row <tr data-akasha-rule="<key>" '

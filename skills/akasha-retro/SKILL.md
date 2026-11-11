@@ -12,7 +12,7 @@ with the administrator in their language.
    GitHub, and the review rounds of the plans, for the whole team (from the merged pull requests). The actions that
    Akasha stopped come only from the computer that runs the retro.
 2. For each repeated problem, find the cause in the records of the tasks (the records folder, by default
-   `.akasha/tasks/<task>/`) and in the code.
+   `.docs/tasks/<task>/`) and in the code.
 3. Tell the administrator, in simple words, which problem repeats and what one check would stop it before the merge.
    A check is a command that fails on the problem, for example a test or a small script.
 4. When the administrator agrees, add the check as an Akasha task (akasha-build): the preview is a short page that

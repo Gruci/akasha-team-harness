@@ -11,7 +11,7 @@ the merged rules, also when its checkout is old.
 [team]
 admins = ["lead", "dba"]           # GitHub names: they set up and maintain Akasha, and help when the AI is stuck
 agents = ["ops-bot"]               # GitHub names of agent accounts: a person approves their result before the merge
-version = "1.1.5"                  # the Akasha of the team: each computer, the CI, and the watch run only this version
+version = "2.0.0"                  # the Akasha of the team: each computer, the CI, and the watch run only this version
 
 [risk]
 paths = ["db/**", "**/migrations/**", "deploy/**"]     # only an administrator changes them
@@ -24,6 +24,7 @@ used_by = 2                               # a file that 2 or more other areas im
 [preview]
 data = ["src/queries/**"]          # files that make data: their previews define each value that they show
 screens = ["frontend/**", "**/*.html"]   # files that make a screen: an administrator's task without them has no preview
+check = "python scripts/check_words.py"  # a check of a preview: `akasha preview` runs it once, with the path of the preview
 
 [checks]
 required = ["secrets", "tests", "front"]
@@ -51,8 +52,8 @@ review = ["docs/RULES.md"]
 [work]
 folder = ".claude/worktrees"
 branch_prefix = "akasha/"
-records = "docs/tasks/akasha"      # a folder that the own checkers of the team skip
-records_date = false               # true: docs/tasks/akasha/2026-11-07-<task>/
+records = "docs/tasks/akasha"      # the records of a task in work: a folder that the own checkers of the team skip
+archive = "docs/tasks/done"        # the records of the merged tasks: done/2026/11/2026-11-07-<task>/
 
 [deploy]
 workflow = "Deploy"                # the workflow that deploys each merge
@@ -75,7 +76,7 @@ approves the preview of their own request; the person who asked an agent account
 | `admins` | The GitHub names of the administrators. Only they change `akasha.toml`, `.github/`, CODEOWNERS, and the paths of `[risk]`. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch. The AI talks with them as with developers, and they can make a task without a screen (`[preview] screens`) |
 | `own_procedure` | The GitHub names of the people who keep the own procedure of the repository outside Akasha, for example the administrator who built it. Akasha does not stop their work outside its tasks (their own work copies, edits in the main checkout, their merges), and the watch accepts their pull requests when the checks passed. The other rules (a force push, a push to the default branch, `.env`) stay |
 | `agents` | The GitHub names of agent accounts: a program (the relay) runs their sessions and gives them the requests of people. Each task of such an account is an agent task, without a preview: the person approves the result before the merge. An agent account has the rules of a teammate, so it cannot also be in `admins` or `own_procedure`. An older Akasha does not know this key: it treats an agent account as a teammate, which needs a preview |
-| `version` | The version of Akasha that the team uses, for example `"1.1.5"`. An administrator chooses it: `akasha setup` writes the running version only when the setting is empty, and never changes it after that. Setup refuses a version without a release tag in the public repository, and pins the version in three places: the marketplace of Claude Code in `.claude/settings.json` (`"ref"`), the pip line of Codex in `AGENTS.md`, and the workflows of the CI and the watch. Each computer runs this version only: an Akasha of another version, older or newer, also of an administrator, starts no task, takes over no task, and hands no task over to the merge; the session start notice names the difference with the commands that fix it, and `akasha doctor` fails. The server check and the watch fail when the Akasha on the server is another version, for example after a change of the repository variable `AKASHA_SOURCE`; the pull request that raises it passes with its new version. How to raise it: "Change the rules, or update Akasha" in [admin.md](admin.md). Without it, nothing is compared |
+| `version` | The version of Akasha that the team uses, for example `"2.0.0"`. An administrator chooses it: `akasha setup` writes the running version only when the setting is empty, and never changes it after that. Setup refuses a version without a release tag in the public repository, and pins the version in three places: the marketplace of Claude Code in `.claude/settings.json` (`"ref"`), the pip line of Codex in `AGENTS.md`, and the workflows of the CI and the watch. Each computer runs this version only: an Akasha of another version, older or newer, also of an administrator, starts no task, takes over no task, and hands no task over to the merge; the session start notice names the difference with the commands that fix it, and `akasha doctor` fails. The server check and the watch fail when the Akasha on the server is another version, for example after a change of the repository variable `AKASHA_SOURCE`; the pull request that raises it passes with its new version. How to raise it: "Change the rules, or update Akasha" in [admin.md](admin.md). Without it, nothing is compared |
 
 ## `[risk]`
 
@@ -141,6 +142,7 @@ section makes Akasha sure that a change of data shows its values: the AI cannot 
 |:--|:--|
 | `screens` | File patterns of the files that make a screen, for example `["frontend/**", "templates/**", "**/*.css"]`. An administrator can start a task whose scope holds none of them with `akasha start --no-screen`: the person approves its plan in place of a preview, and the check `screen` fails when its change touches one (see "A task without a screen" in [how it works](how-it-works.md)). Name each kind of file that a screen shows: a file that this list misses can change without a preview. Without it, each task of a person has a preview |
 | `data` | File patterns of files that make data that people see, for example `["src/queries/**", "src/reports/**"]`. A task that plans one must mark one value or more in its preview, `akasha check` fails the check `data` when the change touches one and the preview defines no value, and a quick task never changes one. How a teammate reads the data for a preview (a copy of the database, a read-only account, an API) goes into a file of `[guides] preview` and `[guides] join` |
+| `check` | A command of the team that examines a preview, for example the words of the screen. `akasha preview` runs it once in the work copy of the task, with the path of `preview.html` as its last argument, before the person sees the preview. When it fails, Akasha does not show the preview, and gives the output of the command to the AI. Use it for a check that is needed once for each preview: a check at the end of each turn of the agent runs many times for nothing. A quick task has no such check |
 
 ## `[checks]`
 
@@ -170,7 +172,7 @@ file in the folder.
 
 | Key | Value |
 |:--|:--|
-| `required` | The names of the required checks of the own CI of the team, as GitHub shows them. With it, Akasha installs no check of its own. Each named check must really run: a check that only skips never passes for Akasha. The CI of the team then runs `python -m akasha check --ci --config <akasha.toml of the base branch> --base origin/<base branch>` too. It runs the checks of Akasha on the server: the quick check of quick tasks, the screen check of tasks without a screen, and first the version check (it fails when the Akasha on the server is not `[team] version`) |
+| `required` | The names of the required checks of the own CI of the team, as GitHub shows them. GitHub must see them pass before a merge, together with the check of Akasha (`akasha`). Akasha installs its check in each case (`.github/workflows/akasha.yml`), also beside the CI of the team: it runs the required checks of `[checks]` and the checks of Akasha on the server (first the version check, which fails when the Akasha on the server is not `[team] version`, then the quick check of quick tasks, the screen check of tasks without a screen, the evidence check: the approval of the person and the passed review in the records of the task, for the current version of what they hold, and the consistency check: a new public name that the repository has already, without an answer in the plan). The CI of the team need not run a command of Akasha: a team whose CI ran `python -m akasha check --ci` removes that step. Each named check must really run: a check that only skips never passes for Akasha |
 | `runs-on` | The machine of the check of Akasha: a label, or a list of labels of a runner of the team. The default is `ubuntu-latest` |
 | `python` | The Python of the check of Akasha, as text, 3.11 or higher. The default is `"3.12"` |
 
@@ -185,7 +187,7 @@ own CI:
   of a required check on the head, so a second run of the same commit makes the merge wait again.
 
 A CI that skips drafts still works: its checks run once, after the landing marks the pull request ready. The check
-of Akasha (without `[ci] required`) already runs on drafts.
+of Akasha already runs on drafts.
 
 ## `[guides]`
 
@@ -205,8 +207,12 @@ The files of the team that the AI reads in each step. The session start notice n
 |:--|:--|
 | `folder` | The folder of the work copies, in the repository. The default is `.claude/worktrees`: Claude Code moves a session into a folder there without asking, and asks once for each task anywhere else. Git must not track files in it |
 | `branch_prefix` | The prefix of the task branches. The default is `akasha/` |
-| `records` | The folder of the records of the tasks (preview, research, plan, summary), which go into git. The default is `.akasha/tasks`. Choose a folder that the own checkers of the team skip, for example a Markdown checker. A task keeps the folder that was set when it started |
-| `records_date` | `true` puts the start date before the name of the records folder of each new task, as in an archive: `docs/tasks/2026-11-07-login/` for the task `login`. The task name and the branch stay the same. Akasha never moves the records, so the folder keeps this name after the merge. The default is `false`: the folder has the task name only. A task keeps the folder that it started with, also when the setting changes |
+| `records` | The folder of the records of a task in work (preview, research, plan, summary): `<records>/<task>/`. The default is `.docs/tasks`. Only the branch of the task has this folder: the default branch never holds it. Choose a folder that the own checkers of the team skip, for example a Markdown checker |
+| `archive` | The folder of the records of the merged tasks. The default is `.docs/archive`. The landing moves the records of a task there, into `<archive>/YYYY/MM/YYYY-MM-DD-<task>/` (the date of the move), in the push that it makes anyway, and the merge brings them into the default branch. No work copy and no main checkout holds the archive of other tasks (git sparse-checkout), and Akasha reads the folder of one task only: the records of old tasks are no input of a new task, however many there are. A task changes no folder of another task in the archive: only an administrator does. A merged task gives its name free: the date keeps the folders apart, and a second task of the same name on the same day gets `YYYY-MM-DD.<number of the pull request>-<task>` |
+
+> **IMPORTANT:** Choose `records` and `archive` when Akasha comes into the repository. Akasha refuses a later change
+> of them (`akasha check`, and the check on the server): after a change, each new work copy would hold the old archive
+> again. Neither folder can be in the other, in the work folder, or in `.docs/state`.
 
 ## `[deploy]`
 
@@ -220,6 +226,126 @@ The files of the team that the AI reads in each step. The session start notice n
 | Key | Value |
 |:--|:--|
 | `rules` | `github` when GitHub protects the default branch, `akasha` where it does not. `akasha setup` writes `akasha` when the branch has no protection, and `akasha setup --apply` writes the rules of the plan. Do not change it by hand. Before each landing Akasha also asks GitHub: a branch whose protection does not require each check of the team is always merged by Akasha, after its examination |
+
+## `[definitions]`
+
+```toml
+[definitions]
+on = true
+```
+
+`on = true` turns on the list of the definitions of the team: `akasha.definitions.toml` beside `akasha.toml`. A
+definition gives one meaning to a business value or a feature that more than one place uses, with the code that
+holds it, the way in from outside, and the test that confirms it. A new repository starts with it on; a repository
+that has code turns it on when an administrator decides.
+
+```toml
+[[definition]]
+key = "corp.active_count"                     # one key for one meaning: <area>.<what it is>
+label = "Active companies"                    # the main word on each screen
+aliases = ["Companies"]                       # other words for the same thing
+meaning = "The companies that are active on the reference day. A company in liquidation does not count"
+area = "domains/corp"                         # the area that keeps this meaning (needed with [core] areas)
+implementation = ["domains/corp/queries/count.py::count_active"]      # the code to change
+entry = ["domains/corp/api.py::count_active", "GET /api/corp/count"]  # the way in from outside (optional)
+tests = ["tests/contracts/test_corp_count.py"]                        # the test that confirms the meaning
+```
+
+| With the list on | The rule |
+|:--|:--|
+| A value row of a preview | Names a definition: `<tr data-akasha-key="…" data-akasha-definition="<key>">`, or `"local"` for a value of this screen only. `akasha preview` refuses a row without it |
+| A new public entry | A new address of the server, and a name that an entry file of an area (`public` of `[boundaries]`) newly gives out, is in the `entry` of a definition, or has a row `entry` in `## Public changes` of `plan.md` that names exactly that entry (`GET /api/health`, or `path::name`) with the reason |
+| A new definition | Each person adds one. It has a key, a label, a meaning, an implementation, and tests that are in the code; the blocks are in the order of their keys |
+| A change of a definition | Only a task of an administrator changes or removes a block, with a row `change` of that key in the plan. A change of blanks or comments is no change |
+| A change of registered code | A task that changes a file of an `implementation` has a row `change` of that file in the plan: what stays the same for the places that use it |
+| The file | A missing or broken file fails. A file without a block is a correct empty list. Only `on = false` turns the list off, in a task of an administrator |
+
+The policy (`on`, and who is an administrator) comes from the default branch: a pull request cannot give itself the
+right. `akasha map --definitions` shows the list, `akasha find` searches the labels and the aliases, and `akasha
+start` names each definition that the task touches. The board tells two open tasks that add or change the same key.
+
+## `[boundaries]`
+
+```toml
+[boundaries.areas]
+private = ["domains/*/**"]                              # the files of an area
+public = ["domains/*/api.py", "domains/*/index.ts"]     # are open to the outside only through these entries
+except = ["app/main.py -> domains/billing/jobs/nightly.py"]     # one exact pair
+
+[boundaries.screen-data]
+from = ["frontend/**"]                                  # these files
+not = ["db/**"]                                         # do not import these files
+
+[boundaries.no-cycles]
+acyclic = ["domains/*"]                                # the imports between these areas make no circle
+```
+
+Each table under `[boundaries]` is one rule with a name of the team. A rule with `private` and `public` asks one
+question: is the target of an import that crosses an area the public entry of that area? Imports inside an area are
+free, and an area is a folder of `[core] areas`. A rule with `from` and `not` forbids the imports of some files by
+others. `except` holds exact pairs for the rule that names them.
+
+The check `consistency` fails only an import that the change makes new, so a repository with old crossings can turn
+a rule on. An entry file names what it gives out: a plain `__all__` list in Python, `export { a, b } from` in
+TypeScript; else the check fails with the file. The import graph reads the `paths` of `tsconfig.json` and
+`jsconfig.json`, and a note names an import that Akasha cannot follow. The rule holds for static imports. It does
+not see a call through an address, or an access while the code runs. Two entries that import each other pass the
+rule of the entries: a rule with `acyclic` fails a new relation between two of its areas that is on a cycle, also
+when that cycle was there before. It counts an import of a type only too, so it does not prove that the code
+has no cycle while it runs.
+
+## `[pins]`
+
+```toml
+[pins]
+policy = "new"
+```
+
+Whether the versions of the libraries and of the base images of the repository are fixed. When they float, the same
+commit installs other things on another day, and a deployment that goes back installs other versions than before.
+Akasha makes an administrator know and decide. It stops nothing without an answer, and it never chooses a version.
+
+| `policy` | Meaning | The check |
+|:--|:--|:--|
+| no value | The administrator did not answer yet | None. `akasha doctor` tells each person in one line, and `akasha setup` asks |
+| `"observe"` | Known, and left as it is. Right for a library that others install: its ranges are correct | None. Only `akasha map --report` shows the count |
+| `"new"` | What is there stays, and no change adds more | The check `consistency` fails a change that adds a library without a fixed version, a base image that floats, or that takes away a lock file |
+| `"all"` | Each one is fixed | It fails while a library without a fixed version or a floating base image is in the repository |
+
+Akasha reads one list and its pair at a time: `requirements*.txt` (with the files of `-r` and `-c`), `pyproject.toml`,
+and `package.json`, each with the lock in the same folder (`uv.lock`, `poetry.lock`, `pdm.lock`, `package-lock.json`,
+`npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`). With the lock, a range is fixed, and only a library without
+any version counts. Without it, each line that is not exact (`name==version`, or one exact version) counts. A lock
+of the frontend fixes nothing of the server. In a `Dockerfile`, an image without a tag or with a tag without a number
+(`latest`, `slim`) floats; a tag without a patch version or a digest (`python:3.11-slim`) is only named. An earlier
+stage of the same file and `scratch` are no image of outside.
+
+The policy comes from the default branch, and the check also runs for a pull request that is no task. Where the
+policy protects, a file that Akasha cannot read fails: it is no pass. Akasha does not judge whether a lock is old,
+does not raise a version (that is the work of Dependabot or Renovate), and does not see what a deployment really
+installs. A change from `"observe"` to `"new"` or `"all"` is a task of an administrator.
+
+## `[review]`
+
+```toml
+[review]
+command = "…"          # it takes the request on its standard input, and prints the answer of the reviewer
+files = []             # the files of the repository that the command needs; none: only installed programs
+timeout = 900          # seconds
+```
+
+A reviewer for an agent engine that has no reviewer agent of its own. `akasha review <task>` runs the command in a new
+empty folder, in its own process. The request is JSON on the standard input: an id, the task, its kind, the subject
+(`plan` or `change`), the digest, the absolute paths of the work copy and of the records, the Akasha command, the path
+of the instruction of the reviewer, and the base commit. Nothing of the task is in the text of the command. The files
+of `files` come from that base commit, not from the work copy: a task does not review itself with a reviewer that
+it changed.
+
+The answer is the whole standard output: the table of the items and the mark `AKASHA-REVIEW: <task> <digest> PASS`
+or `CHANGES`, as the akasha-reviewer agent writes them. The mark must name the task and the digest of the request, and
+the digest must still be the same when Akasha records it. A failure never becomes a pass. With a command, Akasha
+takes no `akasha review --verdict`. Which command to use is the choice of the team: see the documents of the agent
+engine for how to run it without a person.
 
 ## How Akasha examines this file
 

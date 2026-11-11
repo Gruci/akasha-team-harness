@@ -10,7 +10,7 @@ When people who don't code build with AI on their own, the product drifts:<br>
 odd results, and changes nobody asked for.<br>
 With Akasha, each person approves one preview, and only that gets built, under your team's rules.
 
-<img src="https://img.shields.io/badge/version-1.1.5-7c3aed" alt="Version 1.1.5">
+<img src="https://img.shields.io/badge/version-2.0.0-7c3aed" alt="Version 2.0.0">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -53,6 +53,10 @@ Install the plugin, open the repository, and say **"Set up Akasha"**. Then the A
 - lines up the own agent rules of the repository with Akasha
 - sets up GitHub, and opens a pull request with the files. Merge it after its checks pass.
 
+For a repository that starts now, say **"Set up Akasha for a new repository"**. The standard comes before the
+first code: a structure guide with fixed rules and your answers, one list of the meanings that several screens
+share, and the tests and the lint of each language as required checks.
+
 **2. Each teammate — once**
 
 Install the plugin, log in with `gh auth login`, and open the repository.<br>
@@ -69,7 +73,7 @@ Approve it in your own words, in any language, or tell what to change.<br>
 The AI does the rest, and tells you when the change is merged and when it is live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.5"` in that Python
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.0"` in that Python
 > (on Windows `py -3 -m pip install …`).
 
 * * *
@@ -82,10 +86,10 @@ Each task goes through six steps, and many tasks go through them at once:
 |:--|:--|:--|
 | 1.&nbsp;Request | The person says what they want | — |
 | 2.&nbsp;Preview | The AI makes a preview: the look, the values, the rules. The person checks it | The person approves it in the chat |
-| 3.&nbsp;Plan | The AI writes research and a plan | A second AI checks it until it passes |
+| 3.&nbsp;Plan | The AI looks at the code that exists, then writes research and a plan | A second AI checks it until it passes. A later change of the plan, the preview, or the research needs the check again |
 | 4.&nbsp;Build | The AI changes the code in its own copy | No code before steps 2 and 3 |
-| 5.&nbsp;Check | The checks of the team run | Each required check passes |
-| 6.&nbsp;Land | The pull request comes up to date and merges | The checks pass on GitHub |
+| 5.&nbsp;Check | The checks of the team run, and Akasha compares the new code with the code that exists | Each required check passes. New code that the repository has already needs a reason in the plan |
+| 6.&nbsp;Land | The pull request comes up to date and merges, in the order in which the tasks came | The checks pass on GitHub, and the records of the task hold the approval and the review of this version |
 
 The hooks hold the AI on these steps.
 
@@ -94,6 +98,10 @@ The hooks hold the AI on these steps.
 - They stop a change in the main checkout, or in a work copy outside Akasha.
 - They stop a force push, a push to the default branch, and a merge by hand.
 - The same rules hold for a session in another folder that changes this repository or uses `git -C`.
+
+Before the AI writes new code, `akasha start` shows it what the repository has: the guides of the team, the rules
+for names, the public names of the code near the task, and the definitions that the task touches. In Claude Code
+each step runs in an agent of its own, so a long task does not fill the conversation with the person.
 
 [How it works](docs/how-it-works.md) tells each detail.
 
@@ -109,7 +117,9 @@ Each person, from any team, works on their own task at the same time as the othe
 |:--|:--|
 | A new task plans the files of open tasks | The board shows those tasks and who holds them, and the AI reads what they change before it plans |
 | Tasks change the same file | Each AI hears of it. Each task keeps its own pull request: the later one takes the change, and its AI resolves a conflict and checks again |
-| Several tasks are ready at once | They merge one by one, each up to date first |
+| Several tasks are ready at once | They merge one by one, in the order in which they came. Only the first one comes up to date, so a merge does not start the checks of each other task again |
+| Several sessions on one computer | A task belongs to the session that works on it. Another session cannot edit it, and takes it only when the person asks |
+| The records of many tasks pile up | The records of a merged task move to an archive that no work copy holds. Old records are no input of a new task, however many there are |
 | A person stops, and another continues | `handoff` frees the task, `resume` continues it anywhere |
 | A task name is in use | The start refuses it, and the AI picks another |
 | The AI is stuck | It asks the administrators on the pull request |
@@ -154,13 +164,17 @@ person can tune the harness freely.
 | The person approves a specification, not only a picture | Akasha refuses a preview without rules, or with a value from data that has no source, formula, value, and check |
 | The code waits for the approval and the plan check | The guard stops each edit of the code before both |
 | A change that failed the checks does not merge | The required checks must really run and pass on GitHub |
+| A change without a task, or with old evidence, does not pass | The check on GitHub reads the approval and the review from the records of the task. A preview that changed after the approval fails, and so does a plan, a preview, or a research that changed after the review |
+| A copy of existing code needs a reason | A new public name with the same name or the same body as existing code fails the check, until the plan tells why it is there |
 | Only an administrator changes the risky parts | A teammate's task stops at the database or the deployment |
 | Each change can be found and undone | One squash commit with its summary and records |
 
 | Does not guarantee | Know this |
 |:--|:--|
 | A sandbox | The hooks keep a cooperative AI on the steps |
-| The meaning of an approval | The AI judges it. The pull request names who approved and when; the exact words stay on the computer of the session (`.akasha/state`) |
+| The meaning of an approval | The AI judges it. The pull request names who approved and when; the exact words stay on the computer of the session (`.docs/state`) |
+| Who typed | The records stop evidence that is missing or old. They do not prove who the person was |
+| Good design | Akasha shows the code that exists and the standard of the team, and checks what a machine can see. It does not make an AI design well |
 | Protection before a merge on GitHub Free | A person can merge by hand. The watch reports it |
 | The business logic | The preview, the plan check, and the checks examine it |
 | The data | Undoing code does not undo data. Mark the database risky |
@@ -182,6 +196,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
+| **v2.0.0** | Evidence on the server · the map of the code · the consistency check · definitions and boundaries · the archive of the records · the order of the landings · sessions · steps in new contexts |
 | **v1.1.5** | Who approved, not what they typed |
 | **v1.1.4** | Pinned team version · lighter plan review |
 | **v1.1.3** | Developer mode · plan approval without a screen · dated records |

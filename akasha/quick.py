@@ -21,11 +21,11 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
-from akasha import core
+from akasha import core, forms
 from akasha.checks import ADMIN_PATHS, matches, touches
 from akasha.config import Team
 from akasha.repo import default_branch, git, names
-from akasha.task import Task, record, records, task_of
+from akasha.task import Task, each, folders_of, outside, own_records, record, record_folders, records
 
 IMPACT = "impact.md"
 DOCS = ("**/*.md", "**/*.txt", "**/*.rst", "**/*.adoc")      # text for people: no code imports it
@@ -47,31 +47,30 @@ def base(tree: Path) -> str:
     return found or git(tree, "rev-parse", "HEAD").stdout.strip()
 
 
-def _outside(path: str, folder: str) -> bool:
-    return not (path + "/").startswith(folder.rstrip("/") + "/")
-
-
-def changes(tree: Path, start: str, records_dir: str, end: str = "") -> dict[str, str]:
-    """The files that the task changed since `start`, without its records: path -> A (added), D (deleted), or M.
-    Without `end`, the work copy as it is, also new files that git does not track; with `end`, only that commit."""
+def changes(tree: Path, start: str, own: Iterable[str], end: str = "") -> dict[str, str]:
+    """The files that the task changed since `start`, without its records (the folders `own`): path -> A (added),
+    D (deleted), or M. Without `end`, the work copy as it is, also new files that git does not track; with `end`,
+    only that commit."""
+    own = each(own)
     listed = names(tree, "diff", "--name-status", "--no-renames", start, *([end] if end else []))
     found = {listed[at + 1]: listed[at][:1] for at in range(0, len(listed) - 1, 2)}
     if not end:
         found.update({path: "A" for path in names(tree, "ls-files", "--others", "--exclude-standard")})
-    return {path: kind for path, kind in sorted(found.items()) if _outside(path, records_dir)}
+    return {path: kind for path, kind in sorted(found.items()) if outside(path, own)}
 
 
-def problems(team: Team, tree: Path, start: str, end: str = "") -> list[str]:
+def problems(team: Team, tree: Path, start: str, end: str = "", own: Iterable[str] = ()) -> list[str]:
     """Why the change of the work copy since `start` (or up to the commit `end`) is not a quick change, or [] when it
-    is one. The same rules hold for each person: an administrator who needs more makes a full task."""
-    changed = changes(tree, start, team.records_dir, end)
+    is one. `own`: the records folders of the task, which are no part of the change. The same rules hold for each
+    person: an administrator who needs more makes a full task."""
+    changed = changes(tree, start, own, end)
     found = [f"{path}: {'a new file' if kind == 'A' else 'a deleted file'}. A quick change only changes existing "
              "files" for path, kind in changed.items() if kind in "AD"]
     edited = [path for path, kind in changed.items() if kind not in "AD"]
     if not edited:
         return found
     locked = set(touches(edited, ADMIN_PATHS + team.risk_paths))
-    graph = core.Graph(tree, start)
+    graph = core.Graph(tree, start, team.record_roots)
     for path in edited:
         if path in locked:
             found.append(f"{path}: only an administrator changes it")
@@ -91,17 +90,19 @@ def _for_people(path: str) -> bool:
     return any(matches(path, item) for item in DOCS) and not any(matches(path, item) for item in TOOL_TEXT)
 
 
-def text_only(changed: Iterable[str], records_dir: str) -> bool:
-    """True when each changed file outside the records is text for people. No code reads such a file, and the person
-    reads all of the change in the preview: a quick task of only such files needs no review of another AI."""
-    files = [path for path in changed if _outside(path, records_dir)]
+def text_only(changed: Iterable[str], own: Iterable[str]) -> bool:
+    """True when each changed file outside the records of the task (the folders `own`) is text for people. No code
+    reads such a file, and the person reads all of the change in the preview: a quick task of only such files needs
+    no review of another AI."""
+    own = each(own)
+    files = [path for path in changed if outside(path, own)]
     return bool(files) and all(_for_people(path) for path in files)
 
 
 def needs_review(task: Task) -> bool:
     """True when the quick task needs the review of the akasha-reviewer agent: its change is more than text."""
     tree = Path(task.workcopy)
-    return not text_only(changes(tree, base(tree), task.records_dir), task.records_dir)
+    return not text_only(changes(tree, base(tree), own_records(task)), own_records(task))
 
 
 def reviewed(task: Task, now: str) -> bool:
@@ -110,11 +111,9 @@ def reviewed(task: Task, now: str) -> bool:
 
 
 def marked(team: Team, changed: list[str]) -> list[str]:
-    """The tasks that a pull request marks as quick: their records in the changed files have impact.md. A records
-    folder with a date ([work] records_date) names its task without the date."""
-    folder = team.records_dir.rstrip("/") + "/"
-    return sorted({task_of(path[len(folder):].split("/")[0]) for path in changed
-                   if path.startswith(folder) and path[len(folder):].count("/") == 1 and path.endswith("/" + IMPACT)})
+    """The tasks that a pull request marks as quick: their records in the changed files have impact.md. The records
+    are in [work] records before the landing and in the archive after it (task.placed)."""
+    return sorted({task for task, names in record_folders(team, changed).values() if IMPACT in names})
 
 
 def server(team: Team, root: Path, base: str, changed: list[str]) -> tuple[str, str] | None:
@@ -125,29 +124,40 @@ def server(team: Team, root: Path, base: str, changed: list[str]) -> tuple[str, 
     start = git(root, "merge-base", base, "HEAD").stdout.strip()
     if not start:
         return "FAIL", f"git cannot find where the pull request starts from {base}"
-    found = problems(team, root, start, "HEAD")
+    found = problems(team, root, start, "HEAD", folders_of(team, changed, tasks))
     if found:
         return "FAIL", (f"task {', '.join(tasks)} is marked quick ({IMPACT}), but its change is not a quick change: "
                         + "; ".join(found[:10]))
     return "PASS", ""
 
 
-def _diff(tree: Path, start: str, records_dir: str) -> str:
-    """The text of the change, without the records. The line ends do not count, as in the digest of a file."""
-    shown = git(tree, "-c", "core.quotePath=false", "diff", "--no-renames", "--no-color", "--no-ext-diff", start, "--",
-                ".", f":(exclude){records_dir.rstrip('/')}/**")
+def _diff(tree: Path, start: str, own: Iterable[str], end: str = "") -> str:
+    """The text of the change since `start`, without the records of the task (the folders `own`): of the work copy,
+    or up to the commit `end`. The line ends do not count, as in the digest of a file. The move of the records to
+    the archive changes nothing of it: both folders are records. The settings of git of a computer do not count
+    either: the server and each computer get the same text for the same change."""
+    shown = git(tree, "-c", "core.quotePath=false", "-c", "diff.algorithm=myers", "diff", "--no-renames",
+                "--no-color", "--no-ext-diff", "--no-textconv", "--full-index", "-U3", "--src-prefix=a/",
+                "--dst-prefix=b/", start, *([end] if end else []), "--",
+                ".", *(f":(exclude){folder.rstrip('/')}/**" for folder in each(own)))
     return shown.stdout.replace("\r\n", "\n")
+
+
+def change_digest(tree: Path, start: str, own: Iterable[str], impact: str, end: str = "") -> str:
+    """The digest of a change since `start` and of the text of impact.md, without a task object: the server and the
+    watch count it again from the pull request (evidence.py)."""
+    change = _diff(tree, start, own, end)
+    text = impact.replace("\r\n", "\n")
+    return hashlib.sha256(f"{change}\n--- impact.md ---\n{text}".encode()).hexdigest()[:12]
 
 
 def digest(task: Task) -> str:
     """The digest of the change and of impact.md, or "" before impact.md. The review and the approval hold it."""
     note = record(task, IMPACT)
-    if not task.workcopy or not note.is_file():
+    if not task.workcopy or not forms.written(note):
         return ""
     tree = Path(task.workcopy)
-    text = note.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
-    change = _diff(tree, base(tree), task.records_dir)
-    return hashlib.sha256(f"{change}\n--- impact.md ---\n{text}".encode()).hexdigest()[:12]
+    return change_digest(tree, base(tree), own_records(task), note.read_text(encoding="utf-8", errors="replace"))
 
 
 def preview_text(task: Task) -> str:
@@ -155,15 +165,15 @@ def preview_text(task: Task) -> str:
     tree = Path(task.workcopy)
     start = base(tree)
     impact = record(task, IMPACT).read_text(encoding="utf-8", errors="replace")
-    change = _diff(tree, start, task.records_dir)
+    change = _diff(tree, start, own_records(task))
     if len(change) > MOST:
         change = change[:MOST] + "\n…"
-    files = "".join(f"<li><code>{html.escape(path)}</code></li>" for path in changes(tree, start, task.records_dir))
-    return (f'<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="akasha-change" '
+    files = "".join(f"<li><code>{html.escape(path)}</code></li>" for path in changes(tree, start, own_records(task)))
+    return (f'<!doctype html><html><meta charset="utf-8"><meta name="akasha-change" '
             f'content="{digest(task)}"><title>{html.escape(task.title)}</title>'
             '<body style="font-family:sans-serif;max-width:960px;margin:32px auto;padding:0 16px;line-height:1.6">'
             f'<h1>{html.escape(task.title)}</h1>'
-            '<section id="akasha-decisions"><h2>경량 과업 · Quick change</h2>'
+            '<section id="akasha-decisions"><h2>Quick change</h2>'
             f'<pre style="white-space:pre-wrap">{html.escape(impact)}</pre></section>'
             f'<h2>Files</h2><ul>{files}</ul><h2>Change</h2>'
             '<pre style="background:#f6f8fa;padding:12px;overflow:auto;font-size:13px">'
@@ -182,7 +192,7 @@ def shown_change(task: Task) -> str:
 def missing(team: Team, task: Task) -> str:
     """What the quick task still needs before the landing, or "". The checks and the summary come after."""
     tree = Path(task.workcopy)
-    found = problems(team, tree, base(tree))
+    found = problems(team, tree, base(tree), own=own_records(task))
     if found:
         return ("this is not a quick change: " + "; ".join(found[:5]) + f". Run `akasha upgrade {task.id}`: the "
                 "task becomes a full task with a preview and a plan")

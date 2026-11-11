@@ -1,6 +1,6 @@
 {
   "name": "akasha",
-  "version": "1.1.5",
+  "version": "2.0.0",
   "description": "Akasha: a light team harness. Each person asks for a change and approves a preview; the AI plans, gets the plan reviewed by another AI, builds, checks, and lands it.",
   "author": {"name": "Daehyun Kim", "url": "https://github.com/Gruci"},
   "homepage": "https://github.com/Gruci/akasha-team-harness",
@@ -8,6 +8,7 @@
   "license": "MIT",
   "keywords": ["akasha", "team", "harness", "workflow", "claude-code", "codex"],
   "skills": ["./skills/akasha-build", "./skills/akasha-setup", "./skills/akasha-join", "./skills/akasha-retro"],
-  "agents": ["./agents/akasha-reviewer.md"],
+  "agents": ["./agents/akasha-reviewer.md", "./agents/akasha-preview.md", "./agents/akasha-planner.md",
+             "./agents/akasha-builder.md", "./agents/akasha-lander.md"],
   "hooks": "./.claude-plugin/hooks.json"
 }

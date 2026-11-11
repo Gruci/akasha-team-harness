@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from akasha import SOURCE, VERSION, source
+from akasha.guide import ARCHIVE, CORE
 
 FILES = ("AGENTS.md", ".codex/hooks.json")
 START, END = "<!-- akasha:start -->", "<!-- akasha:end -->"
@@ -28,19 +29,27 @@ This repository uses Akasha. Each change is an Akasha task. The command is `py -
 `pip install "{SOURCE}"`. The session start notice tells the tasks of this person and the open tasks of the team.
 {PRECEDENCE}
 
+The core:
+
+{CORE}
+
+The steps of a task with a preview:
+
 1. Ask the person only what changes the result and what you cannot decide from the code, the data, and the guides of
    the team: at most three questions. Decide the rest, and propose it in the preview. Run
    `akasha start "<title>" --scope <file patterns>`.
 2. Write the preview in the records folder of the task (`akasha status <task>` and the start tell where). It
+   is a form that `akasha start` wrote: fill it, and delete its first line. It
    specifies the change, and the task builds it as it is: the decisions, the look (an HTML mockup of the screen, or a
    diagram of the flow and the data), each value from data with its source, formula, value now, and check, and each
    rule with an example, marked as decided by the person or proposed by you. Step 2 of skills/akasha-build/SKILL.md
    in the plugin gives the form. Read the files of [guides] preview in akasha.toml first. Run `akasha preview <task>`
    and ask the person whether to build it like this, or what to change. When their own message approves it, in any language and without asking for a change, run
    `akasha approve <task>`: it records the words of the person that the hook kept. Never approve for the person.
-3. After the approval, do the rest without asking: write research.md and plan.md in the records folder. Ask a
+3. After the approval, do the rest without asking: fill the forms research.md and plan.md that `akasha approve`
+   wrote in the records folder, and delete the first line of each. Ask a
    separate reviewer to review the plan against the preview and the code, and repair the plan until it passes. The
-   reviewer judges each item R1 to R9 of agents/akasha-reviewer.md in the plugin, one row each
+   reviewer judges each item R1 to R10 of agents/akasha-reviewer.md in the plugin, one row each
    (`| R1 | PASS | <evidence> |`), and ends with `AKASHA-REVIEW: <task> <plan digest> PASS` or `CHANGES`
    (`akasha status <task>` shows the digest). A PASS mark without a passed row for each item counts as CHANGES.
    Without a reviewer agent, review the plan yourself and run `akasha review <task> --verdict pass`: the
@@ -48,8 +57,9 @@ This repository uses Akasha. Each change is an Akasha task. The command is `py -
 4. Build in the work copy of the task. Write a test for each example of the rules and each value of the preview,
    with the expected values of the preview. Never build the boxes or the marks of the preview into the screen. Run
    `akasha check <task>` and repair each failure.
-5. Write summary.md (why, what changed, how to undo it), run the check again, then `akasha land <task> --wait 540`
-   with a shell timeout of 10 minutes. Run it again while it says WAITING or DEPLOYING. Repair a FAILED or a CONFLICT,
+5. Write summary.md (why, what changed, how to undo it when a revert is not enough), run the check again, then
+   `akasha land <task> --wait 540` with a shell timeout of 10 minutes. Run it again while it says WAITING or
+   DEPLOYING. Repair a FAILED or a CONFLICT,
    and do what a BLOCKED says. When a BLOCKED says that an administrator approves a core change first, Akasha
    already asked the administrators: tell the person in one simple sentence that an administrator checks one part,
    land again later, and do not ask again with `akasha help`. Only an administrator changes akasha.toml, `.github/`,
@@ -58,7 +68,13 @@ This repository uses Akasha. Each change is an Akasha task. The command is `py -
    means the change is live, but the check of the team after the deployment failed: tell the person in simple words,
    run `akasha help <task> "<the check after the deployment failed>"`, and offer to undo the change with a new task.
 
-Never merge a pull request yourself, never force a push, and never change .akasha/state. If you cannot repair a
+{ARCHIVE}
+
+A long task fills the conversation. `akasha status <task> --brief` shows the task on one screen, and names a safe
+point where a new session loses nothing: that session runs `akasha status <task> --resume` first. Without a hook
+for the words of the person, the person approves in their own terminal: `akasha approve <task> --here`.
+
+Never merge a pull request yourself, never force a push, and never change .docs/state. If you cannot repair a
 problem after three tries, run `akasha help <task> "<what blocks you>"` and tell the person. A question that is not a
 change (for example about data or the server) goes to `akasha ask "<question>"`.
 {END}

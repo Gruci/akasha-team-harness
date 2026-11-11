@@ -3,3 +3,4 @@ extensions = [".java", ".kt"]
 tests = "./gradlew test"
 lint = "./gradlew check"
 ignore = [".gradle/", "build/"]
+manifests = ["build.gradle", "build.gradle.kts", "pom.xml"]

@@ -12,9 +12,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from akasha import checks, config, github, repo, quick, screen, version
+from akasha import checks, config, evidence, github, repo, quick, screen, version
 from akasha.config import HELP_LABEL, Team
-from akasha.task import parse_block
+from akasha.task import folders_of, parse_block
 
 EMPTY = "0" * 40
 
@@ -72,8 +72,11 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
     if task.kind == "agent" and task.approval.get("source") != "result":
         return f"pull request #{pull['number']} merged without an approved result"
     changed = repo.names(root, "diff", "--name-only", "--no-renames", f"{sha}^1", sha)
+    # The records folder comes from the files of the merge commit: the path in the block can be old, when the
+    # landing moved the records and the update of the pull request did not arrive
+    own = folders_of(team, changed, [task.id])
     if screen.is_no_screen(task):
-        found = screen.problems(team, changed, task.records_dir)
+        found = screen.problems(team, changed, own)
         if not screen.allowed(team, author):
             return (f"pull request #{pull['number']} is marked as a task without a screen, but @{author} is not an "
                     "administrator")
@@ -83,10 +86,13 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
             return f"pull request #{pull['number']} is a task without a screen, but {found[0]}"
     if not task.approval:
         return f"pull request #{pull['number']} merged without an approved preview"
-    text_only = task.kind == "quick" and quick.text_only(changed, team.records_dir)
+    text_only = task.kind == "quick" and quick.text_only(changed, own)
     if task.review.get("verdict") != "PASS" and not text_only:
         return f"pull request #{pull['number']} merged without a passed plan review"
-    locked = checks.touches(changed, checks.locked(team, author))
+    missing = _evidence(root, team, sha, changed, task, author)
+    if missing:
+        return f"pull request #{pull['number']} merged without its evidence: {missing}"
+    locked = checks.locked_files(team, author, changed, own)
     if locked:
         return f"pull request #{pull['number']} of @{author} changed {locked[0]}, which only an administrator changes"
     found = task.checks.get("core") or {}
@@ -94,6 +100,12 @@ def _reason(root: Path, slug: str, team: Team, sha: str) -> str:
         return (f"pull request #{pull['number']} of @{author} changed existing lines of {next(iter(found))}, which "
                 "other areas use, without an approval of an administrator")
     return ""
+
+
+def _evidence(root: Path, team: Team, sha: str, changed: list[str], task, author: str) -> str:
+    """Why the records in the merge commit do not hold the evidence of the task, or "". The block of the pull
+    request can say what the records do not: the server check reads the records, and so does the watch."""
+    return evidence.merged(team, root, sha, changed, task, author)
 
 
 def _issue(root: Path, slug: str, team: Team, title: str, text: str) -> None:

@@ -112,17 +112,23 @@ def touches(first: list[str], second: list[str]) -> list[str]:
             if _fixed(left).startswith(_fixed(right)) or _fixed(right).startswith(_fixed(left))]
 
 
-def overlaps(task: Task, changed: list[str], entries: list[Entry]) -> list[str]:
+def overlaps(task: Task, changed: list[str], entries: list[Entry], skip: tuple[str, ...] = ()) -> list[str]:
     """One line for each other open task that plans or changes the same files: its plan against this plan, and the
-    files that it changed already against this plan and against the files that this task changed."""
+    files that it changed already against this plan and against the files that this task changed. `skip`: the
+    folders of the records. Each task has its own records, so they are never the same files."""
     lines = []
     for entry in entries:
         other = entry.task
         if other.id == task.id or (task.number and entry.number == task.number):
             continue
         hits = touches(task.scope, other.scope)
-        hits += [path for path in entry.files if any(matches(path, item) for item in task.scope)]
+        hits += [path for path in entry.files if any(matches(path, item) for item in task.scope)
+                 and not any((path + "/").startswith(folder.rstrip("/") + "/") for folder in skip)]
         hits += [path for path in changed if path in entry.files or any(matches(path, item) for item in other.scope)]
+        # Two tasks that add or change the same definition: the one that merges later fails its check
+        mine = set(task.defs.get("adds", [])) | set(task.defs.get("changes", []))
+        hits += [f"the definition {key}" for key in sorted(mine & (set(other.defs.get("adds", []))
+                                                                  | set(other.defs.get("changes", []))))]
         if hits:
             step = "draft" if entry.draft else "landing"
             lines.append(f"#{entry.number} {other.title} (@{entry.person}, {step}): "

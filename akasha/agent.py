@@ -26,7 +26,7 @@ from pathlib import Path
 from akasha import approval, quick, repo
 from akasha.config import STATE_DIR, Team
 from akasha.repo import write_whole
-from akasha.task import SUMMARY, Task, record, records
+from akasha.task import SUMMARY, Task, own_records, record, records
 
 REQUEST = "request.md"
 PROMPT = STATE_DIR / "prompt.json"     # the last prompt of an agent session, as its hook saw it
@@ -77,7 +77,7 @@ def digest(task: Task) -> str:
     if not task.workcopy or not note.is_file():
         return ""
     tree = Path(task.workcopy)
-    change = quick._diff(tree, quick.base(tree), task.records_dir)
+    change = quick._diff(tree, quick.base(tree), own_records(task))
     text = note.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
     return hashlib.sha256(f"{change}\n--- summary.md ---\n{text}".encode()).hexdigest()[:12]
 
@@ -102,7 +102,7 @@ def missing(task: Task) -> str:
 def result_text(root: Path, task: Task) -> str:
     """The text for the person: the summary, the change at fixed commits, and the changed files."""
     tree = Path(task.workcopy)
-    files = list(quick.changes(tree, quick.base(tree), task.records_dir))
+    files = list(quick.changes(tree, quick.base(tree), own_records(task)))
     listed = "\n".join(f"- {path}" for path in files[:FILES_SHOWN])
     if len(files) > FILES_SHOWN:
         listed += f"\n- … {len(files) - FILES_SHOWN} more"
@@ -123,6 +123,6 @@ def show(root: Path, task: Task, session: str) -> str:
     now = digest(task)
     if not now:
         raise ValueError(f"write {records(task)}/{SUMMARY} first: the problem, the cause, what changed, what other "
-                         "areas it reaches, and how to undo it")
+                         "areas it reaches, and how to undo it when a revert is not enough")
     task.preview_sha, task.shown_at, task.shown_in, task.heard = now, time.time(), session, {}
     return result_text(root, task)

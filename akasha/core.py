@@ -6,6 +6,7 @@ users in the imports of Python, JavaScript, and TypeScript; in other languages o
 
 from __future__ import annotations
 
+import json
 import posixpath
 import re
 import subprocess
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from akasha.checks import matches
 from akasha.config import Team
-from akasha.repo import git, gh_json, names, origin
+from akasha.repo import git, gh_json, names, origin, paths, paths_at
 
 PY = (".py",)
 JS = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
@@ -66,12 +67,32 @@ def _texts(tree: Path, paths: list[str]) -> dict[str, str]:
     return texts
 
 
+def _aliases(tree: Path) -> list[tuple[str, list[str]]]:
+    """The import aliases of tsconfig.json and jsconfig.json at the top (compilerOptions.paths): the start of an
+    import -> the folders that it stands for. A file that Akasha cannot read gives none."""
+    found = []
+    for name in ("tsconfig.json", "jsconfig.json"):
+        try:
+            text = (tree / name).read_text(encoding="utf-8", errors="replace")
+            text = re.sub(r"/\*.*?\*/|^\s*//[^\n]*", "", text, flags=re.S | re.M)       # comments
+            options = json.loads(re.sub(r",(\s*[}\]])", r"\1", text)).get("compilerOptions") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        base = str(options.get("baseUrl") or ".")
+        for alias, targets in (options.get("paths") or {}).items():
+            if isinstance(targets, list) and alias.rstrip("*"):
+                found.append((alias.rstrip("*"), [posixpath.normpath(posixpath.join(base, str(target).rstrip("*")))
+                                                 for target in targets]))
+    return found
+
+
 class Graph:
     """Which files import each file. Imports by tests do not count: a test is no screen."""
 
-    def __init__(self, tree: Path, base: str) -> None:
-        listed = set(names(tree, "ls-files", "--cached", "--others", "--exclude-standard"))
-        known = listed | set(names(tree, "ls-tree", "-r", "--name-only", base))   # also files the task deleted
+    def __init__(self, tree: Path, base: str, skip: tuple[str, ...] = ()) -> None:
+        """`skip`: the folders of the records of the tasks. They hold no code, and the archive grows with each task."""
+        listed = set(paths(tree, skip, others=True))
+        known = listed | set(paths_at(tree, base, skip))                          # also files the task deleted
         self.exact: dict[str, str] = {}
         tails: dict[str, set[str]] = defaultdict(set)
         for path in known:
@@ -84,6 +105,7 @@ class Graph:
         unique = {tail: next(iter(paths)) for tail, paths in tails.items() if len(paths) == 1}
         self.tails = {tail: path for tail, path in unique.items() if "/" in tail}
         self.singles = {tail: path for tail, path in unique.items() if "/" not in tail}   # an alias or Python
+        self.aliases = _aliases(tree)
         self.users: dict[str, set[str]] = defaultdict(set)
         code = sorted(path for path in listed if path.endswith(PY + JS) and not TEST.search(path))
         for path, text in _texts(tree, code).items():
@@ -129,6 +151,12 @@ class Graph:
     def _script(self, path: str, spec: str) -> str | None:
         if spec.startswith("."):
             return self._find(_key(posixpath.normpath(posixpath.join(posixpath.dirname(path), spec))))
+        for start, folders in self.aliases:              # the paths of tsconfig.json: "@app/*" -> "src/app/*"
+            if spec.startswith(start):
+                for folder in folders:
+                    hit = self._find(_key(posixpath.normpath(posixpath.join(folder, spec[len(start):]))))
+                    if hit:
+                        return hit
         if "/" not in spec:
             return None                                      # a package, for example react
         first, rest = spec.split("/", 1)
@@ -175,16 +203,16 @@ def changed(team: Team, tree: Path, base: str) -> dict[str, str]:
             edited.append(parts[2])
     if not edited:
         return {}
-    graph = Graph(tree, base)
+    graph = Graph(tree, base, team.record_roots)
     return {path: why for path in edited if (why := reason(path, team, graph))}
 
 
 def planned(team: Team, tree: Path, scope: list[str]) -> dict[str, str]:
     """The core files among the files that the task plans to change."""
-    files = [path for path in names(tree, "ls-files") if any(matches(path, item) for item in scope)]
+    files = [path for path in paths(tree, team.record_roots) if any(matches(path, item) for item in scope)]
     if not files:
         return {}
-    graph = Graph(tree, "HEAD")
+    graph = Graph(tree, "HEAD", team.record_roots)
     return {path: why for path in files if (why := reason(path, team, graph))}
 
 

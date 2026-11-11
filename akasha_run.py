@@ -4,6 +4,9 @@ import sys
 from pathlib import Path
 
 if sys.version_info < (3, 11):
+    import os
+    if os.environ.get("AKASHA_KEPT_PYTHON"):
+        sys.exit(126)      # hook.sh kept the path of this Python, and it is too old now: hook.sh finds a newer one
     # hook.sh picks a newer Python. Where it did not run, the agent sees the problem at the start of the session
     reason = (f"Akasha needs Python 3.11 or higher, and this is Python {sys.version.split()[0]}. Ask the person to "
               "install a newer Python, then to restart the agent app.")

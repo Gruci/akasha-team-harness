@@ -13,13 +13,14 @@ from pathlib import Path
 
 from akasha import config, secrets, version
 from akasha.config import CONFIG_FILE, Check, Team
-from akasha.repo import GROUP, names, stop
+from akasha.repo import GROUP, git, names, stop
 
 TIMEOUT_SECONDS = 1800
 WINDOWS = os.name == "nt"
 PASSING = ("PASS", "NOT_NEEDED")         # NOT_NEEDED: the change touches no file that the check examines
 ADMIN_PATHS = (CONFIG_FILE, ".github/**", "CODEOWNERS", "docs/CODEOWNERS")    # the rules of Akasha, the GitHub files
 ADMIN_ONLY = "admin_only"                # the check that a teammate's task leaves the administrators' files alone
+FOLDERS = "folders"                      # the check that [work] records and archive stay as the team set them
 
 
 @dataclass
@@ -41,6 +42,37 @@ def locked(team: Team, me: str) -> tuple[str, ...]:
     code, and no person reviews the rest of a task: so the administrators maintain these files, and a person who
     keeps the own procedure of the repository changes them too."""
     return () if me and me in team.admins + team.own_procedure else ADMIN_PATHS + team.risk_paths
+
+
+def locked_files(team: Team, me: str, changed: list[str], own: tuple[str, ...] = ()) -> list[str]:
+    """The changed files that only an administrator changes: the files of `locked`, and the archive of the other
+    tasks. `own`: the records folders of this task, also in the archive. The archive is the record of what the team
+    merged: a task adds its own folder, and changes no other."""
+    patterns = locked(team, me)
+    if not patterns:
+        return []
+    top = team.archive_dir.rstrip("/") + "/"
+    return [path for path in changed if any(matches(path, item) for item in patterns)
+            or (path.startswith(top) and not any((path + "/").startswith(folder.rstrip("/") + "/") for folder in own))]
+
+
+def folders_problem(team: Team, root: Path, base: str) -> str:
+    """Why the change cannot move the folders of the records, or "". `team`: the rules of the base. [work] records
+    and archive are set once, when Akasha comes into the repository. After a change of the archive folder, each new
+    work copy would hold the old archive again, and Akasha would need a list of the old folders to leave them out.
+    So Akasha has no way to move them."""
+    if config.shown(root, base) is None:
+        return ""                                      # the base has no Akasha yet: this change brings it in
+    try:
+        new = config.load(root)
+    except (config.ConfigError, OSError):
+        return ""
+    for key, old, now in (("records", team.records_dir, new.records_dir), ("archive", team.archive_dir, new.archive_dir)):
+        if old != now:
+            return (f"[work] {key} is {old} in the team rules, and this change makes it {now}. The folders of the "
+                    "records are set once, when Akasha comes into the repository: Akasha has no way to move "
+                    f"them. Put {key} = \"{old}\" back")
+    return ""
 
 
 def touches(files: list[str], patterns: tuple[str, ...]) -> list[str]:
@@ -136,7 +168,24 @@ def _head_version(root: Path) -> str:
         return ""
 
 
-def ci(team: Team, root: Path, base: str) -> Result:
+def _leave_archive_out(team: Team, root: Path, changed: list[str]) -> str:
+    """Before the checks of the team run on the server: take the archive of the other tasks out of the checkout, so
+    that no checker of the team reads the records of each task that ever merged. The records of this pull request
+    stay. Return a problem, or "". The checkout of the server fetched all files before: this saves no download."""
+    from akasha import work
+    from akasha.task import record_folders
+    top = team.archive_dir.rstrip("/")
+    if git(root, "cat-file", "-e", f"HEAD:{top}").returncode:
+        return ""                                      # no archive yet
+    own = tuple(sorted(folder for folder in record_folders(team, changed) if folder.startswith(top + "/")))
+    try:
+        work.sparse(root, top, own)
+    except RuntimeError as error:
+        return f"{error}. The checks of the team did not run"
+    return work.restore(root)
+
+
+def ci(team: Team, root: Path, base: str, author: str = "", head: str = "") -> Result:
     """The server check: the checks on the files that the pull request changes. The setup command runs first. A
     pull request of a quick task also passes the quick check: its change must be a quick change (quick.py). A pull
     request of a task without a screen passes the screen check: its change touches no screen file (screen.py). The
@@ -145,6 +194,9 @@ def ci(team: Team, root: Path, base: str) -> Result:
     if found:
         return Result({version.CHECK: "FAIL"}, {version.CHECK: found})
     changed = names(root, "diff", "--name-only", "--no-renames", f"{base}...HEAD")
+    found = folders_problem(team, root, base) or _leave_archive_out(team, root, changed)
+    if found:
+        return Result({FOLDERS: "FAIL"}, {FOLDERS: found})
     if team.setup:
         status, detail = shell(team.setup, root)
         if status != "PASS":
@@ -157,4 +209,18 @@ def ci(team: Team, root: Path, base: str) -> Result:
     found = screen.server(team, changed, root)
     if found:
         result.status[screen.CHECK], result.details[screen.CHECK] = found
+    from akasha import consistency, evidence      # they use this module
+    result.status[evidence.CHECK], result.details[evidence.CHECK] = evidence.server(team, root, base, changed,
+                                                                                    author, head)
+    start = git(root, "merge-base", base, "HEAD").stdout.strip()
+    if start and config.shown(root, base) is not None:
+        # The same function as `akasha check`. The plan comes from the records of the task of the pull request
+        plan, is_task = evidence.plan_of(team, root, base, changed, head)
+        try:
+            status, why, notes = consistency.examine(team, root, start, None, plan, candidates=is_task,
+                                                     admin=author.lower() in team.admins + team.own_procedure)
+        except (RuntimeError, OSError) as error:
+            status, why, notes = "FAIL", f"Akasha could not compare the code: {error}", []
+        result.status[consistency.CHECK] = status
+        result.details[consistency.CHECK] = "\n".join([why, *notes]).strip()
     return result

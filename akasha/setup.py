@@ -8,9 +8,10 @@ import shlex
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-from akasha import VERSION, checks, claude, codex, config, github, langs, repo, version
+from akasha import VERSION, checks, claude, codex, config, github, langs, repo, version, work
 from akasha.config import CONFIG_FILE, STATE_DIR
 from akasha.task import all_local
 
@@ -21,11 +22,40 @@ HOOK_SCRIPT = Path(__file__).resolve().parents[1] / "hook.sh"      # in the plug
 PERSONAL = (".claude/settings.local.json", "CLAUDE.local.md")      # the own agent settings of each person: not in git
 
 
-def first_config(root: Path) -> str:
-    """The first akasha.toml: the person who sets up Akasha is the administrator, and the usual commands of the main
+@dataclass(frozen=True)
+class Choice:
+    """The answers of an administrator at the first setup."""
+    new: bool = False                      # a repository that starts now: the definitions and the structure guide
+    stack: tuple[str, ...] = ()            # the languages, for example ("python", "typescript")
+    areas: str = ""                        # the folder of one area, for example "domains/*"
+    entries: tuple[str, ...] = ()          # the entry files of an area, for example ("api.py", "index.ts")
+
+
+ARCHITECTURE = "docs/architecture.md"
+TEMPLATES = Path(__file__).parent / "templates"
+
+
+def _checks(packs: list) -> tuple[list[str], list[str]]:
+    """The required checks of the packs and their tables: the tests and the lint of each language, each with the
+    files of that language in only_when. A pull request without a file of a language does not run its checks; the
+    first file of the language starts them."""
+    required, tables = [], []
+    for pack in packs:
+        for kind, command in (("tests", pack.tests), ("lint", pack.lint)):
+            if not command:
+                continue
+            name = kind if len(packs) == 1 else f"{pack.name}-{kind}"
+            required.append(name)
+            only = ", ".join(f'"{item}"' for item in pack.patterns)
+            tables += ["", f"[checks.{name}]", f'command = "{command}"', f"only_when = [{only}]"]
+    return required, tables
+
+
+def first_config(root: Path, choice: Choice = Choice()) -> str:
+    """The first akasha.toml: the person who sets up Akasha is the administrator, and the usual commands of each
     language of the repository are the checks. The administrator corrects them before the merge."""
     me = repo.me(root) if repo.origin(root) else ""
-    packs = langs.detect(root)
+    packs = langs.chosen(root, choice.stack)
     pack = packs[0] if packs else None
     admins = f'"{me}"' if me else ""
     folder = config.WORK_DIR                                     # Claude Code enters a work copy there without asking
@@ -35,25 +65,48 @@ def first_config(root: Path) -> str:
              "own_procedure = []      # GitHub names that keep the own procedure of the repository outside Akasha",
              f'version = "{VERSION}"' + " " * max(1, 24 - len(f'version = "{VERSION}"')) + "# the Akasha of the team: "
              "each computer, the CI, and the watch run only this version. An administrator changes it", "",
-             "[risk]", 'paths = []              # for example ["db/**", "deploy/**"]: only an administrator changes '
-             "them", "",
-             "[checks]"]
-    required = ["secrets"] + (["tests"] if pack and pack.tests else [])
-    lines.append("required = [" + ", ".join(f'"{name}"' for name in required) + "]")
+             "[risk]"]
+    # The standard of a new repository is not for a task to change: the structure guide, and the rules of the lint
+    kept = [ARCHITECTURE, *(item for each in packs for item in each.rules)] if choice.new else []
+    lines += ["paths = [" + ", ".join(f'"{item}"' for item in kept) + "]" + " " * (3 if kept else 14)
+              + '# for example ["db/**", "deploy/**"]: only an administrator changes them', "", "[checks]"]
+    named, tables = _checks(packs)
+    lines.append("required = [" + ", ".join(f'"{name}"' for name in ["secrets", *named]) + "]")
     if pack and pack.setup:
         lines.append(f'# setup = "{pack.setup}"    # prepares each new work copy, and runs in the check of Akasha')
-    if pack and pack.tests:
-        lines += ["", "[checks.tests]", f'command = "{pack.tests}"']
-    lines += ["", "[ci]", '# required = ["build"]   # the checks of your own CI that GitHub must see pass. Without it, '
-              "Akasha adds its own check", "", "[guides]",
-              '# preview = ["docs/design.md"]       # team files that the AI reads before the preview',
-              '# plan = ["docs/architecture.md"]    # ... before the plan, and the AI that checks the plan reads them '
-              "too", "",
-              "[work]", f'folder = "{folder}"' + " " * max(1, 22 - len(folder)) + "# the work copies of the tasks: a "
-              "folder that git ignores",
-              f'branch_prefix = "{config.BRANCH_PREFIX}"',
-              f'records = "{config.RECORDS_DIR}"     # the preview, the plan, and the summary of each task go into git '
-              "here: choose a folder that the own checkers of the team skip", ""]
+    lines += tables
+    lines += ["", "[ci]", '# required = ["build"]   # the checks of your own CI that GitHub must see pass, beside '
+              "the check of Akasha", "", "[guides]",
+              '# preview = ["docs/design.md"]       # team files that the AI reads before the preview']
+    if choice.new:
+        lines += [f'plan = ["{ARCHITECTURE}"]      # the AI reads the structure guide before each plan',
+                  f'review = ["{ARCHITECTURE}"]    # and the AI that checks the plan judges the plan against it', "",
+                  "[definitions]",
+                  "on = true               # each business value and each feature for the outside has one "
+                  "meaning: akasha.definitions.toml", ""]
+        entries = ", ".join(f'"{choice.areas}/{name}"' for name in choice.entries)
+        if choice.areas and choice.entries:
+            lines += ["[core]", f'areas = ["{choice.areas}"]', "", "[boundaries.areas]",
+                      f'private = ["{choice.areas}/**"]   # the files of an area', f"public = [{entries}]"
+                      "   # are open to the outside only through these entries", ""]
+        else:
+            lines += ["# Answer with the administrator: which folder is one area, and which file is its entry? Then",
+                      '# [core]', '# areas = ["domains/*"]', "# [boundaries.areas]",
+                      '# private = ["domains/*/**"]', '# public = ["domains/*/api.py"]', ""]
+        lines += ['# [pins]', '# policy = "all"        # each version of a library and of a base image is fixed, '
+                  "once the package tool is chosen", ""]
+    else:
+        lines += ['# plan = ["docs/architecture.md"]    # ... before the plan, and the AI that checks the plan '
+                  "reads them too", ""]
+    lines += [
+        "[work]", f'folder = "{folder}"' + " " * max(1, 22 - len(folder)) + "# the work copies of the tasks: a "
+        "folder that git ignores",
+        f'branch_prefix = "{config.BRANCH_PREFIX}"',
+        f'records = "{config.RECORDS_DIR}"     # the records of a task in work: the preview, the plan, the '
+        "summary. They are in the branch of the task",
+        f'archive = "{config.ARCHIVE_DIR}"   # the landing moves the records of a merged task here, and they go '
+        "into git. Choose both folders now: Akasha refuses a later change. The own checkers of the team skip "
+        "them", ""]
     return "\n".join(lines)
 
 
@@ -74,14 +127,85 @@ def _ignore(root: Path, team: config.Team) -> bool:
     return bool(missing)
 
 
-def write_files(root: Path) -> list[str]:
+def record_notes(root: Path, team: config.Team) -> list[str]:
+    """What stops the records of the tasks in this repository, with the fix: a rule of .gitignore that hides them
+    from git, and a build of Docker that takes them in."""
+    found = []
+    for key, folder in (("records", team.records_dir), ("archive", team.archive_dir)):
+        if _ignored(root, f"{folder}/a-task/plan.md"):
+            found.append(f".gitignore hides [work] {key} ({folder}) from git, so the records of the tasks would not "
+                         f"go into git. Add the line `!/{folder}/` after the rule that hides it (git names the rule: "
+                         f"git check-ignore -v {folder}/a-task/plan.md), or choose another folder")
+    ignore = root / ".dockerignore"
+    if ignore.is_file():
+        lines = {line.strip().strip("/") for line in ignore.read_text(encoding="utf-8", errors="replace").splitlines()}
+        tops = {folder.split("/")[0] for folder in (team.records_dir, team.archive_dir, STATE_DIR.as_posix())}
+        missing = sorted(top for top in tops if top not in lines and f"{top}/**" not in lines)
+        if missing:
+            found.append(f"note: .dockerignore does not leave out {', '.join(missing)}, so a build that copies the "
+                         "repository takes the records of the tasks and the state of Akasha into the image. Add "
+                         + ", ".join(f"`{top}/`" for top in missing))
+    return found
+
+
+def _archive_ignore(root: Path, team: config.Team) -> bool:
+    """Write <archive>/.ignore once: a search tool that reads .ignore files (ripgrep) skips the archive in a
+    checkout that holds it, for example where a person turned the sparse rules off. Only the setup makes this file:
+    a file that each landing changed would make the landings of one day conflict. True when it wrote it."""
+    name = f"{team.archive_dir}/.ignore"
+    if repo.git(root, "cat-file", "-e", f"HEAD:{name}").returncode == 0 or (root / name).is_file():
+        return False
+    (root / name).parent.mkdir(parents=True, exist_ok=True)
+    (root / name).write_text("# Akasha: the records of merged tasks are no input of a new task\n*\n", encoding="utf-8")
+    if repo.git(root, "add", "--sparse", "--", name).returncode:      # the checkout can leave the archive out
+        repo.git(root, "add", "--", name)
+    return True
+
+
+def _standard(root: Path, choice: Choice) -> list[str]:
+    """The files of a repository that starts now: the empty list of the definitions, with a correct first example
+    in its head, and the structure guide from its template. The AI writes no sentence of the guide: the rules are
+    fixed text, and the administrator answers the blanks. Return the files that it wrote."""
+    from akasha import definitions
+    wrote = []
+    listed = definitions.place(root)
+    if not listed.is_file():
+        listed.write_text(definitions.HEAD, encoding="utf-8")
+        wrote.append(listed.relative_to(root).as_posix())
+    guide = root / ARCHITECTURE
+    if not guide.is_file():
+        card = (TEMPLATES / "structure.md").read_text(encoding="utf-8")
+        rules = card.split("\n\n", 2)[2].split("\n\nSources:")[0]
+        entries = ", ".join(f"`{choice.areas}/{name}`" for name in choice.entries)
+        text = (TEMPLATES / "architecture.md").read_text(encoding="utf-8").format(
+            card=rules, areas=f"`{choice.areas}`" if choice.areas else "TODO", entries=entries or "TODO")
+        guide.parent.mkdir(parents=True, exist_ok=True)
+        guide.write_text(text, encoding="utf-8")
+        wrote.append(ARCHITECTURE)
+    return wrote
+
+
+def open_answers(root: Path) -> int:
+    """The blanks of the structure guide that still wait for an administrator."""
+    try:
+        return (root / ARCHITECTURE).read_text(encoding="utf-8", errors="replace").count("TODO")
+    except OSError:
+        return 0
+
+
+def write_files(root: Path, choice: Choice = Choice()) -> list[str]:
     """Write the files of Akasha into the checkout, at the version of the team. Return the files that changed, and the
     problems. Only an empty version takes this Akasha: an administrator changes the version of the team by hand."""
     changed = []
     path = config.place(root)
     if not path.is_file():
-        path.write_text(first_config(root), encoding="utf-8")
+        path.write_text(first_config(root, choice), encoding="utf-8")
         changed.append(path.relative_to(root).as_posix())
+        if choice.new:
+            changed += _standard(root, choice)
+    elif choice.new or choice.stack:
+        raise ValueError(f"{path.name} is there already: --new and --stack are for the first setup. Change the "
+                         "rules of the team in a task of an administrator")
     team = config.load(root)
     if not team.version:                    # an akasha.toml of Akasha 1.1.2 or older: this Akasha is the first pin
         config.set_value(root, "team", "version", VERSION)
@@ -89,6 +213,8 @@ def write_files(root: Path) -> list[str]:
         team = config.load(root)
     if _ignore(root, team):
         changed.append(".gitignore")
+    if _archive_ignore(root, team):
+        changed.append(f"{team.archive_dir}/.ignore")
     for name, text in github.workflows(team).items():
         target = root / name
         if not target.is_file() or target.read_text(encoding="utf-8") != text:
@@ -103,7 +229,7 @@ def write_files(root: Path) -> list[str]:
     return changed + codex.write(root, team.version) + claude.write(root, team.version)
 
 
-def run(root: Path, apply: bool = False) -> list[str]:
+def run(root: Path, apply: bool = False, choice: Choice = Choice()) -> list[str]:
     branch = repo.default_branch(root)
     if repo.origin(root) and not config.place(root).is_file():
         repo.fetch(root, branch)
@@ -124,7 +250,10 @@ def run(root: Path, apply: bool = False) -> list[str]:
                       "them. For protection before each merge, move to GitHub Pro or Team, or make the repository "
                       "public, then run `akasha setup --apply` again."))
         report += [f"GitHub: {item}" for item in problems]
-    changed = write_files(root)
+    first = not config.place(root).is_file()
+    changed = write_files(root, choice)
+    if first and choice.new:
+        report += _new_notes(root, choice)
     if not apply and repo.origin(root) and config.load(root).server_rules != "akasha" and \
             github.protected(root, config.load(root)) is False:
         # Until an administrator turns the protection on, nothing on GitHub stops a merge: Akasha and the watch do
@@ -134,6 +263,20 @@ def run(root: Path, apply: bool = False) -> list[str]:
                       "watch reports a change that went around it. `akasha setup --apply` turns the protection on "
                       "where the plan of GitHub allows it.")
     report += [f"wrote {name}" for name in changed] or ["the files of Akasha are up to date"]
+    report += record_notes(root, config.load(root))
+    team = config.load(root)
+    if not team.pins_policy:                          # an administrator answers once: [pins] policy
+        found = pin_listings(root, team)
+        if any(item.floating or item.unread for item in found):
+            report += [f"versions — {item.line}" for item in found]
+            report.append("versions — nothing fixes these versions: the same commit can install other things "
+                          "on another day, and a deployment that goes back installs other versions than "
+                          "before. Ask the administrator, and write the answer into akasha.toml: [pins] policy "
+                          "= \"observe\" (known, and left), \"new\" (what is there stays, and no change adds "
+                          "more), or \"all\" (each one is fixed; a raise of a version is then a task). A "
+                          "library that others install keeps its ranges: choose \"observe\" there")
+    note = work.leave_out(repo.main_root(root) or root, config.load(root).archive_dir)
+    report += [note] if note else []
     if wanted != VERSION:
         report.append(f"The team uses Akasha {wanted}, and this computer runs {VERSION}: the files pin {wanted}, and "
                       f"the workflows and the agent instructions (AGENTS.md, CLAUDE.md, .codex/hooks.json) come from "
@@ -148,6 +291,42 @@ def run(root: Path, apply: bool = False) -> list[str]:
         report.append(NEXT_STEPS if not apply else "Next: commit these files on a new branch, open a pull request, "
                       "wait for its checks, and merge it.")
     return report
+
+
+def pin_listings(root: Path, team: config.Team) -> list:
+    """The lists of libraries and the Dockerfiles of the checkout, with what floats in each (pins.py)."""
+    from akasha import pins
+
+    def read(path: str) -> str | None:
+        try:
+            return (root / path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+    return pins.observe(repo.paths(root, team.record_roots + (team.work_dir,), others=True), read)
+
+
+def _new_notes(root: Path, choice: Choice) -> list[str]:
+    """What the administrator of a repository that starts now still answers."""
+    packs = langs.chosen(root, choice.stack)
+    notes = [f"new — {ARCHITECTURE} holds the rules of the structure and {open_answers(root)} blanks (TODO). Ask "
+             "the administrator each one, and write the answers there: the AI writes no rule of its own. Only an "
+             "administrator changes this file later"]
+    if not (choice.areas and choice.entries):
+        notes.append("new — the boundaries are not on yet: answer which folder is one area and which file is its "
+                     "entry ([core] areas, [boundaries.areas]), or run the setup with --areas and --entries")
+    if any(pack.name == "typescript" for pack in packs):
+        notes.append("new — the lint of TypeScript needs a config of ESLint in the repository. Propose to the "
+                     "administrator: @typescript-eslint/naming-convention, react/jsx-handler-names, and "
+                     "complexity, in eslint.config.*")
+    if any(pack.name == "python" for pack in packs):
+        notes.append("new — the lint of Python is `ruff check --extend-select N` (the names). Ask whether the "
+                     "team also wants the rule of complexity (C901): its limit is of the team, in ruff.toml")
+    if not packs:
+        notes.append("new — Akasha found no language. Name it: `akasha setup --new --stack python,typescript`, "
+                     "else the repository starts without a test and a lint as required checks")
+    notes.append("new — the first task that adds a library also adds the lock of its package tool. Propose "
+                 "[pins] policy = \"all\" once the tool is chosen")
+    return notes
 
 
 def _tool(command: str) -> str:
@@ -261,7 +440,43 @@ def doctor(root: Path) -> list[tuple[bool, str]]:
     for name in team.required_checks:
         ready = _check_ready(root, name, team.checks.get(name), "join" in team.guides)
         found += [ready] if ready else []
-    if slug and github.is_admin(root):
+    found += [(note.startswith("note:"), note) for note in record_notes(root, team)]
+    main = repo.main_root(root) or root
+    note = work.leave_out(main, team.archive_dir)     # a checkout that nobody set up leaves the archive out now
+    if note:
+        found.append((True, f"note: {note}"))
+    elif not work.is_sparse(main) and repo.git(main, "cat-file", "-e", f"HEAD:{team.archive_dir}").returncode == 0:
+        found.append((True, f"note: this checkout holds the archive of the merged tasks ({team.archive_dir}): each "
+                            "search of a session finds their records. To leave it out: git sparse-checkout set "
+                            f"--no-cone '/*' '!/{team.archive_dir}/'"))
+    admin = bool(slug) and github.is_admin(root)
+    if admin:
         problems = github.status(root)
         found += [(False, f"server: {item}") for item in problems] or [(True, "server rules of the team")]
+    if slug and has_gh:                               # a notice, not a problem: each person sees what holds a merge
+        guarded = github.protected(root, team)
+        if guarded is True:
+            found.append((True, f"GitHub stops a merge into {branch} before the checks of the team pass"))
+        elif guarded is False:
+            watch = ", and the watch reports a merge that went around them" if team.server_rules == "akasha" else ""
+            found.append((True, f"note: GitHub does not protect {branch}. The rules hold for a merge through "
+                                f"`akasha land`{watch}. Two computers that merge at the same moment can merge the "
+                                "second task without its checks on the first: the line of the landings makes it "
+                                "rare, and only the protection of GitHub stops it"))
+    blanks = open_answers(root)
+    if blanks and ARCHITECTURE in team.guides.get("plan", ()):
+        found.append((True, f"note: {ARCHITECTURE} has {blanks} blanks (TODO) that wait for an administrator: "
+                            "the AI follows the structure guide, and has nothing to follow there"))
+    from akasha import report
+    tracked = repo.paths(root, team.record_roots + (team.work_dir,))
+    found += [(True, f"note: {line.removeprefix('observed — ')}") for line in report.unchecked(team, tracked)]
+    if not team.pins_policy:                          # each person sees it, until an administrator answered
+        from akasha import pins
+        said = pins.notice(pin_listings(root, team))
+        if said:
+            found.append((True, f"note: {said}"))
+    if admin and team.required_checks == ("secrets",):
+        found.append((True, "note: the only required check is secrets. Put the tests, the lint, and the type check of "
+                            f"the team in [checks] required of {CONFIG_FILE}: then each person and each agent engine "
+                            "runs the same checks, on the computer and on the server"))
     return found

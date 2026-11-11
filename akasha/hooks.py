@@ -12,17 +12,22 @@ import re
 import shlex
 import sys
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
 from akasha import agent, approval, board, checks, config, flow, repo, review, secrets, trace, version
 from akasha.checks import matches
-from akasha.guard import check_command, check_edit, folders
+from akasha.guard import check_command, check_edit, folders, harmless
 from akasha.task import Task, all_local, records
 
 SHELL_TOOLS = ("Bash", "PowerShell", "shell", "exec_command", "local_shell")
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch")
-_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update) File: (.+)$", re.M)
+# Each file that a patch changes: it adds, updates, or deletes a file, and it can move the updated file
+_PATCH_FILE = re.compile(r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$", re.M)
+UNREAD_PATCH = ("Akasha stopped this patch: it could not read the files of the patch. Name each file in a line "
+                "`*** Add File: <path>`, `*** Update File: <path>`, `*** Delete File: <path>`, or "
+                "`*** Move to: <path>`.")
 NETWORK_SECONDS = 5
 TIDY_SECONDS = 8
 SESSION_SECONDS = 10
@@ -32,11 +37,14 @@ UPDATE = "/plugin marketplace update akasha, then /plugin update akasha@akasha, 
 # Commands that the agent engine runs without a permission prompt, with the options that each one may have: they
 # change only the task of this person. `check --ci --config`, `resume --force`, and the others ask the person first.
 SAFE_COMMANDS: dict[str, tuple[str, ...]] = {
-    "start": ("--name", "--scope", "--quick", "--no-screen"), "preview": ("--text", "--no-open"), "approve": (),
-    "status": ("--review",),
+    "start": ("--name", "--scope", "--quick", "--no-screen"), "preview": ("--text", "--no-open", "--check"),
+    "approve": (),
+    "status": ("--review", "--resume", "--brief"),
     "upgrade": (), "split": ("--scope",), "join": ("--keep",),
     "check": ("--only",), "land": ("--wait",), "result": (), "board": ("--scope",), "help": (), "ask": (),
-    "handoff": (), "resume": (), "tidy": (), "doctor": (), "version": (), "retro": ()}
+    "handoff": (), "resume": (), "tidy": (), "doctor": (), "version": (), "retro": (),
+    # They only read the code
+    "map": ("--parts", "--addresses", "--definitions", "--report"), "find": (), "names": ()}
 
 
 def _payload() -> dict:
@@ -50,10 +58,17 @@ def _payload() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _line(tool_input: dict) -> str:
+    """The command line of a shell tool: one text, or its words."""
+    line = tool_input.get("command") or tool_input.get("cmd") or ""
+    return " ".join(str(word) for word in line) if isinstance(line, list) else str(line)
+
+
 def _edited(tool: str, tool_input: dict, cwd: Path) -> list[Path]:
     if tool == "apply_patch":
-        text = tool_input.get("input") or tool_input.get("command") or ""
-        names = _PATCH_FILE.findall(text if isinstance(text, str) else "")
+        text = tool_input.get("input") or tool_input.get("command") or ""      # one text, or the words of a command
+        text = "\n".join(str(item) for item in text) if isinstance(text, (list, tuple)) else str(text)
+        names = [name.strip() for name in _PATCH_FILE.findall(text)]
     else:
         names = [tool_input.get("file_path") or tool_input.get("notebook_path") or ""]
     return [(cwd / name).resolve() if not Path(name).is_absolute() else Path(name) for name in names if name]
@@ -99,6 +114,9 @@ def _team_lines(root: Path) -> list[str]:
     names = {"join": "for a new teammate", "preview": "before the preview", "plan": "before the plan",
              "build": "while you build", "review": "for the AI that checks the plan"}
     lines = [f"[AKASHA] Team guide {names[step]}: {', '.join(files)}" for step, files in team.guides.items()]
+    # No map at the start of a session: the first one takes seconds. `akasha start` shows the map of its scope
+    lines.append("[AKASHA] Before new code: `akasha find <words>` searches the names and the descriptions of the "
+                 "code that the repository has, and `akasha map <folder>` shows each public name of a folder.")
     differs = version.mismatch(team.version, root=root)
     if differs:
         lines.append(f"[AKASHA] {differs} Tell the person.")
@@ -229,8 +247,22 @@ def session_start(root: Path, session: str = "") -> int:
     lines += _in_time(lambda: [f"[AKASHA] {line}" for line in flow.tidy(root, timeout=TIDY_SECONDS)], TIDY_SECONDS,
                       "[AKASHA] GitHub was slow: Akasha did not look for merged tasks. `akasha tidy` does it.")
     for task in all_local(root):
-        if task.status not in ("merged", "closed") or task.checks.get("merge"):
+        if task.status in ("merged", "closed") and not task.checks.get("merge"):
+            continue
+        if session and task.session == session:
             lines.append(f"[AKASHA] Your task {task.id} ({task.title}): {_step(task, session)}")
+        elif not session:                             # an engine that names no session: as before
+            lines.append(f"[AKASHA] Your task {task.id} ({task.title}): {_step(task, session)}")
+        else:
+            # A task of another session, or of no session: this session does not take it by starting. It gets no
+            # next step and no `show it again`: two sessions would work on one task
+            minutes = int((time.time() - task.active_at) // 60) if task.active_at else None
+            whose = (f"another session works on it (last activity {minutes} minutes ago)" if task.session and
+                     minutes is not None else "another session holds it" if task.session else
+                     "no session holds it")
+            lines.append(f"[AKASHA] Task {task.id} ({task.title}) is on this computer, and {whose}. It is not the "
+                         "work of this session. Only when the person asks to continue it here: `akasha status "
+                         f"{task.id} --resume`.")
     lines += _in_time(lambda: _board_lines(root), SESSION_SECONDS,
                       "[AKASHA] GitHub was slow: the board of the team is not shown. `akasha board` shows it.")
     print("\n".join(lines))
@@ -276,17 +308,21 @@ def before_tool(root: Path, cwd: Path, tool: str, tool_input: dict, here: bool =
     folder and the tool acts on this repository."""
     reason, line = None, ""
     if tool in SHELL_TOOLS:
-        line = tool_input.get("command") or tool_input.get("cmd") or ""
-        line = " ".join(line) if isinstance(line, list) else str(line)
+        line = _line(tool_input)
         reason = check_command(line, cwd, root, git_only=not here, own=_own(root))
         if here and session and ("akasha_run.py" in line or "-m akasha" in line):
             approval.note_session(root, session, line)    # the Akasha command reads its session from here
+            flow.touch(root, all_local(root), session, line=line)
     elif tool in EDIT_TOOLS:
         tasks = all_local(root)
         set_up = config.on_server(root, repo.default_branch(root))
         own, locked = _own(root), _locked(root)
-        reason = next((found for path in _edited(tool, tool_input, cwd)
-                       if (found := check_edit(path, root, tasks, set_up, flow.gate, own, locked))), None)
+        paths = _edited(tool, tool_input, cwd)
+        reason = UNREAD_PATCH if tool == "apply_patch" and set_up and not paths else next(
+            (found for path in paths if (found := check_edit(path, root, tasks, set_up, flow.gate, own, locked,
+                                                              session))), None)
+        if not reason and session:
+            flow.touch(root, tasks, session, paths=paths)
     if reason:
         trace.note(root, "blocked", tool=tool, reason=reason[:300])
         print(reason, file=sys.stderr)
@@ -363,8 +399,7 @@ def _targets(cwd: Path, tool: str, tool_input: dict) -> list[Path]:
     if tool in EDIT_TOOLS:
         return [path.parent for path in _edited(tool, tool_input, cwd)]
     if tool in SHELL_TOOLS:
-        line = tool_input.get("command") or tool_input.get("cmd") or ""
-        return folders(" ".join(line) if isinstance(line, list) else str(line), cwd)
+        return folders(_line(tool_input), cwd)
     return []
 
 
@@ -384,9 +419,21 @@ def _other_roots(root: Path | None, cwd: Path, tool: str, tool_input: dict) -> l
 def main(agent: str, event: str) -> int:
     payload = _payload()
     cwd = Path(str(payload.get("cwd") or Path.cwd()))
-    root = repo.main_root(cwd)
     tool = str(payload.get("tool_name") or "")
     tool_input = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
+    if event == "PreToolUse" and tool in SHELL_TOOLS and harmless(_line(tool_input)):
+        return 0                       # no rule can stop this command: the hook starts no git for it
+    # A hook around a tool reads the default branch and the team config several times: once is enough. The other
+    # hooks can fetch, and then read the rules again
+    config.memo(event in ("PreToolUse", "PostToolUse"))
+    try:
+        return _run(agent, event, payload, cwd, tool, tool_input)
+    finally:
+        config.memo(False)
+
+
+def _run(agent: str, event: str, payload: dict, cwd: Path, tool: str, tool_input: dict) -> int:
+    root = repo.main_root(cwd)
     if event == "PreToolUse":
         # A session in one folder can change a repository in another: each repository that uses Akasha examines it
         for other in _other_roots(root, cwd, tool, tool_input):

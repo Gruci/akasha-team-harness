@@ -18,7 +18,7 @@ from pathlib import Path
 
 from akasha.checks import matches
 from akasha.config import Team
-from akasha.task import PLAN, PREVIEW, Task, task_of
+from akasha.task import PLAN, PREVIEW, Task, folders_of, outside, record_folders
 
 KIND = "no-screen"
 CHECK = "screen"
@@ -62,32 +62,22 @@ def start_problem(team: Team, me: str, scope: list[str], files: list[str]) -> st
     return ""
 
 
-def _outside(path: str, folder: str) -> bool:
-    return not (path + "/").startswith(folder.rstrip("/") + "/")
-
-
-def problems(team: Team, changed: list[str], records_dir: str) -> list[str]:
-    """Why the change is not a change without a screen, or []."""
+def problems(team: Team, changed: list[str], own: tuple[str, ...]) -> list[str]:
+    """Why the change is not a change without a screen, or []. `own`: the records folders of the task."""
     if not team.screen_paths:
         return ["akasha.toml names no files that make a screen ([preview] screens)"]
     return [f"{path}: it makes a screen" for path in changed
-            if _outside(path, records_dir) and any(matches(path, screen) for screen in team.screen_paths)]
+            if outside(path, own) and any(matches(path, screen) for screen in team.screen_paths)]
 
 
 def marked(team: Team, changed: list[str], root: Path | None = None) -> list[str]:
     """The tasks that a pull request marks as without a screen: their records in the changed files hold plan.md, and
     no preview, request, or impact.md. With `root`, the records folder in the work copy must hold none of them either:
-    a pull request that only edits the plan of an earlier full task does not mark it. A records folder with a date
-    ([work] records_date) names its task without the date."""
-    folder = team.records_dir.rstrip("/") + "/"
-    kept: dict[str, set[str]] = {}
-    for path in changed:
-        rest = path[len(folder):] if path.startswith(folder) else ""
-        if rest.count("/") == 1:
-            task, name = rest.split("/")
-            kept.setdefault(task, set()).add(name)
-    return sorted(task_of(task) for task, names in kept.items() if PLAN in names and not names & set(OTHER_RECORDS)
-                  and not (root and any((root / folder / task / name).is_file() for name in OTHER_RECORDS)))
+    a pull request that only edits the plan of an earlier full task does not mark it. The records are in [work]
+    records before the landing and in the archive after it (task.placed)."""
+    return sorted({task for folder, (task, names) in record_folders(team, changed).items()
+                   if PLAN in names and not names & set(OTHER_RECORDS)
+                   and not (root and any((root / folder / name).is_file() for name in OTHER_RECORDS))})
 
 
 def server(team: Team, changed: list[str], root: Path | None = None) -> tuple[str, str] | None:
@@ -99,7 +89,7 @@ def server(team: Team, changed: list[str], root: Path | None = None) -> tuple[st
     tasks = marked(team, changed, root)
     if not tasks:
         return None
-    found = problems(team, changed, team.records_dir)
+    found = problems(team, changed, folders_of(team, changed, tasks))
     if found:
         return "FAIL", (f"task {', '.join(tasks)} has a plan without a preview, so it must have no screen: "
                         + "; ".join(found[:10]))

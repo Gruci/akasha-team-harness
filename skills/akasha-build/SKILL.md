@@ -14,6 +14,54 @@ The session start notice gives the Akasha command; this skill writes it as `akas
 the team, the guides of the team (`[guides]` of `akasha.toml`), and your own tasks with their next step. When it names
 a task of yours, do its next step first.
 
+## The core
+
+1. Each change of this repository is an Akasha task. `akasha status` names the next step of your task: do that
+   step. Each command prints what to write next, and where.
+2. Ask the person only what changes the result and what you cannot decide: at most three questions, in simple
+   words. Decide the rest and show it in the preview.
+3. Use the code that exists. `akasha start` prints the rules to follow first, then what is near your task and where
+   it is; `akasha find <words>` searches it. The list shows the code as it is now. It is not a model: the guides of
+   the team, the definitions, and the entries of an area tell which path to use and how to build. A name tells what
+   the code does: follow the rules for names that `akasha start` prints (`akasha names` shows each rule).
+4. A value and an expected result come from a source that you read. Never make one up.
+5. Only a message that the person types approves. Never approve for the person. When the approved meaning changes,
+   show it again.
+6. Change files only in the work copy of the task. Run `akasha check`, then `akasha land`. Never merge a pull
+   request yourself, never force a push, and never change .docs/state.
+7. After three failed tries, or when the task needs a file that only an administrator changes, run `akasha help`.
+
+Akasha writes the frame of each record when you need it: `preview.html` at the start, `research.md` and `plan.md`
+at the approval (at the start for a task without a preview), `impact.md` for a quick task. Each form tells how to
+fill it. Its first line is a mark: a file that still has it counts as not written. Fill the file, and delete that
+line.
+
+## The steps in new contexts
+
+A task holds much text: the guides of the team, the records, and the answers of the reviewer. Keep it out of this
+conversation. You talk with the person and lead the steps, and each step runs in an agent of its own, in a new
+context. The records and `akasha status <task> --brief` carry the task from one step to the next. Choose the next
+step from `akasha status <task> --brief`, never from what a step says about itself.
+
+| Task | The order. "You" is this session |
+|:--|:--|
+| full | You: the request and the questions → akasha-preview → you: `akasha preview`, and the approval → akasha-planner ⇄ akasha-reviewer → akasha-builder → akasha-lander → you: the result |
+| without a screen | You: the request and the questions → akasha-planner ⇄ akasha-reviewer → you: the plan, and the approval → akasha-builder → akasha-lander → you: the result |
+| agent task | You: the request → akasha-planner ⇄ akasha-reviewer → akasha-builder → akasha-lander, which stops at ASK → you: `akasha result`, and the approval → akasha-lander |
+| quick | You do each step yourself: it is small |
+
+- Give each agent the name of the task and the Akasha command, and the decisions of the person that the records do
+  not hold yet. Never paste this conversation.
+- Only you ask the person and take an approval. When a step returns a question, ask it, then call the step again
+  with the answer.
+- The review: call akasha-planner, then akasha-reviewer. After CHANGES, call akasha-planner again with the failed
+  items, then the reviewer again. The reviewer returns a short report; its whole answer is in `review.md`.
+- A step returns a failure or a stop as it is. Do what `akasha status <task> --brief` says next.
+- Run akasha-lander in the background, and tell the person the result when it returns.
+- The sections below tell what each step does. Follow them yourself only for a quick task, and where the agent app
+  has no agents of this kind: then do the steps in this session, and where `akasha status <task> --brief` says
+  "safe point", a new session loses nothing.
+
 ## 1. Understand the request
 
 1. The person checks what you propose; they do not dictate it. Go through these seven questions:
@@ -79,7 +127,8 @@ or when the change also needs a screen, make a full task with a preview.
    example. Plan a test for each value and each example.
 3. Ask the akasha-reviewer agent to review the plan, as in step 3.3, until the mark is PASS.
 4. Run `akasha preview <task>`: Akasha records that the person sees this version of the plan. Show the plan in the
-   chat: the approach, each file and its change, the tests, the risks, and how to undo it, with the paths of
+   chat: the approach, each file and its change, the tests, the risks, and how to undo it when a revert is not
+   enough, with the paths of
    `research.md` and `plan.md`. Then ask in plain chat: "Shall I build it like this, or what should change?" Never ask
    with AskUserQuestion or another choice tool: only a message that the person types counts.
 5. When the person asks for a change, change the plan, ask the reviewer again, run `akasha preview <task>` again, and
@@ -127,7 +176,7 @@ The person approves the result before the merge. That is their only step.
    says, end the turn with a short question to the person, in their language.
 3. Do step 4 (build and check).
 4. Write `summary.md` in the language of the request, in five short sections: the problem, the cause, what changed,
-   what other areas it reaches, and how to undo it.
+   what other areas it reaches, and how to undo it when a revert is not enough.
 5. Run `akasha check <task>`, then `akasha land <task> --wait 540` with a shell timeout of 600000 ms. When it says ASK
    (exit code 4), run `akasha result <task>`. Give its text as your whole answer, without other words, and end the
    turn: the relay sends it to the person.
@@ -191,12 +240,13 @@ decisions and the rules, and a value of data without its definition.
 1. Write `research.md` in the records folder: how the code and the data work now, each caller and reader of what will
    change, and the limits. Read the files of `[guides] plan` first.
 2. Write `plan.md` there: the approach, each file and the exact change, a test for each example of the rules and each
-   value of the box of the values, the risks, and how to undo the change. The plan keeps each rule and each
+   value of the box of the values, the risks, and how to undo the change when a revert is not enough. The plan
+   keeps each rule and each
    definition of the preview, also the ones that you proposed: the approval made them decisions. No "TBD". List each step that only an administrator can do, for
    example a new secret value on the server or a first run of a job; `summary.md` repeats them.
 3. Run `akasha status <task>` for the plan digest. Ask the akasha-reviewer agent: "Review the plan of Akasha task
    <task>. Work copy: <path>. Plan digest: <digest>. Akasha command: <the command of the session start notice>." It
-   judges nine items, one row each, ends with a review mark, and Akasha records it with the answer in `review.md`.
+   judges ten items, one row each, ends with a review mark, and Akasha records it with the answer in `review.md`.
    Only the akasha-reviewer agent counts. Repair each item that failed, run `akasha status <task>` for the new plan
    digest, and ask again until the mark is PASS. Ask again by sending this to the same akasha-reviewer agent with
    SendMessage, when this session started it: "Plan digest is now <digest>. Run `<Akasha command> status <task>
@@ -204,7 +254,7 @@ decisions and the rules, and a value of data without its definition.
    read. Ask a new akasha-reviewer agent with the request above instead when SendMessage fails, when that agent
    already reviewed three rounds (a long conversation loses the code that it read), or when after its answer
    `akasha status <task> --review` shows neither `Round … passed this version of the plan` nor
-   `Last review: … plan digest <digest>`. On a review after a repair, the reviewer judges again only the items that failed and the items that
+   `Last review: … digest <digest>`. On a review after a repair, the reviewer judges again only the items that failed and the items that
    the change of the plan touches, and keeps the rest (`akasha status <task> --review` tells it which): do not ask it
    to judge each item again. When the next step says that a PASS mark did not count, an item had no row or a kept
    row had not passed: ask again.
@@ -213,9 +263,10 @@ decisions and the rules, and a value of data without its definition.
 5. Only an agent app without the akasha-reviewer agent (for example Codex) reviews the plan itself, as strictly as
    the agent would, then runs `akasha review <task> --verdict pass`. Akasha refuses it in Claude Code.
 6. Core files: when `akasha start` or `akasha check` names a core file (code that other areas use, or a path of
-   `[core]`), keep its existing lines and add the new code beside them. Change or delete those lines only when the
-   request cannot work without it, and write why in `plan.md`. Then tell the person in one simple sentence that an
-   administrator checks that part before it goes live.
+   `[core]`), use what it has, and extend it when the task needs it. Do not copy its code into a new function to go
+   around the approval. When the task changes or deletes its existing lines, write why in `plan.md`, and keep each
+   caller working. Then tell the person in one simple sentence that an administrator checks that part before it goes
+   live.
 
 ## 4. Build and check
 
@@ -243,7 +294,8 @@ decisions and the rules, and a value of data without its definition.
 
 ## 5. Land
 
-1. Write `summary.md` in the records folder, in the language of the person: why, what changed, and how to undo it, in
+1. Write `summary.md` in the records folder, in the language of the person: why, what changed, and how to undo it when a
+   revert is not enough, in
    three short sections.
 2. Run `akasha check <task>` again, then `akasha land <task> --wait 540` with a shell timeout of 600000 ms.
    - WAITING (exit code 3): run the same command again. When other tasks merged first, the wait is normal. Only when
@@ -282,4 +334,8 @@ decisions and the rules, and a value of data without its definition.
 - To undo a merged change: start a new task ("Undo <title>") and revert the commit in its work copy. Never revert or
   push in the main checkout.
 
-> **CAUTION:** Never merge a pull request yourself, never force a push, and never change `.akasha/state`.
+> **CAUTION:** Never merge a pull request yourself, never force a push, and never change `.docs/state`.
+>
+> **IMPORTANT:** The records of merged tasks are in the archive (`[work] archive`). Never read the archive to find
+> how to do a task: it is no input of a new task, and no work copy holds it. Read one folder of it only when the
+> person names an earlier task: `git show origin/<default branch>:<folder>/<file>`.

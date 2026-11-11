@@ -49,11 +49,9 @@ def _template(name: str, team: Team) -> str:
 
 
 def workflows(team: Team) -> dict[str, str]:
-    """The workflow files that the team needs: the check of Akasha when the team has no CI of its own, and the watch
+    """The workflow files that the team needs: the check of Akasha, also beside the CI of the team, and the watch
     where GitHub cannot protect the default branch."""
-    files = {}
-    if not team.ci_required:
-        files[CHECK_FILE] = _template("akasha.yml", team)
+    files = {CHECK_FILE: _template("akasha.yml", team)}
     if team.server_rules == "akasha":
         files[WATCH_FILE] = _template("akasha-watch.yml", team)
     return files

@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -31,7 +32,7 @@ _GIT_VALUES = ("-C", "-c", "--git-dir", "--work-tree")
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _MERGE_API = re.compile(r"pulls/\d+/merge\b|\b(?:mergePullRequest|enablePullRequestAutoMerge)\b")
 _ENV_FILE = re.compile(r"^\.env(?:\.(?!example$|sample$|template$|dist$)[\w.-]+)?$", re.I)
-_STATE = re.compile(r"\.akasha[\\/]+state", re.I)
+_STATE = re.compile(r"\.docs[\\/]+state", re.I)
 LAND = "Akasha lands each task: run `akasha land <task>`"
 
 
@@ -152,13 +153,23 @@ def folders(line: str, cwd: Path) -> list[Path]:
     return found
 
 
+def harmless(line: str) -> bool:
+    """True when no rule of Akasha can stop the shell line, so that the hook asks git nothing: the line has no git,
+    no gh, no delete, no change of the folder, nothing of .docs/state, and no command of Akasha (its session and
+    its permission need the hook). check_command gives a reason only for those, so the verdict stays the same."""
+    if _STATE.search(line) or "akasha" in line.lower():
+        return False
+    risky = ("git", "git.exe", "gh", "gh.exe") + _DELETES + _FOLDER_CHANGES
+    return all(args[0].lower() not in risky for args in _commands(line))
+
+
 def check_command(line: str, cwd: Path, root: Path, git_only: bool = False, own: bool = False) -> str | None:
     """The reason to stop the shell command, or None. `git_only` examines only git and gh: the session works in
     another folder, and its deletes are not in this repository. `own`: the person keeps the own procedure of the
     repository ([team] own_procedure), with its own work copies and merges."""
     commands = _commands(line)
     if _STATE.search(line) and any(args[0].lower() not in _READERS for args in commands):
-        return "Akasha stopped this command because it can change the state of Akasha in .akasha/state."
+        return "Akasha stopped this command because it can change the state of Akasha in .docs/state."
     moved = False
     for args in commands:
         program = args[0].lower()
@@ -225,22 +236,43 @@ def _part_reason(path: Path, task: Task, part: dict, gate: Callable[[Task], str]
     return None
 
 
+def other_session(task: Task, session: str) -> str:
+    """Why this session does not change the task, or "": another session works on it, or no session took it. Two
+    sessions never change one work copy in turns. A task goes to this session only by `akasha status <task>
+    --resume`, after the person said so: an old activity is no proof that the other session is gone."""
+    if not session or task.session == session:
+        return ""
+    if task.session:
+        minutes = int((time.time() - task.active_at) // 60) if task.active_at else None
+        when = f"its last activity was {minutes} minutes ago" if minutes is not None else "no activity is known"
+        return (f"task {task.id} belongs to another session ({when}). To continue it here, ask the person, then run "
+                f"`akasha status {task.id} --resume`")
+    return (f"no session holds task {task.id} on this computer. To continue it here, ask the person, then run "
+            f"`akasha status {task.id} --resume`")
+
+
 def check_edit(path: Path, root: Path, tasks: list[Task], set_up: bool, gate: Callable[[Task], str],
-               own: bool = False, locked: tuple[str, ...] = ()) -> str | None:
+               own: bool = False, locked: tuple[str, ...] = (), session: str = "") -> str | None:
     """The reason to stop an edit of the file, or None.
 
     `gate(task)` tells what the task still needs before its code can change, or "" when it is ready. `set_up` is True
-    when the default branch has akasha.toml: before that, the administrator sets up Akasha in the main checkout. A
+    when the default branch has akasha.toml: before that, the administrator sets up Akasha in the main checkout.
+    `session`: the session of the agent engine that edits, or "" where the engine does not tell it (then the rule
+    of the sessions does not hold). A
     person who keeps the own procedure of the repository (`own`) edits outside the work copies of tasks freely.
     `locked`: the file patterns that only an administrator changes, empty for an administrator."""
     if _ENV_FILE.match(path.name):
         return (f"Akasha stopped this edit: {path.name} holds secret values. Ask a person to change it, and read the "
                 "values from the environment in the code.")
     if inside(path, root / STATE_DIR):
-        return "Akasha stopped this edit: Akasha writes its state in .akasha/state itself."
+        return "Akasha stopped this edit: Akasha writes its state in .docs/state itself."
     for task in tasks:
         part = next((item for item in task.parts if item.get("workcopy") and inside(path, Path(item["workcopy"]))),
                     None)
+        # First the session: the product files, the records, and the parts of a task are one work
+        if (part is not None or (task.workcopy and inside(path, Path(task.workcopy)))) and \
+                (taken := other_session(task, session)):
+            return f"Akasha stopped this edit: {taken}."
         if part is not None:
             return _part_reason(path, task, part, gate, locked)
         if not task.workcopy or not inside(path, Path(task.workcopy)):

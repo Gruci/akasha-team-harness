@@ -5,20 +5,24 @@ from __future__ import annotations
 
 import html
 import os
+import sys
 import time
 import webbrowser
 from pathlib import Path
 
-from akasha import (agent, approval, board, checks, config, core, pr, quick, repo, review, screen, spec, trace,
-                    version, work)
+from collections.abc import Iterable
+
+from akasha import (agent, approval, archive, board, checks, codemap, config, consistency, core, definitions, evidence,
+                    forms, guard, pr, quick, repo, review, screen, spec, trace, version, work)
 from akasha.config import Team
-from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, folder_name, forget, load,
-                         new_id, record, records, save, task_of)
+from akasha.task import (PLAN, PREVIEW, RESEARCH, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id,
+                         own_records, record, records, replaced, save)
 
 STUCK = 3                      # failed checks in a row before Akasha suggests to ask an administrator
 DECISIONS = 'id="akasha-decisions"'       # the box of the questions and the answers of the person, in the preview
 QUICK = "quick"                            # the check that the change of a quick task is a quick change
 DATA = "data"                              # the check that a change of data has the values of its preview defined
+GATE = "gate"                              # the check that the person approved and the plan passed its review
 
 
 def rules(root: Path) -> Team:
@@ -91,7 +95,7 @@ def next_step(task: Task) -> str:
     if screen.is_no_screen(task) and (waits := _plan_step(task)):
         return waits
     if task.status == "preview":
-        if not record(task, PREVIEW).is_file():
+        if not forms.written(record(task, PREVIEW)):
             return (f"Ask the person only what changes the result and what you cannot decide. Then write the preview "
                     f"at {records(task)}/{PREVIEW}: the decisions, the look (an HTML mockup of the screen, or a diagram "
                     "of the flow and the data), the values from data with their source and formula, and the rules "
@@ -105,16 +109,18 @@ def next_step(task: Task) -> str:
     missing = gate(task)
     if missing:
         return missing
-    if task.parts:
-        listed = ", ".join(f"{part['name']} ({part['workcopy']})" for part in task.parts)
+    waiting = pending(task)
+    if waiting:
+        listed = ", ".join(f"{part['name']} ({part['workcopy']})" for part in waiting)
         return (f"The workers build in the parts: {listed}. When each one is done, run `akasha join {task.id}`, then "
                 f"`akasha check {task.id}`.")
     tree = Path(task.workcopy)
     if work.dirty(tree) or task.checks.get("commit") != work.head(tree):
         return f"Build the change in {task.workcopy}, then run `akasha check {task.id}`."
     if not record(task, SUMMARY).is_file():
-        what = ("the problem, the cause, what changed, what other areas it reaches, and how to undo it"
-                if agent.is_agent(task) else "why, what changed, how to undo it")
+        what = ("the problem, the cause, what changed, what other areas it reaches, and how to undo it when a revert "
+                "is not enough" if agent.is_agent(task) else
+                "why, what changed, how to undo it when a revert is not enough")
         return (f"Write {records(task)}/{SUMMARY} ({what}), run `akasha check {task.id}` again, then `akasha land "
                 f"{task.id}`.")
     return f"Land the task: `akasha land {task.id} --wait 540` (shell timeout 600000 ms)."
@@ -135,7 +141,7 @@ def _agent_landing(task: Task) -> str:
 
 def _quick_step(task: Task) -> str:
     tree = Path(task.workcopy)
-    if not quick.changes(tree, quick.base(tree), task.records_dir):
+    if not quick.changes(tree, quick.base(tree), own_records(task)):
         return (f"Make the change in {task.workcopy}. A quick change only changes existing files that no other area "
                 "uses.")
     now = quick.digest(task)
@@ -153,27 +159,22 @@ def _quick_step(task: Task) -> str:
     if work.dirty(tree) or task.checks.get("commit") != work.head(tree):
         return f"Run `akasha check {task.id}`."
     if not record(task, SUMMARY).is_file():
-        return (f"Write {records(task)}/{SUMMARY} (why, what changed, how to undo it), run `akasha check "
-                f"{task.id}` again, then `akasha land {task.id}`.")
+        return (f"Write {records(task)}/{SUMMARY} (why, what changed, how to undo it when a revert is not enough), "
+                f"run `akasha check {task.id}` again, then `akasha land {task.id}`.")
     return f"Land the task: `akasha land {task.id} --wait 540` (shell timeout 600000 ms)."
 
 
 def _name_taken(root: Path, task: Task, branch: str, entries: list[board.Entry], online: bool) -> bool:
-    """True when the name of the task is in use: on this computer, on the board, on the server, or in the records of
-    an earlier task of the same name."""
+    """True when the name of the task is in use by a task that is open: on this computer, on the board, or on the
+    server. A merged task of the same name does not hold the name: its records are in the archive under their date,
+    and Akasha does not read the archive to find a name."""
     if any(other.id == task.id for other in all_local(root)) or \
             repo.git(root, "rev-parse", "-q", "--verify", f"refs/heads/{task.branch}").returncode == 0:
         return True
     if any(entry.task.id == task.id or entry.branch == task.branch for entry in entries):
         return True
-    return online and (repo.git(root, "ls-remote", "--exit-code", "origin", f"refs/heads/{task.branch}").returncode == 0
-                       or _records_taken(root, task, branch))
-
-
-def _records_taken(root: Path, task: Task, branch: str) -> bool:
-    """True when the default branch keeps the records of an earlier task of the same id, with a date or without."""
-    listed = repo.git(root, "ls-tree", "--name-only", f"origin/{branch}:{task.records_dir}")
-    return listed.returncode == 0 and any(task.id in (name, task_of(name)) for name in listed.stdout.splitlines())
+    return online and repo.git(root, "ls-remote", "--exit-code", "origin",
+                               f"refs/heads/{task.branch}").returncode == 0
 
 
 def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
@@ -195,14 +196,14 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
     if no_screen:
         if fast:
             raise ValueError("a quick task has no plan: start a task without a screen without --quick")
-        problem = screen.start_problem(team, owner, patterns, repo.names(root, "ls-files"))
+        problem = screen.start_problem(team, owner, patterns, repo.paths(root, team.record_roots))
         if problem:
             raise ValueError(problem)
     request = _request(root, team, owner, fast)
     task = Task(id=new_id(title, name), title=title.strip(), scope=patterns, records_dir=team.records_dir,
                 kind="agent" if request else "quick" if fast else screen.KIND if no_screen else "full")
     task.branch = team.branch_prefix + task.id
-    task.records_name = folder_name(task.id, team.records_date)     # the task keeps it, also when the setting changes
+    task.records_name = task.id
     entries = board.read(root) if online else []
     if entries is None:
         raise RuntimeError("gh cannot read the board. Log in to GitHub: gh auth login. Then do the step again")
@@ -213,13 +214,15 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
         task.status = "approved"                      # no preview: the request decides what to make
     path = root / team.work_dir / task.id
     work.exclude(root, team.work_dir)
-    task.base = work.create(root, path, task.branch, f"origin/{branch}" if online else "HEAD")
+    work.leave_out(root, team.archive_dir)            # the main checkout holds no archive either, where git allows
+    task.base = work.create(root, path, task.branch, f"origin/{branch}" if online else "HEAD",
+                            archive=team.archive_dir)
     task.workcopy = str(path)
     record(task, PREVIEW).parent.mkdir(parents=True, exist_ok=True)
     if request:
         agent.write_request(task, request)
     save(root, task)
-    notes = [f"overlap — {line}" for line in board.overlaps(task, [], entries)]
+    notes = [f"overlap — {line}" for line in board.overlaps(task, [], entries, team.record_roots)]
     locked = checks.touches(task.scope, checks.locked(team, task.owner))
     if locked:
         notes.append(f"admin only — the task plans {', '.join(locked[:3])}, which only an administrator changes. "
@@ -230,8 +233,10 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
         notes.append(f"not quick — {', '.join(f'{name} ({why})' for name, why in planned.items())}. Other areas use "
                      f"these files: run `akasha upgrade {task.id}` for a full task with a preview and a plan")
     elif planned:
-        notes.append(f"core — {', '.join(f'{name} ({why})' for name, why in planned.items())}. Add new code beside "
-                     f"these files; a change of their existing lines waits for an approval of an administrator")
+        notes.append(f"core — {', '.join(f'{name} ({why})' for name, why in planned.items())}. Other areas use "
+                     "these files: use what they have, and extend them when the task needs it. A change of their "
+                     "existing lines waits for an approval of an administrator. Do not copy their code into a new "
+                     "function to go around it")
     planned_data = [] if request or fast else checks.touches(task.scope, team.data_paths)
     if planned_data and no_screen:
         notes.append(f"data — the task plans {', '.join(planned_data[:3])}, which make data that people see. Define "
@@ -239,6 +244,13 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
     elif planned_data:
         notes.append(f"data — the task plans {', '.join(planned_data[:3])}, which make data that people see. Mark each "
                      "value of the preview and define its source, formula, value, and check (akasha-build step 2)")
+    _forms(team, task)
+    task.session, task.active_at = approval.session(root, sure=True), time.time()     # the session that starts it
+    save(root, task)
+    try:                                              # what the repository has, before the AI plans new code
+        notes += codemap.start_lines(team, path, root, task.scope, task.title)
+    except (RuntimeError, OSError) as error:
+        notes.append(f"map — Akasha could not read the code ({error}). `akasha map` shows it")
     if online:
         pushed = ""
         try:
@@ -288,7 +300,7 @@ def _prepare(team: Team, path: Path) -> list[str]:
 
 def _simple_preview(title: str, text: str) -> str:
     lines = "".join(f"<p>{html.escape(line)}</p>" for line in text.splitlines() if line.strip())
-    return (f'<!doctype html><html lang="ko"><meta charset="utf-8"><title>{html.escape(title)}</title>'
+    return (f'<!doctype html><html><meta charset="utf-8"><title>{html.escape(title)}</title>'
             f'<body style="font-family:sans-serif;max-width:720px;margin:40px auto;line-height:1.6">'
             f'<h1>{html.escape(title)}</h1><section id="akasha-decisions">{lines}</section></body></html>\n')
 
@@ -297,7 +309,7 @@ def _quick_preview(root: Path, task: Task) -> None:
     """Make the preview of a quick task from its change. The change must be a quick one, with impact.md and a review
     that passed, or of only text for people (quick.needs_review)."""
     tree = Path(task.workcopy)
-    found = quick.problems(rules(root), tree, quick.base(tree))
+    found = quick.problems(rules(root), tree, quick.base(tree), own=own_records(task))
     if found:
         raise ValueError("this is not a quick change: " + "; ".join(found[:5]) + f". Run `akasha upgrade {task.id}`")
     now = quick.digest(task)
@@ -323,23 +335,18 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
     path = record(task, PREVIEW)
     if quick.is_quick(task):
         _quick_preview(root, task)
-    if text and not path.is_file():
+    if text and not forms.written(path):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_simple_preview(task.title, text), encoding="utf-8")
-    if not path.is_file():
-        raise ValueError(f"write the preview first: {path}")
-    shown = path.read_text(encoding="utf-8", errors="replace")
-    if DECISIONS not in shown:
-        raise ValueError(f'the preview has no box of the decisions. At the top of {path}, add <section '
-                         f'id="akasha-decisions"> with each question that you asked and the answer of the person')
-    if not quick.is_quick(task):
-        found = spec.problems(shown, data_required=bool(checks.touches(task.scope, rules(root).data_paths)))
-        if found:
-            raise ValueError(f"the preview {path} does not specify the change yet: " + "; ".join(found[:5]))
+    if not forms.written(path):
+        raise ValueError(f"write the preview first: {path}" + (" (fill the form, and delete its first line)"
+                                                              if path.is_file() else ""))
+    _examine_preview(root, task, path)
     sha = digest(path)
     changed = bool(task.approval) and task.approval.get("preview_sha") != sha
     if changed:
         task.approval, task.status = {}, "preview"
+        evidence.forget(task)
     # Claude Code gives its commands the session: only a message of that session, after now, approves this preview
     task.preview_sha, task.shown_at, task.shown_in = sha, time.time(), approval.session(root)
     task.heard = {}
@@ -360,6 +367,75 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
                   "message that the person types counts.")
 
 
+def preview_check(root: Path, task_id: str) -> str:
+    """`akasha preview <task> --check`: examine the preview as `akasha preview` does, and change nothing: no state
+    of the task, no commit, no push, and nothing is shown. A step in a new context uses it; the main session then
+    runs `akasha preview`, which examines it again and shows it to the person."""
+    task = load(root, task_id)
+    if quick.is_quick(task) or screen.is_no_screen(task) or agent.is_agent(task):
+        raise ValueError(f"task {task.id} has no preview to write: {next_step(task)}")
+    path = record(task, PREVIEW)
+    if not forms.written(path):
+        raise ValueError(f"write the preview first: {path}" + (" (fill the form, and delete its first line)"
+                                                              if path.is_file() else ""))
+    _examine_preview(root, task, path)
+    return (f"The preview {path} passes its check. The main session shows it to the person: `akasha preview "
+            f"{task.id}`.")
+
+
+def brief(root: Path, task_id: str) -> str:
+    """`akasha status <task> --brief`: one screen for a step in a new context and for the main session that leads
+    the steps. The kind, the paths, the next step, the digest of the input of the review, what stops the task, and
+    the guides of the team. Long texts stay in the records: it names their path."""
+    task, team = load(root, task_id), rules(root)
+    sha = review.subject_digest(task)
+    lines = [f"{task.id} · {task.title} · {task.kind} · {task.status}" + (f" · {task.pr}" if task.pr else ""),
+             f"work copy: {task.workcopy}", f"records: {Path(task.workcopy) / records(task)}",
+             f"next: {next_step(task)}"]
+    if sha:
+        said = task.review.get("verdict") if task.review.get("plan_sha") == sha else "no review of this version"
+        lines.append(f"review: {said} · digest {sha}"
+                     + (f" · the answer is in {record(task, review.REVIEW)}" if task.review else ""))
+    stops = "" if task.status in ("merged", "closed", "landing") else gate(task)
+    if stops:
+        lines.append(f"stops: {stops}")
+    failed = [name for name, status in (task.checks.get("status") or {}).items() if status == "FAIL"]
+    if failed:
+        lines.append(f"failed checks: {', '.join(failed)} (run `akasha check {task.id}` for the text)")
+    names = {"preview": "before the preview", "plan": "before the plan", "build": "while you build",
+             "review": "for the reviewer"}
+    lines += [f"guides {names[step]}: {', '.join(files)}" for step, files in team.guides.items() if step in names]
+    waits = task.status == approval._wanted(task) and bool(task.shown_at)
+    if not waits and task.status not in ("merged", "closed"):
+        # A session that holds the whole talk can start again here: the records and this status hold the task
+        lines.append(f"safe point: a new session loses nothing here. It continues with `akasha status {task.id} "
+                     "--resume`")
+    return "\n".join(lines)
+
+
+def _examine_preview(root: Path, task: Task, path: Path) -> None:
+    """The check of a preview before the person sees it: the box of the decisions, the specification (the rules,
+    the values, the definitions), and the check of the team. ValueError with what to repair."""
+    shown = path.read_text(encoding="utf-8", errors="replace")
+    if DECISIONS not in shown:
+        raise ValueError(f'the preview has no box of the decisions. At the top of {path}, add <section '
+                         f'id="akasha-decisions"> with each question that you asked and the answer of the person')
+    if not quick.is_quick(task):
+        team = rules(root)
+        found = spec.problems(shown, data_required=bool(checks.touches(task.scope, team.data_paths)))
+        if found:
+            raise ValueError(f"the preview {path} does not specify the change yet: " + "; ".join(found[:5]))
+        if team.definitions_on:                       # each value of the screen names its definition, or is local
+            found = definitions.preview_problems(shown, _definition_keys(Path(task.workcopy)))
+            if found:
+                raise ValueError(f"the preview {path} does not name the definition of each value: "
+                                 + "; ".join(found[:5]))
+        if team.preview_check:                        # the check of the team, once, before the person sees the preview
+            status, detail = checks.shell(f'{team.preview_check} "{path}"', Path(task.workcopy))
+            if status != "PASS":
+                raise ValueError(f"the check of the preview ([preview] check) did not pass:\n{detail}")
+
+
 def _show_plan(root: Path, task: Task) -> tuple[Task, str]:
     """Show the plan of a task without a screen to the person, after the akasha-reviewer agent passed it. A plan
     that changed after an approval needs a new approval."""
@@ -369,6 +445,7 @@ def _show_plan(root: Path, task: Task) -> tuple[Task, str]:
     changed = bool(task.approval) and task.approval.get("plan_sha") != sha
     if changed or not task.approval:
         task.approval, task.status = {}, "preview"
+        evidence.forget(task)
     task.preview_sha, task.shown_at, task.shown_in = sha, time.time(), approval.session(root)
     task.heard = {}
     save(root, task)
@@ -381,15 +458,56 @@ def _show_plan(root: Path, task: Task) -> tuple[Task, str]:
         pr.update(root, task)
     again = " The plan changed after the approval, so the person approves it again." if changed else ""
     return task, (f"The plan {record(task, PLAN)} passed the review.{again} Show it to the person in the chat: the "
-                  "approach, each file and its change, the tests, the risks, and how to undo it, with the paths of "
-                  "research.md and plan.md. Then ask in plain chat whether to build it like this, or what to change. "
+                  "approach, each file and its change, the tests, the risks, and how to undo it when a revert is not "
+                  "enough, with the paths of research.md and plan.md. Then ask in plain chat whether to build it like "
+                  "this, or what to change. "
                   f"When their own message approves it, run `akasha approve {task.id}`. Do not ask with "
                   "AskUserQuestion or another choice tool: only a message that the person types counts.")
 
 
-def approve(root: Path, task_id: str) -> tuple[Task, str]:
-    """Record the approval of the person from their last message after the preview, in this session."""
+def _subject(task: Task) -> tuple[str, Path, str]:
+    """What the person approves now: its kind, its file, and its digest."""
+    if quick.is_quick(task):
+        return "the change", record(task, PREVIEW), quick.digest(task)
+    if agent.is_agent(task):
+        return "the result", record(task, SUMMARY), agent.digest(task)
+    if screen.is_no_screen(task):
+        return "the plan", record(task, PLAN), review.plan_digest(task)
+    return "the preview", record(task, PREVIEW), digest(record(task, PREVIEW))
+
+
+def confirm_here(task: Task, ask=input, shown=print, terminal=None) -> None:
+    """The approval of a person in their own terminal, where the agent engine has no hook for their message:
+    show what they approve, and take the name of the task that they type. ValueError when this is no terminal,
+    the name is another one, the input ends, or the subject changed while the person read: then nothing is
+    written. It sees only that a terminal is there. It does not prove that a person typed."""
+    is_terminal = sys.stdin.isatty() if terminal is None else terminal
+    if not is_terminal:
+        raise ValueError("`akasha approve <task> --here` is for the person, in their own terminal. The shell of an "
+                         "agent engine is no terminal: ask the person to run it")
+    what, path, before = _subject(task)
+    if not before:
+        raise ValueError(f"{what} of task {task.id} is not there yet")
+    shown(f"Task: {task.title} ({task.id})\nWork copy: {Path(task.workcopy).resolve()}\nBranch: {task.branch}\n"
+          f"You approve {what}: {path.resolve()}\nDigest: {before}\n"
+          f"To approve it as it is, type the name of the task ({task.id}) and press Enter. Anything else "
+          "approves nothing.")
+    try:
+        typed = ask("> ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise ValueError("nothing was typed: no approval") from None
+    if typed != task.id:
+        raise ValueError(f"the name of the task is {task.id}: no approval")
+    if _subject(task)[2] != before:
+        raise ValueError(f"{what} changed while you read it: no approval. Look at it again")
+
+
+def approve(root: Path, task_id: str, here: bool = False, **terminal) -> tuple[Task, str]:
+    """Record the approval of the person from their last message after the preview, in this session. `here`: the
+    person approves in their own terminal (confirm_here), for an agent engine without a hook for their words."""
     task = load(root, task_id)
+    if here:
+        confirm_here(task, **terminal)
     change = quick.digest(task) if quick.is_quick(task) else ""
     if quick.is_quick(task) and (not change or quick.shown_change(task) != change):
         raise ValueError(f"the change moved after the person saw it. Show it again with `akasha preview {task.id}` "
@@ -399,12 +517,16 @@ def approve(root: Path, task_id: str) -> tuple[Task, str]:
         if not review.passed(task):
             raise ValueError("the plan changed after its review. " + _unreviewed(task))
         outcome = review.plan_digest(task)
-    problem = approval.approve(root, task, approval.session(root), outcome)
+    problem = approval.approve(root, task, approval.session(root), outcome, typed=here)
     if problem:
         raise ValueError(problem)
     if change:
         task.approval["change_sha"] = change
         save(root, task)
+    evidence.keep(task)                               # the server reads the approval from the records
+    if task.kind == "full":                           # the frames of the next step: the research and the plan
+        forms.put(record(task, RESEARCH), forms.RESEARCH)
+        forms.put(record(task, PLAN), forms.PLAN)
     if board.available(root) and task.number:
         pr.update(root, task)
     if screen.is_no_screen(task):
@@ -448,35 +570,63 @@ def self_review(root: Path, task_id: str, verdict: str) -> Task:
     request tells that it was not the reviewer agent."""
     if os.environ.get("CLAUDECODE") == "1":
         raise ValueError("Claude Code has the akasha-reviewer agent: ask it to review the plan")
+    if rules(root).review_command:
+        raise ValueError("the team has a reviewer command ([review] command): run `akasha review <task>` without "
+                         "--verdict. A review of the agent engine itself does not count here")
     task = load(root, task_id)
     sha = review.subject_digest(task)
     if not sha:
-        raise ValueError(f"write {record(task, quick.IMPACT if quick.is_quick(task) else PLAN)} first")
+        raise ValueError(f"write {record(task, quick.IMPACT)} first" if quick.is_quick(task) else
+                         f"write {', '.join(review.INPUTS.get(task.kind, review.INPUTS['full']))} in "
+                         f"{records(task)}/ first: the review reads each of them")
     if task.review.get("source") == "reviewer" and task.review.get("plan_sha") == sha:
         raise ValueError("the reviewer agent already judged this version: repair it")
-    review.note(root, task, verdict, sha, "self")
+    review.note(root, task, verdict, sha, "self", read=None if quick.is_quick(task) else review.inputs(task))
+    review.keep(task, task.review["verdict"], sha, "The agent engine reviewed it itself: it has no reviewer agent.")
     return task
 
 
 def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.Result, list[str]]:
-    """Run the checks of the team in the work copy. When each check passes, save the work as a commit and push it."""
+    """Run the checks of the team in the work copy. When each check passes, save the work as a commit and push it.
+    A task that is not ready to build gets no commit: where no hook stops an edit, this is the first place that asks
+    for the approval of the person and the review of the plan. One check alone (`only`) makes no commit, and runs."""
     team, task = rules(root), load(root, task_id)
+    # Before the commit: a task of another session stops here too, where no hook stops an edit
+    taken_by = "" if only else guard.other_session(task, approval.session(root)) if task.session else ""
+    missing = archive.sync(root, team, task) or taken_by or ("" if only else gate(task))
+    if missing:
+        return checks.Result({GATE: "FAIL"}, {GATE: missing}), []
     tree = Path(task.workcopy)
-    repo.git(tree, "add", "-A")          # some checks list the files with git ls-files: new files must be in the index
+    work.add_all(tree)                   # some checks list the files with git ls-files: new files must be in the index
     before = set(work.untracked(tree))
     # The changes of the task only: after a merge of the default branch, its newer files are not changes of the task
     base = repo.git(tree, "merge-base", "HEAD", f"origin/{repo.default_branch(root)}").stdout.strip() or task.base
     changed = checks.changed_files(tree, base)
     result = checks.run(team, tree, changed, only)
+    advice: list[str] = []
+    if not only or consistency.CHECK in only:         # before the commit: new code that the repository has already
+        plan = None if quick.is_quick(task) else _text(record(task, PLAN))
+        held = consistency.Found([], [])
+        try:
+            found = consistency.examine(team, tree, base, root, plan, admin=core.exempt(team, repo.me(root, kept=True)),
+                                        found_out=held)
+            if not only:                              # the board tells the other tasks which definitions it holds
+                task.defs = {key: value for key, value in (("adds", held.added), ("changes", held.changed)) if value}
+        except (RuntimeError, OSError) as error:
+            found = ("FAIL", f"Akasha could not compare the code: {error}", [])
+        result.status[consistency.CHECK], result.details[consistency.CHECK], advice = found
     me = repo.me(root, kept=True)
-    locked = checks.touches(changed, checks.locked(team, me))
+    locked = checks.locked_files(team, me, changed, own_records(task))
+    moved = "" if only else checks.folders_problem(team, tree, f"origin/{repo.default_branch(root)}")
+    if moved:
+        result.status[checks.FOLDERS], result.details[checks.FOLDERS] = "FAIL", moved
     if quick.is_quick(task) and not only:
-        found = quick.problems(team, tree, base)
+        found = quick.problems(team, tree, base, own=own_records(task))
         result.status[QUICK] = "FAIL" if found else "PASS"
         result.details[QUICK] = ("this is not a quick change: " + "; ".join(found[:5]) + f". Run `akasha upgrade "
                                  f"{task.id}` for a full task with a preview and a plan") if found else ""
     if screen.is_no_screen(task) and not only:
-        found = screen.problems(team, changed, task.records_dir)
+        found = screen.problems(team, changed, own_records(task))
         result.status[screen.CHECK] = "FAIL" if found else "PASS"
         result.details[screen.CHECK] = ("a task without a screen changes no file that makes a screen: "
                                         + "; ".join(found[:5]) + f". Undo these changes, or cancel task {task.id} and "
@@ -496,7 +646,10 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
         result.details[checks.ADMIN_ONLY] = (
             f"only an administrator changes {', '.join(locked[:5])}. Undo these changes in the task, or ask an "
             f"administrator: `akasha help {task.id} \"<what the task needs there>\"`")
-    notes = []
+    notes = list(advice)
+    first = "" if only else _first_area(team, tree, base)
+    if first:
+        notes.append(first)
     made = sorted(set(work.untracked(tree)) - before)
     if made:                                          # for example __pycache__ of the tests: never into a commit
         work.exclude_files(root, made)
@@ -517,11 +670,11 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
         task.failures = 0
         found = {} if core.exempt(team, me) else core.changed(team, tree, base)
         task.checks = {"status": result.status, "commit": work.head(tree), "at": time.strftime("%Y-%m-%d %H:%M"),
-                       **({"core": found} if found else {})}
+                       **({"core": found} if found else {}), **({"first_area": first} if first else {})}
         if found:
-            notes.append(f"core — the task changes existing lines of {', '.join(found)}, which other areas use. Keep "
-                         f"those lines and add new code beside them if the request allows it. Else the landing waits "
-                         f"for an approval of an administrator, and Akasha asks for it")
+            notes.append(f"core — the task changes existing lines of {', '.join(found)}, which other areas use. The "
+                         "landing waits for an approval of an administrator, and Akasha asks for it. Do not copy the "
+                         "code into a new function to go around the approval")
         holder = taken(root, task)
         if holder:
             notes.append(f"note — @{holder} holds task {task.id} now, so Akasha did not push. Run `akasha tidy`")
@@ -533,6 +686,108 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
             pr.update(root, task)
     save(root, task)
     return result, notes
+
+
+def touch(root: Path, tasks: list[Task], session: str, paths: Iterable[Path] = (), line: str = "") -> None:
+    """The session of a task was active: it edited the work copy, or named the task in a command of Akasha. Only
+    the session that holds the task counts: another one never becomes its session this way. A subagent has the
+    session of the main agent (measured with Claude Code 2.1.322: the same session_id, with an agent_id), so its
+    work counts as the work of the session."""
+    words = line.split()
+    for task in tasks:
+        if task.session != session or not task.workcopy:
+            continue
+        if task.id in words or any(repo.inside(path, Path(task.workcopy)) for path in paths):
+            task.active_at = time.time()
+            try:
+                save(root, task)
+            except (RuntimeError, OSError):
+                pass
+
+
+def take(root: Path, task_id: str, here: bool = False, terminal: bool | None = None) -> tuple[Task, str]:
+    """`akasha status <task> --resume`: this session works on the task from now on. The session that held it
+    before is stopped at its next edit. `here`: the person runs it in their own terminal, for an agent engine
+    without hooks: the terminal is the session.
+
+    A preview (or a result) that another session showed waits for the words of the person in that session: this
+    one shows it again, else the approval of the person here would not be recorded."""
+    task = load(root, task_id)
+    if here:
+        if not (sys.stdin.isatty() if terminal is None else terminal):
+            raise ValueError("`akasha status <task> --resume --here` is for the person, in their own terminal")
+        mine = f"terminal-{os.getpid()}-{int(time.time())}"
+    else:
+        mine = approval.session(root, sure=True)
+        if not mine:
+            raise ValueError("Akasha cannot tell which session this is (the agent engine named none, or two sessions "
+                             "ran this command at the same moment). Run it again; without hooks, the person runs "
+                             f"`akasha status {task.id} --resume --here` in their own terminal")
+    return _link(root, task, mine)
+
+
+def _link(root: Path, task: Task, session: str) -> tuple[Task, str]:
+    """Tie the task to a session. The resume from another computer uses it too."""
+    was = task.session
+    task.session, task.active_at = session, time.time()
+    again = ""
+    if task.status == approval._wanted(task) and task.shown_at and task.shown_in != session:
+        task.shown_at, task.shown_in, task.heard = 0.0, "", {}
+        what, command = approval.shown(task)
+        again = (f" The {what} was shown in another session: show it here with `{command}`, then ask the person. "
+                 "Only then their words approve it.")
+    save(root, task)
+    moved = " The session that held it before is stopped at its next edit." if was and was != session else ""
+    return task, f"Task {task.id} continues in this session.{moved}{again} next: {next_step(task)}"
+
+
+def _forms(team: Team, task: Task) -> None:
+    """Write the frames of the first records of a new task, by its kind (forms.py)."""
+    if quick.is_quick(task):
+        forms.put(record(task, quick.IMPACT), forms.IMPACT)
+    elif task.kind == "full":
+        words = []
+        if team.definitions_on:
+            try:
+                listed = definitions.parse(_text(definitions.place(Path(task.workcopy))))
+            except ValueError:
+                listed = []
+            words = [(item.label, item.aliases) for item in
+                     definitions.touching(listed, task.scope, task.title, checks.matches)]
+        forms.put(record(task, PREVIEW), forms.preview(task.title, task.id, team.definitions_on, words))
+    else:                                             # a task without a screen, an agent task: no preview
+        forms.put(record(task, RESEARCH), forms.RESEARCH)
+        forms.put(record(task, PLAN), forms.PLAN)
+
+
+def _first_area(team: Team, tree: Path, base: str) -> str:
+    """The notice of the task that makes the first area of the repository: its code is what the next tasks read,
+    and it is no example of the team until an administrator names it."""
+    try:
+        areas, _folders, first = consistency.structure(team, tree, base)
+    except RuntimeError:
+        return ""
+    if not first:
+        return ""
+    guide = next(iter(team.guides.get("plan", ())), "the structure guide of the team")
+    return (f"note — first area ({', '.join(areas)}): the next tasks will read it. It is not an example of the team "
+            f"yet. An administrator names it in {guide} after a check of its code")
+
+
+def _definition_keys(tree: Path) -> list[str]:
+    """The keys of the definitions in a work copy, with the ones that the task adds. [] for a file that Akasha
+    cannot read: `akasha check` tells why."""
+    try:
+        return [item.key for item in definitions.parse(_text(definitions.place(tree)))]
+    except ValueError:
+        return []
+
+
+def _text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
 
 
 def _assignees(found: dict | None) -> list[str]:
@@ -566,6 +821,8 @@ def drop(root: Path, task: Task, force: bool = False, server: str = "") -> str:
     so that nothing that did not reach GitHub is lost. The copy and the task also stay when the session works in the
     copy, or when git cannot remove it: `akasha tidy` at the next session start, or `akasha cancel <task> --force`,
     ends them."""
+    if replaced(root, task):
+        return ""                              # a new task took the name: its work copy and its branch stay
     tree = Path(task.workcopy)
     if any(repo.inside(Path.cwd(), Path(part["workcopy"])) for part in task.parts):
         return "the session works in a part of the task: leave that folder, then run `akasha tidy`"
@@ -575,12 +832,12 @@ def drop(root: Path, task: Task, force: bool = False, server: str = "") -> str:
     if task.workcopy and tree.is_dir():
         if repo.inside(Path.cwd(), tree):
             return f"the session works in {tree}: leave that folder, then run `akasha tidy`"
-        if server and (work.dirty(tree) or not work.contains(tree, server, task.number)):
+        if server and (work.unsaved(tree) or not work.contains(tree, server, task.number)):
             return (f"the work copy {tree} has changes that are not on GitHub. They stay there: start a new task for "
                     f"them, or drop them with `akasha cancel {task.id} --force`")
     problem = work.remove(root, tree, task.branch, force=force or bool(server)) if task.workcopy else ""
     if not problem:
-        forget(root, task.id)
+        forget(root, task.id, task.number)
     board.forget(root)
     return problem
 
@@ -621,10 +878,23 @@ def resume(root: Path, ref: str, force: bool = False) -> tuple[Task, list[str]]:
         raise RuntimeError(f"git cannot fetch the branch {task.branch} of the task")
     path = root / team.work_dir / task.id
     work.exclude(root, team.work_dir)
-    work.create(root, path, task.branch, f"origin/{task.branch}", new=False)
+    # The landing of another computer can have moved the records into the archive: the work copy takes in that one
+    # folder of the archive, which the branch itself names, and the task keeps it
+    own = archive.of_branch(root, team, task.id, task.branch)
+    work.create(root, path, task.branch, f"origin/{task.branch}", new=False, archive=team.archive_dir, own=own)
+    if own:
+        task.records_dir, task.records_name = team.archive_dir, own[0][len(team.archive_dir.rstrip("/")) + 1:]
     task.workcopy = str(path)
+    # The session that brought the task to this computer works on it: else its first edit would stop. A session
+    # that Akasha cannot tell gets no task
+    mine = approval.session(root, sure=True)
+    if mine:
+        task.session, task.active_at = mine, time.time()
     save(root, task)
     notes = _prepare(team, path)
+    if not mine:
+        notes.append(f"note — Akasha cannot tell which session this is. Before the first edit: `akasha status "
+                     f"{task.id} --resume`")
     pr.update(root, task)
     board.forget(root)
     return task, notes
@@ -642,6 +912,7 @@ def upgrade(root: Path, task_id: str) -> Task:
     task.approval, task.review, task.checks = {}, {}, {}
     task.preview_sha, task.shown_at, task.shown_in, task.heard = "", 0.0, "", {}
     record(task, PREVIEW).unlink(missing_ok=True)               # Akasha made it from the change: not a preview
+    evidence.forget(task)
     save(root, task)
     trace.note(root, "upgraded", task=task.id)
     if board.available(root) and task.number:
@@ -680,7 +951,7 @@ def split(root: Path, task_id: str, name: str, scope: tuple[str, ...]) -> tuple[
         raise ValueError("give the files of the part with --scope, for example --scope \"server/**\": the parts must "
                          "not change the same files")
     tree = Path(task.workcopy)
-    files = repo.names(tree, "ls-files")
+    files = repo.paths(tree, team.record_roots)
     for part in task.parts:
         if _overlap(patterns, part["scope"], files):
             raise ValueError(f"the scope {', '.join(patterns)} has files of the part {part['name']} "
@@ -689,7 +960,7 @@ def split(root: Path, task_id: str, name: str, scope: tuple[str, ...]) -> tuple[
     if path.exists() or repo.git(root, "rev-parse", "-q", "--verify", f"refs/heads/{branch}").returncode == 0:
         raise ValueError(f"{path} or the branch {branch} is in use. Give another name")
     work.commit(tree, f"{task.title} (before the parts)")       # the parts start from each change of the task so far
-    work.create(root, path, branch, work.head(tree))
+    work.create(root, path, branch, work.head(tree), archive=team.archive_dir)
     part = {"name": name, "branch": branch, "scope": patterns, "workcopy": str(path)}
     task.parts.append(part)
     save(root, task)
@@ -697,9 +968,23 @@ def split(root: Path, task_id: str, name: str, scope: tuple[str, ...]) -> tuple[
     return part, _prepare(team, path)
 
 
+def _part_head(task: Task, part: dict) -> str:
+    """The newest commit of the branch of a part, or "" when the branch is gone."""
+    return repo.git(Path(task.workcopy), "rev-parse", "-q", "--verify", part["branch"]).stdout.strip()
+
+
+def pending(task: Task) -> list[dict]:
+    """The parts whose work did not join the task yet. A part that joined with `--keep` stays in `parts` with the
+    commit that joined; a newer commit on its branch makes it pending again."""
+    if not task.parts or not task.workcopy:
+        return []
+    return [part for part in task.parts if (head := _part_head(task, part)) and part.get("joined") != head]
+
+
 def join(root: Path, task_id: str, keep: bool = False) -> list[str]:
-    """Merge each part into the work copy of the task, then remove the part (`keep` leaves it). A conflict stops the
-    join with the files, and the work copy stays as it was before that part."""
+    """Merge each part with new work into the work copy of the task, then remove the part (`keep` leaves it). It
+    gives the parts that it merged. A conflict stops the join with the files, and the work copy stays as it was before
+    that part. A part that joined earlier and stayed has no new work: it is only removed, unless `keep`."""
     task = load(root, task_id)
     if not task.parts:
         raise ValueError(f"task {task.id} has no parts")
@@ -709,26 +994,32 @@ def join(root: Path, task_id: str, keep: bool = False) -> list[str]:
         copy = Path(part["workcopy"])
         if copy.is_dir():
             work.commit(copy, f"{task.title} — {part['name']}")
-        merged = repo.git(tree, "merge", "--no-ff", "--no-edit", "-m", f"akasha: join {part['name']}", part["branch"])
-        if merged.returncode:
-            files = repo.names(tree, "diff", "--name-only", "--diff-filter=U")
-            repo.git(tree, "merge", "--abort")
-            save(root, task)
-            trace.note(root, "join_conflict", task=task.id, part=part["name"], files=files[:10])
-            raise ValueError(f"the part {part['name']} conflicts with the work copy of the task in "
-                             f"{', '.join(files) or 'some files'}. Repair it in {copy} (merge the branch "
-                             f"{task.branch} there), then run `akasha join {task.id}` again"
-                             + (f". Joined before it: {', '.join(told)}" if told else ""))
-        told.append(part["name"])
+        new = part in pending(task)
+        if new:
+            merged = repo.git(tree, "merge", "--no-ff", "--no-edit", "-m", f"akasha: join {part['name']}",
+                              part["branch"])
+            if merged.returncode:
+                files = repo.names(tree, "diff", "--name-only", "--diff-filter=U")
+                repo.git(tree, "merge", "--abort")
+                work.restore(tree)
+                save(root, task)
+                trace.note(root, "join_conflict", task=task.id, part=part["name"], files=files[:10])
+                raise ValueError(f"the part {part['name']} conflicts with the work copy of the task in "
+                                 f"{', '.join(files) or 'some files'}. Repair it in {copy} (merge the branch "
+                                 f"{task.branch} there), then run `akasha join {task.id}` again"
+                                 + (f". Joined before it: {', '.join(told)}" if told else ""))
+            told.append(part["name"])
         task.parts = [item for item in task.parts if item["name"] != part["name"]]
         if keep:
+            part["joined"] = _part_head(task, part)       # a newer commit of the part makes it pending again
             task.parts.append(part)
         else:
             problem = work.remove(root, copy, part["branch"])
-            if problem:
+            if problem and new:
                 told[-1] += f" ({problem})"
         save(root, task)
-        trace.note(root, "joined", task=task.id, part=part["name"])
+        if new:
+            trace.note(root, "joined", task=task.id, part=part["name"])
     return told
 
 
@@ -781,7 +1072,7 @@ def cancel(root: Path, task_id: str, force: bool = False) -> str:
     task = load(root, task_id)
     _outside(task)
     tree = Path(task.workcopy)
-    if tree.is_dir() and work.dirty(tree) and not force:
+    if tree.is_dir() and work.unsaved(tree) and not force:
         raise ValueError(f"the work copy {tree} has changes that are not saved. Run with --force to drop them")
     found = _pull(root, task, "assignees,headRefOid")
     holder = _holder(root, found)
@@ -844,9 +1135,39 @@ def tidy(root: Path, timeout: float = 20) -> list[str]:
         if state in ("MERGED", "CLOSED"):
             task.status = state.lower()
             save(root, task)
+            # The branch of a merged task leaves the server, so that a new task can take the name. GitHub does it
+            # where the repository deletes branches on a merge; an auto-merge of gh does not
+            kept = work.delete_remote(root, task.branch, head) if state == "MERGED" else ""
             problem = drop(root, task, server=head)
             lines.append(problem or f"task {task.id} {state.lower()}: its work copy is removed")
+            lines += [kept] if kept else []
         elif state == "OPEN" and (holder := _holder(root, found)):
             problem = drop(root, task, server=head)
             lines.append(problem or f"@{holder} holds task {task.id} now: the copy on this computer is removed")
     return lines
+
+
+def review_names(root: Path, task: Task) -> str:
+    """For the reviewer (R10): the rules for names of this task, what the names of nearby code tell, and the commands
+    that show what the repository has."""
+    from akasha import naming
+    lines = []
+    try:
+        team = rules(root)
+        found = codemap.Map(Path(task.workcopy), team, root)
+        files = [path for path in found.files if any(checks.matches(path, item) for item in task.scope)]
+        lines += naming.lines(files + list(task.scope))
+        for area in codemap._areas_of(found, task.scope):
+            lines += [f"names — {line}" for line in codemap.usual_words(found, area)]
+        tree = Path(task.workcopy)
+        start = repo.git(tree, "merge-base", "HEAD", f"origin/{repo.default_branch(root)}").stdout.strip() or task.base
+        areas, folders, _first = consistency.structure(team, tree, start)
+        if areas or folders:                              # a fact for R7: the machine judges nothing of it
+            made = " · ".join([*(f"area {area}" for area in areas), *(f"folder {name}/" for name in folders)])
+            lines.append(f"new structure: {made} (the first in the repository): judge it with the structure guide "
+                         "(R7)")
+    except (RuntimeError, OSError, config.ConfigError):
+        lines += naming.lines(list(task.scope))
+    lines.append("existing code — `akasha map <folder>` shows each public name of a folder, and `akasha find <words>` "
+                 "searches names and descriptions: use them for R10 before you accept new code")
+    return "\n".join(lines)

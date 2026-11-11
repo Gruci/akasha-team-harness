@@ -34,7 +34,7 @@ a long list of rules on the first day stops each task.
    | File | Function |
    |:--|:--|
    | `akasha.toml` | The rules of the team, with the usual commands of the main language |
-   | `.gitignore` | Ignores `.akasha/state/`, the work folder, the own agent settings of each person (`.claude/settings.local.json`, `CLAUDE.local.md`), and the files that tests and builds make |
+   | `.gitignore` | Ignores `.docs/state/`, the work folder, the own agent settings of each person (`.claude/settings.local.json`, `CLAUDE.local.md`), and the files that tests and builds make |
    | `.github/workflows/akasha.yml` | The check of Akasha, when the team has no CI of its own |
    | `.github/workflows/akasha-watch.yml` | The watch, where GitHub does not protect the default branch |
    | `.claude/settings.json` | Registers the marketplace of Akasha and turns the plugin on for each teammate. Allows the git and gh commands that only read, and lets edits pass without a prompt (`acceptEdits`) when the team set no mode: Akasha still stops each edit that a task must not make. The other keys stay |
@@ -104,8 +104,10 @@ administrator counts. The changes of the administrators and of the people of `[t
 ## A team that has its own CI
 
 Write the names of its required checks in `[ci] required`, as GitHub shows the jobs (for example `checks`, not the name
-of the workflow). Akasha keeps its own check away, and waits for these checks on GitHub. Let the CI run on draft
-pull requests, and do not start it again when a draft gets ready:
+of the workflow). Akasha waits for these checks on GitHub, together with its own check (`akasha`), which it
+installs in each case. The CI of the team need not run a command of Akasha: when it ran
+`python -m akasha check --ci`, remove that step. Let the CI run on draft pull requests, and do not start it again
+when a draft gets ready:
 
 ```yaml
 on:
@@ -127,7 +129,7 @@ then `/plugin install akasha@akasha`), logs in with `gh auth login`, and opens t
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v1.1.5"`, elsewhere `python3 -m pip install …`.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.0"`, elsewhere `python3 -m pip install …`.
 Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
 
 ## Agent accounts

@@ -10,13 +10,18 @@ from __future__ import annotations
 import re
 import subprocess
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
+from typing import TypeVar
 
 CONFIG_FILE = "akasha.toml"
 PLACES = (CONFIG_FILE, f".github/{CONFIG_FILE}")    # where the team config can be, in this order
-STATE_DIR = Path(".akasha") / "state"        # the state of this computer. Git ignores it
-RECORDS_DIR = ".akasha/tasks"                # the preview, the plan, and the summary of each task. They go into git
+STATE_DIR = Path(".docs") / "state"        # the state of this computer. Git ignores it
+RECORDS_DIR = ".docs/tasks"                  # the records of each task in work: the preview, the plan, the summary.
+#                                              They are in the branch of the task, never in the default branch
+ARCHIVE_DIR = ".docs/archive"                # the records of each merged task: YYYY/MM/YYYY-MM-DD-<task>. The landing
+#                                              moves them there, and no work copy holds the archive of other tasks
 WORK_DIR = ".claude/worktrees"               # a git worktree for each task: <folder>/<task>. Claude Code moves a
 #                                              session into a folder here without asking, and asks anywhere else
 BRANCH_PREFIX = "akasha/"                    # the branch of each task: <prefix><task>
@@ -26,7 +31,9 @@ SERVER_RULES = ("github", "akasha")          # who stops a merge without the che
 GUIDE_STEPS = ("join", "preview", "plan", "build", "review")
 CHECK_KEYS = ("command", "cwd", "only_when", "command_windows", "ready")
 CHECK_SETTINGS = ("required", "setup", "run_all_when")
-RESERVED_CHECKS = CHECK_SETTINGS + ("secrets", "data", "screen", "version")   # checks of flow.py and of the server
+# The checks of Akasha itself, in flow.py and on the server: a check of the team cannot take their names
+RESERVED_CHECKS = CHECK_SETTINGS + ("secrets", "data", "screen", "version", "quick", "admin_only", "gate",
+                                    "evidence", "consistency", "folders")
 ONE_LINE_CHECKS = ("tests", "lint")          # a check with one command line: tests = "<command>"
 CHECK_NAME = re.compile(r"[A-Za-z0-9_-]+")
 NOT_IN_BRANCH = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{")
@@ -48,18 +55,36 @@ _KEYS: dict[str, set[str] | None] = {
     "risk": {"paths"},
     "checks": None,                          # the team names its checks
     "ci": {"required", "runs-on", "python"},
-    "work": {"folder", "branch_prefix", "records", "records_date"},
+    "work": {"folder", "branch_prefix", "records", "archive"},
     "guides": set(GUIDE_STEPS),
     "server": {"rules"},
     "core": {"paths", "areas", "used_by"},
     "deploy": {"workflow", "verify"},
     "quick": {"paths"},
-    "preview": {"data", "screens"},
+    "preview": {"data", "screens", "check"},
+    "definitions": {"on"},
+    "pins": {"policy"},
+    "review": {"command", "files", "timeout"},
+    "boundaries": None,                      # the team names its boundaries
 }
 
 
 class ConfigError(ValueError):
     """The team config has an incorrect shape."""
+
+
+@dataclass(frozen=True)
+class Boundary:
+    """One rule of [boundaries]: the files of an area are open only through its entries (private, public), some
+    files do not import others (sources, forbidden), or the imports between some areas make no cycle (acyclic).
+    `exceptions`: exact pairs, importer and target."""
+    name: str
+    private: tuple[str, ...] = ()
+    public: tuple[str, ...] = ()
+    sources: tuple[str, ...] = ()
+    forbidden: tuple[str, ...] = ()
+    exceptions: tuple[tuple[str, str], ...] = ()
+    acyclic: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -93,7 +118,7 @@ class Team:
     work_dir: str = WORK_DIR
     branch_prefix: str = BRANCH_PREFIX
     records_dir: str = RECORDS_DIR
-    records_date: bool = False               # the records folder of a new task: YYYY-MM-DD-<task>, its start date
+    archive_dir: str = ARCHIVE_DIR           # the records of the merged tasks (archive.py)
     guides: dict[str, tuple[str, ...]] = field(default_factory=dict)    # step -> team files to read in that step
     server_rules: str = "github"
     deploy_workflow: str = ""                # the workflow that puts a merged change live, for example "Deploy"
@@ -104,12 +129,27 @@ class Team:
     quick_paths: tuple[str, ...] = ()        # files other than code and text that a quick task can change
     data_paths: tuple[str, ...] = ()         # files that make data people see: their task defines its values (spec.py)
     screen_paths: tuple[str, ...] = ()       # files that make a screen: a task without one changes none (screen.py)
+    preview_check: str = ""                  # a command of the team that examines a preview before the person sees it
+    definitions_on: bool = False             # the list of the definitions holds (definitions.py)
+    pins_policy: str = ""                    # "" (not answered), observe, new, or all (pins.py)
+    review_command: str = ""                 # a command that reviews a plan in its own process (reviewer.py)
+    review_files: tuple[str, ...] = ()       # the files of the repository that the command needs
+    review_timeout: int = 900                # seconds
+    boundaries: tuple[Boundary, ...] = ()    # which code may import which (boundaries.py)
     unknown: tuple[str, ...] = ()            # settings of a newer Akasha that this one does not know
 
     @property
+    def record_roots(self) -> tuple[str, ...]:
+        """The folders that hold the records of the tasks: of the tasks in work, and the archive. They hold no
+        code: a listing of the files of the repository leaves them out."""
+        return (self.records_dir, self.archive_dir)
+
+    @property
     def status_checks(self) -> tuple[str, ...]:
-        """The checks that GitHub must see pass before a merge: the CI of the team, else the check of Akasha."""
-        return self.ci_required or (AKASHA_CHECK,)
+        """The checks that GitHub must see pass before a merge: the CI of the team and the check of Akasha. The
+        check of Akasha is there in each case: the evidence of a task and the checks of Akasha do not depend on a step
+        that the team adds to its own CI."""
+        return tuple(dict.fromkeys(self.ci_required + (AKASHA_CHECK,)))
 
 
 def _strings(value: object, where: str) -> tuple[str, ...]:
@@ -251,6 +291,44 @@ def _known(data: dict) -> tuple[dict, list[str]]:
     return known, unknown
 
 
+def _boundaries(section: dict) -> tuple[Boundary, ...]:
+    """The boundaries of [boundaries.<name>]. Each one is of one kind: private and public, from and not, or
+    acyclic."""
+    found = []
+    for name, value in section.items():
+        where = f"[boundaries.{name}]"
+        if not isinstance(value, dict) or set(value) - {"private", "public", "except", "from", "not", "acyclic"}:
+            raise ConfigError(f"{CONFIG_FILE}: {where} has private and public, or from and not, or acyclic, and "
+                              "except")
+        pairs = []
+        for item in _strings(value.get("except", []), f"{where} except"):
+            one, arrow, other = item.partition("->")
+            if not arrow or not one.strip() or not other.strip():
+                raise ConfigError(f"{CONFIG_FILE}: {where} except is \"<file> -> <file>\", one exact pair")
+            pairs.append((pattern(one.strip()), pattern(other.strip())))
+        rule = Boundary(name, _patterns(value.get("private", []), f"{where} private"),
+                        _patterns(value.get("public", []), f"{where} public"),
+                        _patterns(value.get("from", []), f"{where} from"),
+                        _patterns(value.get("not", []), f"{where} not"), tuple(pairs),
+                        tuple(pattern(item.rstrip("/\\")) for item in _strings(value.get("acyclic", []),
+                                                                             f"{where} acyclic")))
+        kinds = [bool(rule.private), bool(rule.sources or rule.forbidden), bool(rule.acyclic)]
+        if kinds.count(True) != 1 or bool(rule.sources) != bool(rule.forbidden):
+            raise ConfigError(f"{CONFIG_FILE}: {where} has private and public, or from and not, or acyclic")
+        found.append(rule)
+    return tuple(found)
+
+
+def _policy(section: dict) -> str:
+    """[pins] policy. A value that Akasha does not know is an error: it never counts as "observe"."""
+    if "policy" not in section:
+        return ""
+    value = section["policy"]
+    if value not in ("observe", "new", "all"):
+        raise ConfigError(f"{CONFIG_FILE}: [pins] policy must be \"observe\", \"new\", or \"all\"")
+    return value
+
+
 def team_from(data: dict) -> Team:
     """Examine the data of akasha.toml and make the team rules."""
     data, unknown = _known(data)
@@ -277,6 +355,7 @@ def team_from(data: dict) -> Team:
         # An administrator is free of the locked files and of the core approval: an agent account never is
         raise ConfigError(f"{CONFIG_FILE}: @{both[0]} is in [team] agents and also in [team] admins or "
                           "own_procedure. An agent account has the rules of a teammate")
+    boundaries = _boundaries(data.get("boundaries", {}))
     return Team(
         admins=admins,
         own_procedure=own,
@@ -293,8 +372,8 @@ def team_from(data: dict) -> Team:
         python=_python(ci.get("python", PYTHON)),
         work_dir=work_dir,
         branch_prefix=_prefix(work.get("branch_prefix", BRANCH_PREFIX)),
-        records_dir=_folder(work.get("records", RECORDS_DIR), "records", "docs/tasks", (work_dir,)),
-        records_date=_flag(work.get("records_date", False), "[work] records_date"),
+        records_dir=(records_dir := _folder(work.get("records", RECORDS_DIR), "records", "docs/tasks", (work_dir,))),
+        archive_dir=_folder(work.get("archive", ARCHIVE_DIR), "archive", "docs/archive", (work_dir, records_dir)),
         guides=_guides(data.get("guides", {})),
         server_rules=rules,
         deploy_workflow=_text(deploy["workflow"], "[deploy] workflow") if "workflow" in deploy else "",
@@ -305,6 +384,15 @@ def team_from(data: dict) -> Team:
         quick_paths=_patterns(data.get("quick", {}).get("paths", []), "[quick] paths"),
         data_paths=_patterns(data.get("preview", {}).get("data", []), "[preview] data"),
         screen_paths=_patterns(data.get("preview", {}).get("screens", []), "[preview] screens"),
+        preview_check=_text(preview["check"], "[preview] check") if "check" in (preview := data.get("preview", {}))
+        else "",
+        definitions_on=_flag(data.get("definitions", {}).get("on", False), "[definitions] on"),
+        pins_policy=_policy(data.get("pins", {})),
+        review_command=_text(asked["command"], "[review] command") if "command" in (asked := data.get("review", {}))
+        else "",
+        review_files=_patterns(asked.get("files", []), "[review] files"),
+        review_timeout=_count(asked.get("timeout", 900), "[review] timeout"),
+        boundaries=boundaries,
         unknown=tuple(unknown),
     )
 
@@ -332,8 +420,33 @@ def load(root: Path, path: Path | None = None) -> Team:
     return parse(path.read_text(encoding="utf-8")) if path.is_file() else Team()
 
 
+_Answer = TypeVar("_Answer")
+_MEMO: dict[tuple, object] | None = None     # what git answered, while a hook around a tool runs (memo)
+
+
+def memo(on: bool) -> None:
+    """Keep what git answers about the default branch and the team config, until `memo(False)`. Only a hook around a
+    tool turns it on: it runs for an instant and asks the same questions several times. A command of Akasha never
+    does: the landing fetches, and then reads the rules again."""
+    global _MEMO
+    _MEMO = {} if on else None
+
+
+def remembered(key: tuple, find: Callable[[], _Answer]) -> _Answer:
+    """The answer of `find`, kept under `key` while the memo is on."""
+    if _MEMO is None:
+        return find()
+    if key not in _MEMO:
+        _MEMO[key] = find()
+    return _MEMO[key]                    # type: ignore[return-value]
+
+
 def shown(root: Path, ref: str) -> str | None:
     """The text of the team config in the commit `ref`, or None when the commit has none."""
+    return remembered(("shown", str(root), ref), lambda: _shown(root, ref))
+
+
+def _shown(root: Path, ref: str) -> str | None:
     for name in PLACES:
         shown = subprocess.run(["git", "show", f"{ref}:{name}"], cwd=root, capture_output=True, text=True,
                                encoding="utf-8", errors="replace")

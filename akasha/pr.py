@@ -37,7 +37,8 @@ def meta(task: Task) -> list[str]:
     else:
         lines.append("- Preview: not approved yet")
     if task.review:
-        who = "the akasha-reviewer agent" if task.review.get("source") == "reviewer" else "the agent engine itself"
+        who = {"reviewer": "the akasha-reviewer agent", "command": "the reviewer command of the team"}.get(
+            task.review.get("source"), "the agent engine itself")
         what = "Change review" if task.kind == "quick" else "Plan review"
         lines.append(f"- {what}: {task.review.get('verdict')} by {who} (round {task.review.get('rounds', 1)})"
                      + _items(task.review))
@@ -51,25 +52,33 @@ def meta(task: Task) -> list[str]:
         lines.append(f"- Core changes: {', '.join(f'`{name}`' for name in found)} — {state}")
     if task.scope:
         lines.append(f"- Planned files: {', '.join(f'`{item}`' for item in task.scope)}")
+    for what, word in (("adds", "Adds"), ("changes", "Changes")):
+        if task.defs.get(what):
+            lines.append(f"- {word} the definitions: {', '.join(f'`{key}`' for key in task.defs[what])}")
     kept = {"quick": "impact, preview, review, summary", "agent": "request, research, plan, review, summary",
             "no-screen": "research, plan, review, summary"}.get(task.kind, "preview, research, plan, review, summary")
     lines.append(f"- Records: `{records(task)}/` ({kept})")
     return lines
 
 
+def _order(name: str) -> tuple[str, int]:
+    """The place of an item in a list: its letter, then its number, so that R2 comes before R10."""
+    return name[:1], int(name[1:]) if name[1:].isdigit() else 0
+
+
 def _items(review: dict) -> str:
-    """The verdict of each item of the review, in short: 'R1–R9 PASS (N/A R9)', or why a PASS mark did not count."""
+    """The verdict of each item of the review, in short: 'R1–R10 PASS (N/A R9)', or why a PASS mark did not count."""
     found = review.get("items") or {}
     if review.get("problem"):
         return f" — the PASS mark did not count: {review['problem']}"
     if not found:
         return ""
+    names = sorted(found, key=_order)
     if review.get("verdict") != "PASS":
-        failed = sorted(name for name, verdict in found.items() if verdict == "FAIL")
+        failed = [name for name in names if found[name] == "FAIL"]
         return f" — failed: {', '.join(failed)}, see review.md" if failed else ""
-    names = sorted(found)
     span = f"{names[0]}–{names[-1]}" if len(names) > 1 else names[0]
-    unused = [name for name, verdict in found.items() if verdict == "N/A"]
+    unused = [name for name in names if found[name] == "N/A"]
     return f" — {span} PASS" + (f" (N/A {', '.join(unused)})" if unused else "") + ", see review.md"
 
 
@@ -127,4 +136,4 @@ def update(root: Path, task: Task) -> bool:
 def view(root: Path, task: Task) -> dict | None:
     return gh_json(root, "pr", "view", str(task.number), "--json",
                    "state,isDraft,mergeStateStatus,statusCheckRollup,reviewDecision,headRefOid,baseRefName,url,author,"
-                   "autoMergeRequest,mergeCommit")
+                   "autoMergeRequest,mergeCommit,body,comments")

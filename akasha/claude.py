@@ -9,6 +9,7 @@ from pathlib import Path
 
 from akasha import REPOSITORY, VERSION
 from akasha.codex import END, PRECEDENCE, START, with_block
+from akasha.guide import ARCHIVE, CORE
 
 SETTINGS = ".claude/settings.json"
 INSTRUCTIONS = "CLAUDE.md"
@@ -26,7 +27,11 @@ RULES = f"""{START}
 This repository uses Akasha. Each change is an Akasha task: use the akasha-build skill for each request to add,
 change, or repair something, also for a small fix. {PRECEDENCE}
 
-Never merge a pull request yourself, never force a push, and never change .akasha/state. If the akasha-build skill is
+{CORE}
+
+{ARCHIVE}
+
+If the akasha-build skill is
 not there, the plugin is missing: stop, and ask the person to run `/plugin marketplace add {REPOSITORY}#v{VERSION}` and
 `/plugin install {PLUGIN}`, then to restart.
 {END}

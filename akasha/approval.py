@@ -34,7 +34,13 @@ from akasha.repo import write_whole
 from akasha.task import PREVIEW, Task, all_local, digest, record, save
 
 MAX_AGE = 24 * 3600          # a preview that the person saw more than a day ago is shown again before an approval
-AUTOMATIC = ("<task-notification>",)
+# Prompts that no person typed. Claude Code sends the hook of the prompt for them too: the notice of a background
+# task, and the report of a subagent (`<agent-message from="…">`, measured with Claude Code 2.1.322). A prompt
+# that starts with a tag of this form is never the words of a person: a report of a subagent after a preview
+# would else approve it
+AUTOMATIC = ("<task-notification", "<agent-message", "<system-reminder", "<local-command", "<command-",
+             "<bash-", "<user-prompt-submit-hook")
+CALLS = STATE_DIR / "calls.json"         # the Akasha commands that the hooks let through, each with its session
 WORDS_KEPT = 200             # the characters of the message that the approval keeps
 SESSION = STATE_DIR / "session.json"     # the session of the last Akasha command, as its hook saw it
 SESSION_SECONDS = 120
@@ -42,30 +48,47 @@ SESSION_SECONDS = 120
 FROM = re.compile(r"^\[akasha-from:\s*([^\]\n]{1,80}?)\s*\]")
 
 
+def _calls(root: Path) -> list[dict]:
+    try:
+        found = json.loads((root / CALLS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    now = time.time()
+    return [item for item in found if isinstance(item, dict) and now - float(item.get("at") or 0) < SESSION_SECONDS] \
+        if isinstance(found, list) else []
+
+
 def note_session(root: Path, session: str, line: str) -> None:
     """Keep the session of the Akasha command `line` that is about to run. The hook gets it from the agent engine,
-    also after /clear and in Codex, where the environment of the command does not tell it."""
+    also after /clear and in Codex, where the environment of the command does not tell it. Each call has its own
+    entry: two sessions that run commands at the same time do not write over each other."""
     try:
         words = shlex.split(line)
     except ValueError:
         return
-    (root / SESSION).parent.mkdir(parents=True, exist_ok=True)
-    write_whole(root / SESSION, json.dumps({"session": session, "at": time.time(), "words": words}))
+    (root / CALLS).parent.mkdir(parents=True, exist_ok=True)
+    write_whole(root / CALLS, json.dumps(_calls(root) + [{"session": session, "at": time.time(), "words": words}]))
 
 
-def session(root: Path) -> str:
+def session(root: Path, sure: bool = False) -> str:
     """The session of this Akasha command: the one that its hook kept a moment ago for this very command line, else
-    the one of Claude Code. Another session can run an Akasha command at the same time, so the words must match."""
-    path = root / SESSION
-    try:
-        kept = json.loads(path.read_text(encoding="utf-8"))
-        words, mine = list(kept.get("words") or []), sys.argv[1:]
-        if time.time() - float(kept["at"]) < SESSION_SECONDS and kept.get("session") and mine and \
-                words[-len(mine):] == mine:
-            path.unlink(missing_ok=True)                  # once: a later command has its own
-            return str(kept["session"])
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
+    the one of Claude Code. Another session can run an Akasha command at the same time, so the words must match.
+
+    `sure`: for a command that changes which session holds a task. When two sessions ran the same command line
+    within the same moment, Akasha cannot tell which one this is: the answer is "" (the session is not known),
+    never the later one."""
+    mine = sys.argv[1:]
+    calls = _calls(root)
+    fits = [item for item in calls if mine and item.get("session") and list(item.get("words") or [])[-len(mine):] == mine]
+    if fits:
+        if sure and len({item["session"] for item in fits}) > 1:
+            return ""
+        taken = fits[0]                               # once: a later command has its own entry
+        try:
+            write_whole(root / CALLS, json.dumps([item for item in calls if item is not taken]))
+        except OSError:
+            pass
+        return str(taken["session"])
     return os.environ.get("CLAUDE_CODE_SESSION_ID", "")
 
 
@@ -140,26 +163,31 @@ def shown(task: Task) -> tuple[str, str]:
     return "preview", f"akasha preview {task.id}"
 
 
-def approve(root: Path, task: Task, session: str, current: str = "") -> str:
+def approve(root: Path, task: Task, session: str, current: str = "", typed: bool = False) -> str:
     """Record the approval from the last message of the person. `current` is the digest of what the person approves
     now: the result of an agent task, the plan of a task without a screen, else the preview file. Return what is
-    missing, or ""."""
+    missing, or "". `typed`: the person approved in their own terminal (`akasha approve <task> --here`), where no
+    hook keeps a message: the conditions of the kept message and of the session do not hold, and the others do:
+    the preview was shown, within a day, and it is the same now."""
     heard = task.heard or {}
     what, again = shown(task)
     if task.status != _wanted(task) or not task.shown_at:
         return f"task {task.id} does not wait for an approval of its {what}"
     if time.time() - task.shown_at > MAX_AGE:
         return f"the person saw the {what} more than a day ago. Show it again with `{again}`"
-    if task.shown_in and session != task.shown_in:
+    if task.shown_in and session != task.shown_in and not typed:
         return f"another session showed the {what}. Show it here with `{again}` and ask again"
     # Without a session (the agent engine gave none), the hook kept the message only for the one waiting task
-    if not heard or float(heard.get("at") or 0) < task.shown_at or (task.shown_in and heard.get("session") != session):
+    if not typed and (not heard or float(heard.get("at") or 0) < task.shown_at
+                      or (task.shown_in and heard.get("session") != session)):
         return (f"the person wrote nothing in this session after the {what} was shown. Ask the person in the chat, "
                 "and run this command only after their own message approves it")
     now = current or digest(record(task, PREVIEW))
     if now != task.preview_sha:
         return f"the {what} changed after it was shown. Show it again with `{again}` and ask again"
     me, words, at = repo.person(root), str(heard.get("words") or ""), time.strftime("%Y-%m-%d %H:%M")
+    if typed:
+        heard, words = {}, ""
     if task.kind == "agent":
         # The landing merges next, so the task stays in landing
         task.approval = {"by": str(heard.get("from") or me), "through": me, "at": at, "change_sha": now,
@@ -170,6 +198,9 @@ def approve(root: Path, task: Task, session: str, current: str = "") -> str:
     else:
         task.approval = {"by": me, "at": at, "preview_sha": now, "words": words, "source": "prompt"}
         task.status = "approved"
+    if typed:                                         # the record tells how the person approved
+        task.approval["source"] = "terminal" if task.kind in ("full", "quick") else task.approval["source"]
+        task.approval["typed"] = True
     task.heard = {}
     save(root, task)
     return ""

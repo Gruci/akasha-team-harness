@@ -20,9 +20,9 @@ import re
 import time
 from pathlib import Path
 
-from akasha import agent, board, checks, core, github, pr, quick, repo, trace, version, work
+from akasha import agent, archive, board, checks, core, github, pr, quick, repo, trace, turn, version, work
 from akasha.config import Team
-from akasha.flow import ask_help, drop, gate, rules, taken
+from akasha.flow import ask_help, drop, gate, pending, rules, taken
 from akasha.task import SUMMARY, Task, load, record, records, save
 
 POLL_SECONDS = 15
@@ -45,8 +45,9 @@ def _ready(task: Task) -> str:
     missing = gate(task)
     if missing:
         return missing
-    if task.parts:
-        return (f"the parts {', '.join(part['name'] for part in task.parts)} did not join the task. Run `akasha join "
+    waiting = pending(task)
+    if waiting:
+        return (f"the parts {', '.join(part['name'] for part in waiting)} did not join the task. Run `akasha join "
                 f"{task.id}`, then `akasha check {task.id}`")
     if quick.is_quick(task):
         missing = quick.missing(rules(repo.main_root(Path(task.workcopy)) or Path(task.workcopy)), task)
@@ -55,7 +56,8 @@ def _ready(task: Task) -> str:
     if _moved(task):
         return f"the checks did not pass on the current work. Run `akasha check {task.id}` first"
     if not record(task, SUMMARY).is_file():
-        return f"write {records(task)}/{SUMMARY} first: why, what changed, and how to undo it"
+        return (f"write {records(task)}/{SUMMARY} first: why, what changed, and how to undo it when a revert is "
+                "not enough")
     return ""
 
 
@@ -80,6 +82,9 @@ def land(root: Path, task_id: str, wait: float = 0) -> tuple[str, list[str]]:
     holder = taken(root, task)
     if holder:
         return BLOCKED, [f"@{holder} holds task {task.id} now. Run `akasha tidy` to remove the copy on this computer"]
+    stale = archive.sync(root, team, task)            # a landing that stopped between two steps continues from git
+    if stale:
+        return BLOCKED, [stale]
     # No answer from GitHub is no protection: then Akasha merges itself, after its own examination
     akasha_merges = team.server_rules == "akasha" or not github.protected(root, team)
     told: list[str] = []
@@ -87,7 +92,7 @@ def land(root: Path, task_id: str, wait: float = 0) -> tuple[str, list[str]]:
         problem = _ready(task) or _core(root, team, task)
         if problem:
             return BLOCKED, [problem]
-        state, told = _hand_over(root, task, akasha_merges)
+        state, told = _hand_over(root, team, task, akasha_merges)
         if state:
             return state, told
     state, lines = follow(root, team, load(root, task_id), deadline, akasha_merges)
@@ -115,7 +120,7 @@ def _core(root: Path, team: Team, task: Task) -> str:
             f"keep those lines, run `akasha check {task.id}`, and land again")
 
 
-def _hand_over(root: Path, task: Task, akasha_merges: bool) -> tuple[str, list[str]]:
+def _hand_over(root: Path, team: Team, task: Task, akasha_merges: bool) -> tuple[str, list[str]]:
     view = pr.view(root, task)
     if view is None:
         return WAITING, ["gh did not answer. " + AGAIN.format(task=task.id)]
@@ -131,9 +136,25 @@ def _hand_over(root: Path, task: Task, akasha_merges: bool) -> tuple[str, list[s
     if merged.returncode:
         files = repo.git(tree, "diff", "--name-only", "--diff-filter=U").stdout.split()
         repo.git(tree, "merge", "--abort")
+        work.restore(tree)                            # a conflict can put files of the archive into the work copy
         return CONFLICT, [f"the task conflicts with the latest {branch} in {', '.join(files[:8]) or 'some files'}. "
                           f"In {tree}, run `git merge origin/{branch}`, repair the conflicts (keep the changes of both "
                           f"sides when they add different things), run `akasha check {task.id}`, then land again"]
+    problem = work.restore(tree)
+    if problem:
+        return BLOCKED, [problem]
+    # The checks hold for this commit: the checked work with the latest default branch. Akasha keeps it before the
+    # push, so that a landing that stops here continues, and does not ask for the checks again
+    task.checks["landed"] = work.head(tree)
+    save(root, task)
+    # The records go into the archive now: one commit, in the same push. No push and no commit comes after the
+    # checks of GitHub only for the move
+    try:
+        archive.move(root, team, task)
+    except RuntimeError as error:
+        return BLOCKED, [str(error)]
+    task.checks["landed"] = work.head(tree)
+    save(root, task)
     # Ready only now: a draft is a task in work on the board, and ready asks the code owners for a review. First, so
     # that the run of the push is a real run where the CI skips drafts; where the CI runs on drafts, a run that passed
     # on the draft counts (_states), so ready starts no wait for a second run of the same commit.
@@ -141,12 +162,29 @@ def _hand_over(root: Path, task: Task, akasha_merges: bool) -> tuple[str, list[s
     work.push(tree, task.branch)
     task.status = "landing"
     task.checks["landed"] = work.head(tree)
+    turn.enter(task)                                  # the end of the line of the landings (turn.py)
+    # The pull request names the folder of the records. When GitHub did not take the update, the landing writes it
+    # again before anything merges: follow does it
+    task.checks["unwritten"] = True
     save(root, task)
-    pr.update(root, task)
-    # An auto-merge of GitHub would merge an agent task before the person approved its result: follow turns it on
-    lines = [] if akasha_merges or agent.is_agent(task) else _auto_merge(root, task)
+    _write(root, task)
+    # The auto-merge of GitHub waits for the turn of the task in the line: follow turns it on
     board.forget(root)
-    return "", lines
+    first = task.checks.get("first_area")              # once more at the landing: the next tasks read this code
+    return "", [first] if first else []
+
+
+def _write(root: Path, task: Task) -> bool:
+    """Write the state of the task into its pull request, and keep whether GitHub took it."""
+    if not task.checks.get("unwritten"):
+        return True
+    task.checks.pop("unwritten")
+    if pr.update(root, task):
+        save(root, task)
+        return True
+    task.checks["unwritten"] = True
+    save(root, task)
+    return False
 
 
 def _auto_merge(root: Path, task: Task) -> list[str]:
@@ -249,14 +287,39 @@ def _merge(root: Path, task: Task, view: dict) -> str:
 
 def follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: bool) -> tuple[str, list[str]]:
     """Watch the pull request until it merges, a check fails, it conflicts, or the deadline passes."""
+    notes: list[str] = []
+    state, lines = _follow(root, team, task, deadline, akasha_merges, notes)
+    return state, notes + lines
+
+
+def _follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: bool,
+            notes: list[str]) -> tuple[str, list[str]]:
     tree = Path(task.workcopy)
+    clock: dict = {}                                  # since when the first task of the line stands still
+    asked_auto = False
+
+    def judge(seen: dict) -> tuple[dict[str, str], int]:
+        return _states(seen, team.status_checks), _behind(root, seen)
+
     while True:
+        waits = ""
         view = pr.view(root, task)
         if view is None:
             return WAITING, ["gh did not answer. " + AGAIN.format(task=task.id)]
         state, head = view.get("state"), str(view.get("headRefOid") or "")
         if state in (MERGED, CLOSED):
             return _finish(root, team, task, state, view, deadline)
+        # Before the landing changes anything: another call can have put the task into the line again, and
+        # another computer can have passed this try
+        if turn.rejoin(task, view):
+            save(root, task)
+            if task.checks.get("unwritten"):
+                turn.back(root, task)
+        if not _write(root, task):                    # the pull request still names the old folder of the records
+            if time.monotonic() >= deadline:
+                return WAITING, ["GitHub did not take the update of the pull request. " + AGAIN.format(task=task.id)]
+            time.sleep(POLL_SECONDS)
+            continue
         if _moved(task):                              # for example an edit while the landing waits in the background
             task.status = "approved"
             save(root, task)
@@ -283,16 +346,31 @@ def follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: b
             work.push(tree, task.branch)
         else:
             behind = _behind(root, view)
-            if behind > 0:
-                repo.gh(root, "pr", "update-branch", str(task.number))
-                trace.note(root, "brought_up_to_date", task=task.id)
-                task.checks["updates"] = int(task.checks.get("updates") or 0) + 1
+            passed = behind == 0 and all(value == "PASS" for value in states.values())
+            if passed and agent.is_agent(task) and (missing := agent.missing(task)):
+                task.checks["asked"] = work.head(tree)                # `akasha result` shows this work
                 save(root, task)
-            elif behind == 0 and all(value == "PASS" for value in states.values()):
-                if agent.is_agent(task) and (missing := agent.missing(task)):
-                    task.checks["asked"] = work.head(tree)            # `akasha result` shows this work
+                return ASK, [missing]                     # the person answers also while others are before it
+            # GitHub merges with its auto-merge as soon as the checks pass: it waits for the turn too. An
+            # auto-merge would merge an agent task before the person approved its result
+            auto = not akasha_merges and not agent.is_agent(task) and not view.get("autoMergeRequest") \
+                and not asked_auto
+            if behind > 0 or passed or auto:
+                waits = turn.before(root, task, judge, clock) or ""
+            if waits:
+                pass                                      # no update, no merge, no auto-merge: not its turn
+            elif behind > 0:
+                done = repo.gh(root, "pr", "update-branch", str(task.number))
+                if done.returncode:                       # the request failed: no new head comes
+                    waits = f"GitHub did not bring the pull request up to date: {done.stderr.strip()[:200]}"
+                else:
+                    trace.note(root, "brought_up_to_date", task=task.id)
+                    task.checks["updates"] = int(task.checks.get("updates") or 0) + 1
                     save(root, task)
-                    return ASK, [missing]
+            elif auto:
+                asked_auto = True
+                notes.extend(_auto_merge(root, task))
+            elif passed:
                 if akasha_merges and view.get("mergeStateStatus") != "UNKNOWN":
                     error = _merge(root, task, view)
                     if not error:
@@ -302,13 +380,20 @@ def follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: b
                 elif not akasha_merges and not view.get("autoMergeRequest"):
                     _auto_merge(root, task)
         if time.monotonic() >= deadline:
-            return _late(task, view, states)
+            return _late(task, view, states, waits)
         time.sleep(POLL_SECONDS)
 
 
-def _late(task: Task, view: dict, states: dict[str, str]) -> tuple[str, list[str]]:
+def _late(task: Task, view: dict, states: dict[str, str], waits: str = "") -> tuple[str, list[str]]:
     """The result when the deadline passed: what the landing waits for."""
     again = AGAIN.format(task=task.id)
+    if waits.startswith("#"):
+        # Nothing wakes a task that waits for its turn: the person runs the landing again
+        return WAITING, [f"the task waited behind {waits} in the line of the landings: the task that came to the "
+                         "landing first merges first. The command that watched it ended, and nothing else moves "
+                         "the task. " + again]
+    if waits:
+        return WAITING, [f"{waits}. " + again]
     if view.get("reviewDecision") == "REVIEW_REQUIRED":
         return BLOCKED, [f"a rule of the repository on GitHub, not of Akasha, asks for a review: {view.get('url')}. "
                          f"Ask an administrator to remove it: `akasha help {task.id} \"<GitHub asks for a review>\"`"]
@@ -335,8 +420,11 @@ def _late(task: Task, view: dict, states: dict[str, str]) -> tuple[str, list[str
 def _finish(root: Path, team: Team, task: Task, state: str, view: dict, deadline: float) -> tuple[str, list[str]]:
     task.status, task.checks["head"] = state.lower(), str(view.get("headRefOid") or "?")
     save(root, task)
+    # The branch of a merged task leaves the server, so that a new task can take the name. An auto-merge of gh
+    # deletes no branch later, and not each repository deletes branches on a merge
+    kept = work.delete_remote(root, task.branch, task.checks["head"]) if state == MERGED else ""
     problem = drop(root, task, server=task.checks["head"])
-    lines = [f"task {task.id} {state.lower()}: {task.pr}"] + ([problem] if problem else [])
+    lines = [f"task {task.id} {state.lower()}: {task.pr}"] + [line for line in (problem, kept) if line]
     if state != MERGED or not team.deploy_workflow:
         return state, lines
     if not view.get("mergeCommit"):                   # Akasha merged it a moment ago
