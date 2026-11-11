@@ -196,14 +196,9 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
-| **v2.0.0** | Evidence on the server · the map of the code · the consistency check · definitions and boundaries · the archive of the records · the order of the landings · sessions · steps in new contexts |
-| **v1.1.5** | Who approved, not what they typed |
-| **v1.1.4** | Pinned team version · lighter plan review |
-| **v1.1.3** | Developer mode · plan approval without a screen · dated records |
-| **v1.1.2** | Work copies in `.claude/worktrees/` |
-| **v1.1.1** | Preview as spec |
-| **v1.1.0** | Agent accounts |
-| **v1.0.0** | First release |
+| **v2.0.0** | Evidence on the server · code map · consistency check · records archive · landing order |
+
+Earlier versions: [Releases](https://github.com/Gruci/akasha-team-harness/releases)
 
 * * *
 
