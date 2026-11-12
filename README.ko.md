@@ -238,7 +238,7 @@ domains/catalog — 상품과 가격을 보관한다
 
 | 버전 | 변경 내용 |
 |:--|:--|
-| **v2.0.0** | 서버의 과업 증거 · 제품의 지도(영역마다 설계서) · 제품 검사(proof, scope, map, ops, size) · 결과물 검토 · 작업 지시서 계획 · 작업 에이전트 하나 · git 훅 · Java·Kotlin·Go · 일관성 검사 · 기록 보관 · landing 차례 |
+| **v2.0.0** | 제품의 지도 · 제품 검사 · 결과물 검토 |
 
 이전 버전: [Releases](https://github.com/Gruci/akasha-team-harness/releases)
 

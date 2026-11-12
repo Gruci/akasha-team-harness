@@ -239,7 +239,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
-| **v2.0.0** | Evidence on the server · the map of the product (a sheet for each area) · the checks of the product (proof, scope, map, ops, size) · the review of the result · plans as work orders · one worker agent · hooks of git · Java, Kotlin, and Go · consistency check · records archive · landing order |
+| **v2.0.0** | The map of the product · product checks · result review |
 
 Earlier versions: [Releases](https://github.com/Gruci/akasha-team-harness/releases)
 
