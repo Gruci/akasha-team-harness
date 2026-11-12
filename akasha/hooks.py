@@ -41,10 +41,10 @@ SAFE_COMMANDS: dict[str, tuple[str, ...]] = {
     "approve": (),
     "status": ("--review", "--resume", "--brief"),
     "upgrade": (), "split": ("--scope",), "join": ("--keep",),
-    "check": ("--only",), "land": ("--wait",), "result": (), "board": ("--scope",), "help": (), "ask": (),
+    "check": ("--only",), "land": ("--wait",), "result": (), "board": ("--scope",), "help": (),
     "handoff": (), "resume": (), "tidy": (), "doctor": (), "version": (), "retro": (),
     # They only read the code
-    "map": ("--parts", "--addresses", "--definitions", "--report"), "find": (), "names": ()}
+    "map": ("--parts", "--addresses", "--definitions", "--report", "--json"), "find": (), "names": ()}
 
 
 def _payload() -> dict:
@@ -220,6 +220,9 @@ def allowed(line: str) -> bool:
     return all(word in SAFE_COMMANDS[rest[0]] for word in rest[1:] if word.startswith("-"))
 
 
+IDLE_MINUTES = 30              # a task without activity for so long: a new session asks the person about it
+
+
 def _step(task: Task, session: str) -> str:
     """The next step of a task of this person, for this session: a preview that another session showed (for example
     before /clear) is shown again here, because only the session that showed it takes the approval."""
@@ -242,6 +245,9 @@ def session_start(root: Path, session: str = "") -> int:
         lines.append(f"[AKASHA] This checkout is older than {branch} on the server. Pull it first: git pull origin "
                      f"{branch}")
     lines += _team_lines(root)
+    from akasha import githooks
+    # The hooks of git hold for each engine and for a person in a terminal: each computer has them
+    lines += [f"[AKASHA] {note}" for note in githooks.install(root, command())]
     lines += _in_time(lambda: _role_lines(root), NETWORK_SECONDS + 1)
     # First the tasks that merged, closed, or moved to another person, so that they are not named as yours
     lines += _in_time(lambda: [f"[AKASHA] {line}" for line in flow.tidy(root, timeout=TIDY_SECONDS)], TIDY_SECONDS,
@@ -260,9 +266,13 @@ def session_start(root: Path, session: str = "") -> int:
             whose = (f"another session works on it (last activity {minutes} minutes ago)" if task.session and
                      minutes is not None else "another session holds it" if task.session else
                      "no session holds it")
+            working = task.session and minutes is not None and minutes < IDLE_MINUTES
             lines.append(f"[AKASHA] Task {task.id} ({task.title}) is on this computer, and {whose}. It is not the "
-                         "work of this session. Only when the person asks to continue it here: `akasha status "
-                         f"{task.id} --resume`.")
+                         "work of this session. " + (
+                             "Only when the person asks to continue it here: " if working else
+                             "Before you start other work, ask the person in one line: continue it here, cancel it "
+                             f"(`akasha cancel {task.id}`), or leave it. To continue it here: ")
+                         + f"`akasha status {task.id} --resume`.")
     lines += _in_time(lambda: _board_lines(root), SESSION_SECONDS,
                       "[AKASHA] GitHub was slow: the board of the team is not shown. `akasha board` shows it.")
     print("\n".join(lines))

@@ -20,7 +20,7 @@ import re
 import time
 from pathlib import Path
 
-from akasha import agent, archive, board, checks, core, github, pr, quick, repo, trace, turn, version, work
+from akasha import agent, archive, board, checks, core, github, pr, quick, repo, review, trace, turn, version, work
 from akasha.config import Team
 from akasha.flow import ask_help, drop, gate, pending, rules, taken
 from akasha.task import SUMMARY, Task, load, record, records, save
@@ -55,6 +55,9 @@ def _ready(task: Task) -> str:
             return missing
     if _moved(task):
         return f"the checks did not pass on the current work. Run `akasha check {task.id}` first"
+    if review.result_needed(task) and not review.result_passed(task):
+        return (f"the reviewer did not pass the result as it is now. Ask the akasha-reviewer agent to review the "
+                f"result of task {task.id} (result digest {review.result_digest(task)})" + review.result_told(task))
     if not record(task, SUMMARY).is_file():
         return (f"write {records(task)}/{SUMMARY} first: why, what changed, and how to undo it when a revert is "
                 "not enough")

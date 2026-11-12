@@ -16,8 +16,9 @@ Each line marked TODO waits for the answer of an administrator. Write no line ab
 
 - The folder of one area: {areas}
 - The entry of an area, the only file of it that other areas import: {entries}
-- What each area keeps: TODO (one line for each area, when it comes: what it keeps, and what it gives to the
-  outside. The first line of its entry file says the same)
+- What each area keeps: its sheet, the file `area.toml` in its folder, tells it in one line, with the areas that it
+  uses and the tables that it writes. `akasha map` shows each sheet with what the code shows. A task that makes a
+  new area writes its sheet, and an administrator approves it (the first line of its entry file says the same)
 
 ## Inside an area
 

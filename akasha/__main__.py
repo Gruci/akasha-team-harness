@@ -97,13 +97,16 @@ def _parser() -> argparse.ArgumentParser:
     cancel = commands.add_parser("cancel", help="stop a task for good")
     cancel.add_argument("task")
     cancel.add_argument("--force", action="store_true", help="drop the changes that are not saved")
-    asking = commands.add_parser("ask", help="ask the administrators a question that is not a change, in an issue")
-    asking.add_argument("text")
-    helping = commands.add_parser("help", help="ask the administrators on the pull request of the task")
+    helping = commands.add_parser("help", help="ask the administrators for what only they can do, on the pull "
+                                                "request of the task")
     helping.add_argument("task")
     helping.add_argument("text")
-    shown_map = commands.add_parser("map", help="the public names of the code: the areas, or one folder or file")
+    shown_map = commands.add_parser("map", help="the map of the product: what each area keeps and whom it uses, or "
+                                                "the public names of one folder or file")
     shown_map.add_argument("path", nargs="?", default="")
+    shown_map.add_argument("--draft", action="store_true",
+                           help="for an administrator: write a first sheet (area.toml) for each area without one")
+    shown_map.add_argument("--json", action="store_true", help="the map as data, for another program")
     shown_map.add_argument("--parts", action="store_true", help="the components that more than one area uses")
     shown_map.add_argument("--report", action="store_true",
                            help="for an administrator: what Akasha observes, before the team turns on a rule")
@@ -120,7 +123,9 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("version")
     hook = commands.add_parser("hook", help="the entry point of the hooks")
     hook.add_argument("--agent", choices=("claude", "codex"), default="claude")
-    hook.add_argument("--event", required=True)
+    hook.add_argument("--event", default="")
+    hook.add_argument("--git", default="", metavar="NAME", help="a hook of git: pre-commit or pre-push")
+    hook.add_argument("rest", nargs="*", help="what git gives the hook")
     server = commands.add_parser("server", help="the watch workflow runs this on GitHub")
     jobs = server.add_subparsers(dest="job", required=True)
     watch = jobs.add_parser("watch")
@@ -148,8 +153,21 @@ def _map(root: Path, args) -> list[str]:
     if args.command == "map" and args.report:
         from akasha import report
         return report.lines(here, flow.rules(root), root)
-    found = codemap.Map(here, flow.rules(root), root)
-    from akasha import definitions
+    from akasha import definitions, sheets
+    # A draft is of this checkout: an administrator names the areas in its akasha.toml and draws the map in one task
+    team = config.load(here) if args.command == "map" and args.draft else flow.rules(root)
+    found = codemap.Map(here, team, root)
+    if args.command == "map" and args.draft:
+        if not team.core_areas:
+            return ["akasha.toml names no areas. Write [core] areas first, for example areas = [\"domains/*\"]: each "
+                    "folder that matches is one area"]
+        written = sheets.draft(team, here, found)
+        return [f"wrote {path}" for path in written] + (
+            ["Read each sheet against its code: correct the purpose (one line: what the area keeps) and `uses`. "
+             "Then `akasha map` shows the map, and the check `map` holds it."] if written else
+            ["each area has a sheet already: `akasha map` shows the map"])
+    if args.command == "map" and args.json:
+        return [sheets.as_json(team, here, found)]
     try:
         listed = definitions.parse(definitions.place(here).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -172,7 +190,13 @@ def _map(root: Path, args) -> list[str]:
         return [f"{method} {address} — {handler}:{line}" + (f" — used by {', '.join(screens[:5])}" if screens else "")
                 for method, address, handler, line, screens in found.routes(args.addresses)] or \
             ["no address of a server"]
-    return codemap.listing(found, args.path) if args.path else codemap.overview(found)
+    if args.path:
+        return codemap.listing(found, args.path)
+    files = repo.paths(here, team.record_roots + (team.work_dir,), others=True)
+    if sheets.drawn(team, files):
+        return sheets.overview(team, here, found)
+    return codemap.overview(found) + (["the map is not drawn yet: an administrator runs `akasha map --draft` in a task"]
+                                      if team.core_areas else [])
 
 
 def _status(root: Path, task_id: str | None) -> int:
@@ -194,6 +218,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "version":
         print(VERSION)
         return 0
+    if args.command == "hook" and args.git:
+        from akasha import githooks
+        try:
+            return githooks.main(args.git, repo.main_root(Path.cwd()), Path.cwd())
+        except Exception as error:     # noqa: BLE001 — a defect in Akasha must never stop git
+            print(f"Akasha hook problem: {error}", file=sys.stderr)
+            return 0
     if args.command == "hook":
         from akasha import hooks
         try:
@@ -341,9 +372,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "cancel":
         print(flow.cancel(root, args.task, args.force))
-        return 0
-    if args.command == "ask":
-        print(flow.ask(root, args.text))
         return 0
     if args.command == "help":
         print(flow.ask_help(root, args.task, args.text))

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="698" viewBox="0 0 1000 698" role="img" aria-label="Several teams and an agent ask at the same time. Only the orange steps are a person's: a team approves its preview at the start, and the person who asked the agent approves its result at the end. Each other step is the AI's, also the check of the plan. When two tasks plan the same file, each AI reads the other's change first. Each task keeps its own pull request; they merge into main one by one, and a later one is first updated from main and checked again, its AI keeping both sides of a conflict.">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="698" viewBox="0 0 1000 698" role="img" aria-label="Several teams and an agent ask at the same time. Only the orange steps are a person's: a team approves its preview at the start, and the person who asked the agent approves its result at the end. Each other step is the AI's, also the two checks of a second AI: of the plan, and of the result after the tests. When two tasks plan the same file, each AI reads the other's change first. Each task keeps its own pull request; they merge into main one by one, and a later one is first updated from main and checked again, its AI keeping both sides of a conflict.">
 <style>
 text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun Gothic",Helvetica,Arial,sans-serif;fill:#e6edf3}
 .title{font-size:22px;font-weight:700}
@@ -25,7 +25,7 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun
 </defs>
 <rect width="1000" height="698" rx="14" fill="#0d1117"/>
 <text x="26" y="42" class="title">Several teams and an agent, one product, at the same time</text>
-<text x="26" y="66" class="sub">A person approves only a preview, or the result of an agent. Each task has its own lane, and a second AI checks each plan.</text>
+<text x="26" y="66" class="sub">A person approves only a preview, or the result of an agent. In each lane a second AI checks the plan, then the result (AI ✓).</text>
 <text x="200" y="100" class="label">ONE REPOSITORY · AT THE SAME TIME</text>
 <path d="M478,96 L960,96" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5" marker-end="url(#time)"/>
 <rect x="200" y="112" width="776" height="382" rx="14" fill="#a78bfa" fill-opacity=".04" stroke="#a78bfa" stroke-width="1.5"/>
@@ -34,17 +34,17 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun
 <path d="M200,538 L968,538" stroke="#3fb950" stroke-width="2"/>
 
 <!-- the lanes: from the team to its bar, then down to main -->
-<path d="M184,183 L520,183" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M184,183 L500,183" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
 <path d="M928,183 L950,183 L950,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
 <circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-3.0s" repeatCount="indefinite" path="M184,183 L950,183 L950,538"/></circle>
-<path d="M184,269 L288,269" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M184,269 L268,269" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
 <path d="M828,269 L850,269 L850,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
 <circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-0.0s" repeatCount="indefinite" path="M184,269 L850,269 L850,538"/></circle>
-<path d="M184,355 L288,355" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
+<path d="M184,355 L268,355" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
 <path d="M696,355 L750,355 L750,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
 <circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-1.0s" repeatCount="indefinite" path="M184,355 L750,355 L750,538"/></circle>
 <path d="M184,441 L216,441" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 5"/>
-<path d="M624,441 L650,441 L650,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
+<path d="M644,441 L650,441 L650,530" stroke="#3d444d" stroke-width="2" fill="none" marker-end="url(#head)"/>
 <circle r="4" fill="#2f81f7" class="dot"><animateMotion dur="4s" begin="-2.0s" repeatCount="indefinite" path="M184,441 L650,441 L650,538"/></circle>
 
 <!-- the agent: a program runs it. No person checks its plan: the person who asked approves the result at the end -->
@@ -53,18 +53,21 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun
 <text x="56" y="173" class="name">Agent</text>
 <text x="38" y="193" class="small">“Fix the failed batch”</text>
 <text x="38" y="210" class="who">✓ result OK at the end</text>
-<rect x="520" y="166" width="408" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-<rect x="526" y="172" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="549" y="187" class="bar" text-anchor="middle">Plan</text>
-<path d="M575,183 L589,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="592" y="172" width="92" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="638" y="187" class="bar" text-anchor="middle">AI check</text>
+<rect x="500" y="166" width="428" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="506" y="172" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="529" y="187" class="bar" text-anchor="middle">Plan</text>
+<path d="M555,183 L569,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="572" y="172" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="595" y="187" class="bar" text-anchor="middle">AI ✓</text>
+<path d="M621,183 L635,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="638" y="172" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="661" y="187" class="bar" text-anchor="middle">Build</text>
 <path d="M687,183 L701,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="704" y="172" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="727" y="187" class="bar" text-anchor="middle">Build</text>
-<path d="M753,183 L767,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="770" y="172" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="796" y="187" class="bar" text-anchor="middle">Tests</text>
+<rect x="704" y="172" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="730" y="187" class="bar" text-anchor="middle">Tests</text>
+<path d="M759,183 L773,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="776" y="172" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="799" y="187" class="bar" text-anchor="middle">AI ✓</text>
 <path d="M825,183 L839,183" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
 <rect x="842" y="172" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
 <text x="882" y="187" class="person" text-anchor="middle">Result OK</text>
@@ -78,21 +81,24 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun
 <text x="56" y="259" class="name">Sales</text>
 <text x="38" y="279" class="small">“Add a CSV download”</text>
 <text x="38" y="296" class="who">✓ approves the preview</text>
-<rect x="288" y="252" width="540" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-<rect x="294" y="258" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
-<text x="334" y="273" class="person" text-anchor="middle">Preview OK</text>
-<path d="M377,269 L391,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="394" y="258" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="417" y="273" class="bar" text-anchor="middle">Plan</text>
-<path d="M443,269 L457,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="460" y="258" width="92" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="506" y="273" class="bar" text-anchor="middle">AI check</text>
+<rect x="268" y="252" width="560" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="274" y="258" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
+<text x="314" y="273" class="person" text-anchor="middle">Preview OK</text>
+<path d="M357,269 L371,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="374" y="258" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="397" y="273" class="bar" text-anchor="middle">Plan</text>
+<path d="M423,269 L437,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="440" y="258" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="463" y="273" class="bar" text-anchor="middle">AI ✓</text>
+<path d="M489,269 L503,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="506" y="258" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="529" y="273" class="bar" text-anchor="middle">Build</text>
 <path d="M555,269 L569,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="572" y="258" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="595" y="273" class="bar" text-anchor="middle">Build</text>
-<path d="M621,269 L635,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="638" y="258" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="664" y="273" class="bar" text-anchor="middle">Tests</text>
+<rect x="572" y="258" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="598" y="273" class="bar" text-anchor="middle">Tests</text>
+<path d="M627,269 L641,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="644" y="258" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="667" y="273" class="bar" text-anchor="middle">AI ✓</text>
 <path d="M693,269 L707,269" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
 <rect x="710" y="258" width="112" height="22" rx="6" fill="#0f1a13" stroke="#3fb950"/>
 <text x="766" y="273" class="sync" text-anchor="middle">↻ Update branch</text>
@@ -106,51 +112,57 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Malgun
 <text x="56" y="345" class="name">Operations</text>
 <text x="38" y="365" class="small">“Show the batch status”</text>
 <text x="38" y="382" class="who">✓ approves the preview</text>
-<rect x="288" y="338" width="408" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-<rect x="294" y="344" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
-<text x="334" y="359" class="person" text-anchor="middle">Preview OK</text>
-<path d="M377,355 L391,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="394" y="344" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="417" y="359" class="bar" text-anchor="middle">Plan</text>
-<path d="M443,355 L457,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="460" y="344" width="92" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="506" y="359" class="bar" text-anchor="middle">AI check</text>
+<rect x="268" y="338" width="428" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="274" y="344" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
+<text x="314" y="359" class="person" text-anchor="middle">Preview OK</text>
+<path d="M357,355 L371,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="374" y="344" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="397" y="359" class="bar" text-anchor="middle">Plan</text>
+<path d="M423,355 L437,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="440" y="344" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="463" y="359" class="bar" text-anchor="middle">AI ✓</text>
+<path d="M489,355 L503,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="506" y="344" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="529" y="359" class="bar" text-anchor="middle">Build</text>
 <path d="M555,355 L569,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="572" y="344" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="595" y="359" class="bar" text-anchor="middle">Build</text>
-<path d="M621,355 L635,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="638" y="344" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="664" y="359" class="bar" text-anchor="middle">Tests</text>
+<rect x="572" y="344" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="598" y="359" class="bar" text-anchor="middle">Tests</text>
+<path d="M627,355 L641,355" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="644" y="344" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="667" y="359" class="bar" text-anchor="middle">AI ✓</text>
 <circle cx="750" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
 <text x="750" y="564" class="commit" text-anchor="middle">#42</text>
 <text x="750" y="582" class="how" text-anchor="middle">Batch status</text>
 
 <!-- Sales and Operations plan the same file: each AI reads the other's change first; no person decides anything -->
-<path d="M595,288 L595,336" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="3 4"/>
-<rect x="550" y="302" width="90" height="20" rx="10" fill="#0d1117" stroke="#8b949e"/>
-<text x="595" y="316" class="tag" text-anchor="middle">⇅ same file</text>
-<text x="542" y="316" class="how" text-anchor="end">each AI reads the other's change first</text>
+<path d="M529,288 L529,336" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="3 4"/>
+<rect x="484" y="302" width="90" height="20" rx="10" fill="#0d1117" stroke="#8b949e"/>
+<text x="529" y="316" class="tag" text-anchor="middle">⇅ same file</text>
+<text x="476" y="316" class="how" text-anchor="end">each AI reads the other's change first</text>
 
 <rect x="24" y="406" width="160" height="70" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
 <circle cx="44" cy="426" r="5" fill="#f0883e"/>
 <text x="56" y="431" class="name">Finance</text>
 <text x="38" y="451" class="small">“Add a monthly total”</text>
 <text x="38" y="468" class="who">✓ approves the preview</text>
-<rect x="216" y="424" width="408" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<rect x="216" y="424" width="428" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
 <rect x="222" y="430" width="80" height="22" rx="6" fill="#2a1d0f" stroke="#f0b072"/>
 <text x="262" y="445" class="person" text-anchor="middle">Preview OK</text>
 <path d="M305,441 L319,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
 <rect x="322" y="430" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
 <text x="345" y="445" class="bar" text-anchor="middle">Plan</text>
 <path d="M371,441 L385,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="388" y="430" width="92" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="434" y="445" class="bar" text-anchor="middle">AI check</text>
-<path d="M483,441 L497,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="500" y="430" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="523" y="445" class="bar" text-anchor="middle">Build</text>
-<path d="M549,441 L563,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
-<rect x="566" y="430" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
-<text x="592" y="445" class="bar" text-anchor="middle">Tests</text>
+<rect x="388" y="430" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="411" y="445" class="bar" text-anchor="middle">AI ✓</text>
+<path d="M437,441 L451,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="454" y="430" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="477" y="445" class="bar" text-anchor="middle">Build</text>
+<path d="M503,441 L517,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="520" y="430" width="52" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="546" y="445" class="bar" text-anchor="middle">Tests</text>
+<path d="M575,441 L589,441" stroke="#3d444d" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="592" y="430" width="46" height="22" rx="6" fill="#0d1117" stroke="#30363d"/>
+<text x="615" y="445" class="bar" text-anchor="middle">AI ✓</text>
 <circle cx="650" cy="538" r="7" fill="#0d1117" stroke="#3fb950" stroke-width="2.5"/>
 <text x="650" y="564" class="commit" text-anchor="middle">#41</text>
 <text x="650" y="582" class="how" text-anchor="middle">Monthly total</text>

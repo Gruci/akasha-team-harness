@@ -55,6 +55,7 @@ class Task:
     heard: dict = field(default_factory=dict)               # the last message of the person after it: words, at
     approval: dict = field(default_factory=dict)            # by, at, preview_sha, words, source
     review: dict = field(default_factory=dict)              # verdict, plan_sha, at, source, rounds
+    result: dict = field(default_factory=dict)              # the review of the result: verdict, sha, at, source
     checks: dict = field(default_factory=dict)              # status, tree, at
     failures: int = 0               # failed checks in a row
     stats: dict = field(default_factory=dict)               # for the retro: failed checks by name, review rounds
@@ -244,6 +245,7 @@ def block(task: Task) -> str:
     """The hidden block of the task in the body of its pull request."""
     data = {key: value for key, value in asdict(task).items() if key not in LOCAL_ONLY}
     data["review"] = {key: value for key, value in data["review"].items() if key not in REVIEW_LOCAL}
+    data["result"] = {key: value for key, value in data["result"].items() if key not in REVIEW_LOCAL}
     data["approval"] = {key: value for key, value in data["approval"].items() if key not in APPROVAL_LOCAL}
     text = json.dumps(data, ensure_ascii=False).replace("-->", "--\\u003e")     # the comment must not end early
     return f"<!-- akasha:task {text} -->"

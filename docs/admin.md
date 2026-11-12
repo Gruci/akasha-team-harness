@@ -40,15 +40,20 @@ a long list of rules on the first day stops each task.
    | `.claude/settings.json` | Registers the marketplace of Akasha and turns the plugin on for each teammate. Allows the git and gh commands that only read, and lets edits pass without a prompt (`acceptEdits`) when the team set no mode: Akasha still stops each edit that a task must not make. The other keys stay |
    | `CLAUDE.md` | The Akasha block for Claude Code: use the akasha-build skill, and this procedure comes first. The other text stays |
    | `AGENTS.md`, `.codex/hooks.json` | The rules and the hooks of Akasha for Codex. The other text and hooks stay |
+   | `pre-commit`, `pre-push` in the hooks folder of git | The two rules that hold for each agent engine and for a person in a terminal: no commit on the default branch, and no push to it. Each session start writes them on its computer. A hook of the team stays, and `akasha doctor` tells which line to add to it |
 
    Where GitHub does not protect the default branch now, `akasha setup` records `rules = "akasha"` and writes the
    watch, so that nothing merges before the checks even before `--apply`.
-3. The AI reads the own agent rules of the repository (below), asks the questions above, and writes the answers into
+3. Draw the map of the product: name the folder of one area (`[core] areas`) and its entry (`[boundaries]`), run
+   `akasha map --draft`, and correct the sheet of each area with the AI: its purpose in one line, the areas that it
+   uses, and the tables that it writes. Each later task reads the map to find where its code goes, so the map comes
+   before the other rules. `akasha map` shows it.
+4. The AI reads the own agent rules of the repository (below), asks the questions above, and writes the answers into
    `akasha.toml`. Then `akasha setup` again.
-4. `akasha setup --apply` on the computer of an administrator of the GitHub repository. It turns on the branch
+5. `akasha setup --apply` on the computer of an administrator of the GitHub repository. It turns on the branch
    protection, the squash merge, the deletion of merged branches, and the labels, and the auto-merge where GitHub
    protects the branch. Where GitHub refuses the protection because of the plan, it records `rules = "akasha"`.
-5. Commit the files on a branch, open a pull request, wait for the required checks of the team, and merge it. Before
+6. Commit the files on a branch, open a pull request, wait for the required checks of the team, and merge it. Before
    this merge, the main checkout is free to change. After it, each change is a task.
 
 ## A repository with its own harness
@@ -166,9 +171,10 @@ the work copy), then check and land it. The same holds for the database and the 
 needs a change there, the AI asks with `akasha help`, and an administrator makes it in a task of their own.
 
 Each release of Akasha has its own tag. `[team] version` in `akasha.toml` holds the version of the team, and an
-administrator chooses it. Each computer, the CI, and the watch run that version only, so that the computers and the
-server run the same rules: an Akasha of another version, older or newer, also of an administrator, starts no task,
-takes over no task, and hands no task over to the merge. `akasha setup` pins it in three places: the marketplace of
+administrator chooses it. The CI and the watch run that version itself: the server is the judge of each change. A
+computer runs it or another patch of the same minor version (2.0.x), because a patch changes no rule. An Akasha of
+another minor version, older or newer, also of an administrator, starts no task, takes over no task, and hands no
+task over to the merge. `akasha setup` pins it in three places: the marketplace of
 Claude Code in `.claude/settings.json` (`"ref": "v<version>"`), the pip line of Codex in `AGENTS.md`, and the
 workflows. It writes this Akasha into `[team] version` only when the setting is empty. To raise the version:
 
@@ -185,3 +191,21 @@ workflows. It writes this Akasha into `[team] version` only when the setting is 
 When the server check or the watch fails with "The server runs Akasha …", the Akasha on the server differs from
 `[team] version`: run `akasha setup` again in a task, and remove the repository variable `AKASHA_SOURCE` or set it to
 the same version.
+
+### From 1.x to 2.0
+
+A new major version can give a setting another meaning, so the task that raises it does more than change a number.
+End or cancel each open task first: a task of 1.x has no steps in its plan and no review of its result.
+
+1. `[work] records` and `[work] archive`. In 1.x the records of the merged tasks stayed in the records folder. In 2.0
+   the records folder holds only the task in work, on its own branch, and the landing moves the records into the
+   archive, which no work copy holds. The task that raises the major version sets both folders once more: Akasha
+   refuses a change of them in any other task. Move the old records into the archive in the same task, as
+   `<archive>/YYYY/MM/YYYY-MM-DD-<task>/`, and correct each document, hook, and ignore rule of the repository that
+   names the old folder. How the old records lie is the history of the repository, so Akasha has no command for it.
+2. A CI of the team that ran `python -m akasha check --ci` removes that step, and the Akasha that its image
+   installed. Akasha installs its own check (`.github/workflows/akasha.yml`), and the landing waits for it by the
+   name `akasha`. `[ci] runs-on` names its machine, also a runner of the team.
+3. Each other place of the repository that names the version of Akasha: a document for new teammates, an image of
+   an agent. `git grep -n <old version>` lists them.
+4. Draw the map of the product (step 3 of "The steps"), in this task or in the next one.

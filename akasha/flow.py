@@ -1,5 +1,5 @@
-"""The steps of a task before the landing: start, preview, plan review, and checks. Also the steps between people:
-resume, hand off, cancel, and ask for help."""
+"""The steps of a task before the landing: start, preview, plan review, checks, and the review of the result. Also
+the steps between people: resume, hand off, cancel, and ask an administrator for what only they can do."""
 
 from __future__ import annotations
 
@@ -13,10 +13,11 @@ from pathlib import Path
 from collections.abc import Iterable
 
 from akasha import (agent, approval, archive, board, checks, codemap, config, consistency, core, definitions, evidence,
-                    forms, guard, pr, quick, repo, review, screen, spec, trace, version, work)
+                    forms, guard, pr, product, quick, repo, review, screen, sheets, spec, trace, version, work)
 from akasha.config import Team
-from akasha.task import (PLAN, PREVIEW, RESEARCH, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id,
+from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id,
                          own_records, record, records, replaced, save)
+from akasha.task import outside as task_outside
 
 STUCK = 3                      # failed checks in a row before Akasha suggests to ask an administrator
 DECISIONS = 'id="akasha-decisions"'       # the box of the questions and the answers of the person, in the preview
@@ -58,9 +59,9 @@ def _unreviewed(task: Task) -> str:
     """What the plan of the task still needs from the akasha-reviewer agent, or ""."""
     if review.passed(task):
         return ""
-    return (f"The plan did not pass the review. Write research.md and plan.md in {records(task)}/, ask the "
-            f"akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it passes."
-            + review.told(task))
+    return (f"The plan did not pass the review. Write {records(task)}/{PLAN} (the approach, and the work as steps), "
+            f"ask the akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it "
+            "passes." + review.told(task))
 
 
 def _plan_step(task: Task) -> str:
@@ -116,7 +117,12 @@ def next_step(task: Task) -> str:
                 f"`akasha check {task.id}`.")
     tree = Path(task.workcopy)
     if work.dirty(tree) or task.checks.get("commit") != work.head(tree):
-        return f"Build the change in {task.workcopy}, then run `akasha check {task.id}`."
+        return f"Build the change in {task.workcopy}, then run `akasha check {task.id}`." + _steps_line(task)
+    if review.result_needed(task) and not review.result_passed(task):
+        return (f"Ask the akasha-reviewer agent, in a new context, to review the result of task {task.id} (result "
+                f"digest {review.result_digest(task)}): it reads the change against the preview and the plan. Repair "
+                f"what it finds, run `akasha check {task.id}`, and ask again until it passes."
+                + review.result_told(task))
     if not record(task, SUMMARY).is_file():
         what = ("the problem, the cause, what changed, what other areas it reaches, and how to undo it when a revert "
                 "is not enough" if agent.is_agent(task) else
@@ -124,6 +130,19 @@ def next_step(task: Task) -> str:
         return (f"Write {records(task)}/{SUMMARY} ({what}), run `akasha check {task.id}` again, then `akasha land "
                 f"{task.id}`.")
     return f"Land the task: `akasha land {task.id} --wait 540` (shell timeout 600000 ms)."
+
+
+def _steps_line(task: Task) -> str:
+    """How far the build is, and its next step, from the steps of the plan and the change (steps.py). "" without
+    steps."""
+    from akasha import steps
+    tree = Path(task.workcopy)
+    try:
+        found = steps.parse(_text(record(task, PLAN)))
+        said = steps.line(found, tree, checks.changed_files(tree, quick.base(tree))) if found else ""
+    except (RuntimeError, OSError):
+        said = ""
+    return f" {said[0].upper()}{said[1:]}." if said else ""
 
 
 def _agent_landing(task: Task) -> str:
@@ -352,7 +371,8 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
     task.heard = {}
     save(root, task)
     if board.available(root) and task.number:
-        work.commit(Path(task.workcopy), f"akasha: preview of {task.title}")
+        # Only a record: no run of the CI. The push of the checks and the push of the landing run it
+        work.commit(Path(task.workcopy), f"akasha: preview of {task.title} [skip ci]")
         try:
             work.push(Path(task.workcopy), task.branch)
         except RuntimeError:
@@ -402,9 +422,20 @@ def brief(root: Path, task_id: str) -> str:
     failed = [name for name, status in (task.checks.get("status") or {}).items() if status == "FAIL"]
     if failed:
         lines.append(f"failed checks: {', '.join(failed)} (run `akasha check {task.id}` for the text)")
+    if task.status not in ("merged", "closed", "landing", "preview") and not stops:
+        said = _steps_line(task).strip()
+        if said:
+            lines.append(said[0].lower() + said[1:].rstrip("."))
+        if review.result_needed(task) and task.result:
+            now = review.result_digest(task)
+            said = task.result.get("verdict") if task.result.get("sha") == now else "no review of this code"
+            lines.append(f"result: {said} · digest {now} · the answer is in {record(task, review.RESULT)}")
     names = {"preview": "before the preview", "plan": "before the plan", "build": "while you build",
              "review": "for the reviewer"}
     lines += [f"guides {names[step]}: {', '.join(files)}" for step, files in team.guides.items() if step in names]
+    if team.models:
+        lines.append("models — " + " · ".join(f"{step}: {name}" for step, name in team.models.items())
+                     + " (start the agent of that step with this model)")
     waits = task.status == approval._wanted(task) and bool(task.shown_at)
     if not waits and task.status not in ("merged", "closed"):
         # A session that holds the whole talk can start again here: the records and this status hold the task
@@ -450,7 +481,7 @@ def _show_plan(root: Path, task: Task) -> tuple[Task, str]:
     task.heard = {}
     save(root, task)
     if board.available(root) and task.number:
-        work.commit(Path(task.workcopy), f"akasha: plan of {task.title}")
+        work.commit(Path(task.workcopy), f"akasha: plan of {task.title} [skip ci]")
         try:
             work.push(Path(task.workcopy), task.branch)
         except RuntimeError:
@@ -458,9 +489,9 @@ def _show_plan(root: Path, task: Task) -> tuple[Task, str]:
         pr.update(root, task)
     again = " The plan changed after the approval, so the person approves it again." if changed else ""
     return task, (f"The plan {record(task, PLAN)} passed the review.{again} Show it to the person in the chat: the "
-                  "approach, each file and its change, the tests, the risks, and how to undo it when a revert is not "
-                  "enough, with the paths of research.md and plan.md. Then ask in plain chat whether to build it like "
-                  "this, or what to change. "
+                  "approach, each step with its files and its tests, the risks, and how to undo it when a revert "
+                  "is not enough, with the path of plan.md. Then ask in plain chat whether to build it like this, or "
+                  "what to change. "
                   f"When their own message approves it, run `akasha approve {task.id}`. Do not ask with "
                   "AskUserQuestion or another choice tool: only a message that the person types counts.")
 
@@ -524,15 +555,15 @@ def approve(root: Path, task_id: str, here: bool = False, **terminal) -> tuple[T
         task.approval["change_sha"] = change
         save(root, task)
     evidence.keep(task)                               # the server reads the approval from the records
-    if task.kind == "full":                           # the frames of the next step: the research and the plan
-        forms.put(record(task, RESEARCH), forms.RESEARCH)
+    if task.kind == "full":                           # the frame of the next step: the plan
         forms.put(record(task, PLAN), forms.PLAN)
     if board.available(root) and task.number:
         pr.update(root, task)
     if screen.is_no_screen(task):
         return task, (f"Recorded the approval of the plan by {task.approval['by']}: \"{task.approval['words']}\". "
-                      "Next, without stopping: build as the plan says, run `akasha check`, write summary.md, and run "
-                      "`akasha land`. A change of the plan after now needs a new review and a new approval.")
+                      "Next, without stopping: build each step of the plan, run `akasha check`, ask the "
+                      "akasha-reviewer agent to review the result, write summary.md, and run `akasha land`. A change "
+                      "of the plan after now needs a new review and a new approval.")
     if outcome:
         return task, (f"Recorded the approval of {task.approval['by']}: \"{task.approval['words']}\". Next, without "
                       f"stopping: run `akasha land {task.id} --wait 540` (shell timeout 600000 ms). A change of the "
@@ -543,8 +574,9 @@ def approve(root: Path, task_id: str, here: bool = False, **terminal) -> tuple[T
                       "A change of the code after now needs a new review and a new approval.")
     return task, (f"Recorded the approval of {task.approval['by']}: \"{task.approval['words']}\". Do not ask the person "
                   "anything more unless the plan must change what they approved. Next, without stopping: write "
-                  "research.md and plan.md in the records folder of the task, ask the akasha-reviewer agent to review "
-                  "the plan until it passes, then build, run `akasha check`, write summary.md, and run `akasha land`.")
+                  "plan.md in the records folder of the task (the work as steps), ask the akasha-reviewer agent to "
+                  "review the plan until it passes, build each step, run `akasha check`, ask the akasha-reviewer "
+                  "agent to review the result, write summary.md, and run `akasha land`.")
 
 
 def result(root: Path, task_id: str) -> str:
@@ -574,6 +606,15 @@ def self_review(root: Path, task_id: str, verdict: str) -> Task:
         raise ValueError("the team has a reviewer command ([review] command): run `akasha review <task>` without "
                          "--verdict. A review of the agent engine itself does not count here")
     task = load(root, task_id)
+    if review.result_needed(task) and review.passed(task) and task.checks.get("commit") == work.head(
+            Path(task.workcopy)) and not work.dirty(Path(task.workcopy)):
+        # The plan passed and the checks passed on this work: the review is of the result
+        sha = review.result_digest(task)
+        if task.result.get("source") == "reviewer" and task.result.get("sha") == sha:
+            raise ValueError("the reviewer agent already judged this result: repair it")
+        review.note_result(root, task, verdict, sha, "self")
+        review.keep_result(task, "The agent engine reviewed the result itself: it has no reviewer agent.")
+        return task
     sha = review.subject_digest(task)
     if not sha:
         raise ValueError(f"write {record(task, quick.IMPACT)} first" if quick.is_quick(task) else
@@ -598,23 +639,50 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
         return checks.Result({GATE: "FAIL"}, {GATE: missing}), []
     tree = Path(task.workcopy)
     work.add_all(tree)                   # some checks list the files with git ls-files: new files must be in the index
+    if not only and _only_records(task, tree):
+        # The checks passed on this code, and only the records changed since (summary.md, the answer of a review):
+        # no check of the team runs again, here or on the server: the push of the landing runs the CI
+        work.commit(tree, f"akasha: records of {task.title} [skip ci]")
+        task.checks = {**task.checks, "commit": work.head(tree), "at": time.strftime("%Y-%m-%d %H:%M")}
+        notes = ["note — only the records of the task changed since the checks passed: Akasha saved them, and ran "
+                 "no check again"]
+        if board.available(root) and task.number and not taken(root, task):
+            try:
+                work.push(tree, task.branch)
+            except RuntimeError as error:
+                notes.append(f"note — {error}. The landing pushes again")
+            pr.update(root, task)
+        save(root, task)
+        return checks.Result(dict(task.checks.get("status") or {}), {}), notes
     before = set(work.untracked(tree))
     # The changes of the task only: after a merge of the default branch, its newer files are not changes of the task
     base = repo.git(tree, "merge-base", "HEAD", f"origin/{repo.default_branch(root)}").stdout.strip() or task.base
     changed = checks.changed_files(tree, base)
     result = checks.run(team, tree, changed, only)
     advice: list[str] = []
+    maps = codemap.Pair(tree, team, root, base)       # the code now and before: each check of the product reads them
+    admin = core.exempt(team, repo.me(root, kept=True))
+    plan = None if quick.is_quick(task) else _text(record(task, PLAN))
     if not only or consistency.CHECK in only:         # before the commit: new code that the repository has already
-        plan = None if quick.is_quick(task) else _text(record(task, PLAN))
         held = consistency.Found([], [])
         try:
-            found = consistency.examine(team, tree, base, root, plan, admin=core.exempt(team, repo.me(root, kept=True)),
-                                        found_out=held)
+            found = consistency.examine(team, tree, base, root, plan, admin=admin, found_out=held, maps=maps)
             if not only:                              # the board tells the other tasks which definitions it holds
                 task.defs = {key: value for key, value in (("adds", held.added), ("changes", held.changed)) if value}
         except (RuntimeError, OSError) as error:
             found = ("FAIL", f"Akasha could not compare the code: {error}", [])
         result.status[consistency.CHECK], result.details[consistency.CHECK], advice = found
+    page = record(task, PREVIEW)
+    shown = _text(page) if task.kind == "full" and forms.written(page) else None
+    status, details, found_notes = product.run(product.Change(team, tree, base, changed, maps, admin, plan, shown,
+                                                              own_records(task)), only)
+    result.status.update(status)
+    result.details.update(details)
+    advice += found_notes
+    if not only:
+        real, why = product.integration(team, changed, result.status)
+        if real != "NOT_NEEDED":
+            result.status[product.INTEGRATION], result.details[product.INTEGRATION] = real, why
     me = repo.me(root, kept=True)
     locked = checks.locked_files(team, me, changed, own_records(task))
     moved = "" if only else checks.folders_problem(team, tree, f"origin/{repo.default_branch(root)}")
@@ -663,18 +731,20 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
             counts[name] = counts.get(name, 0) + 1
             trace.note(root, "check_failed", task=task.id, check=name, detail=result.details[name][-300:])
         if task.failures >= STUCK:
-            notes.append(f"{task.failures} failed checks in a row. If the cause is not in this task, ask an "
-                         f"administrator: `akasha help {task.id} \"<what blocks you>\"`")
+            notes.append(f"{task.failures} failed checks in a row. Read the first failure again: its message tells "
+                         "what to change. When you cannot repair it, tell the person in simple words what blocks the "
+                         "task. An administrator takes only what is theirs: when the check itself is broken for each "
+                         f"task, `akasha help {task.id} \"<which check, and how it fails>\"`")
     elif checks.passed(result.status) and not only:
         work.commit(tree, task.title)
         task.failures = 0
-        found = {} if core.exempt(team, me) else core.changed(team, tree, base)
+        found = {} if core.exempt(team, me) else {**core.changed(team, tree, base), **sheets.changed(team, tree, base)}
         task.checks = {"status": result.status, "commit": work.head(tree), "at": time.strftime("%Y-%m-%d %H:%M"),
                        **({"core": found} if found else {}), **({"first_area": first} if first else {})}
         if found:
-            notes.append(f"core — the task changes existing lines of {', '.join(found)}, which other areas use. The "
-                         "landing waits for an approval of an administrator, and Akasha asks for it. Do not copy the "
-                         "code into a new function to go around the approval")
+            notes.append(f"core — the task changes {', '.join(found)}: existing lines of code that other areas use, "
+                         "or the map of the product. The landing waits for an approval of an administrator, and "
+                         "Akasha asks for it. Do not copy the code into a new function to go around the approval")
         holder = taken(root, task)
         if holder:
             notes.append(f"note — @{holder} holds task {task.id} now, so Akasha did not push. Run `akasha tidy`")
@@ -686,6 +756,21 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
             pr.update(root, task)
     save(root, task)
     return result, notes
+
+
+def _only_records(task: Task, tree: Path) -> bool:
+    """True when the checks passed on a commit of the task, and the work copy differs from that commit only in the
+    records of the task."""
+    passed = str(task.checks.get("commit") or "")
+    if not passed or not checks.passed(task.checks.get("status") or {}) or \
+            repo.git(tree, "cat-file", "-e", f"{passed}^{{commit}}").returncode:
+        return False
+    try:
+        moved = checks.changed_files(tree, passed)
+    except RuntimeError:
+        return False
+    own = own_records(task)
+    return bool(moved) and all(not task_outside(path, own) for path in moved)
 
 
 def touch(root: Path, tasks: list[Task], session: str, paths: Iterable[Path] = (), line: str = "") -> None:
@@ -756,7 +841,6 @@ def _forms(team: Team, task: Task) -> None:
                      definitions.touching(listed, task.scope, task.title, checks.matches)]
         forms.put(record(task, PREVIEW), forms.preview(task.title, task.id, team.definitions_on, words))
     else:                                             # a task without a screen, an agent task: no preview
-        forms.put(record(task, RESEARCH), forms.RESEARCH)
         forms.put(record(task, PLAN), forms.PLAN)
 
 
@@ -1086,7 +1170,10 @@ def cancel(root: Path, task_id: str, force: bool = False) -> str:
 
 
 def ask_help(root: Path, task_id: str, text: str) -> str:
-    """Ask the administrators on the pull request of the task. GitHub tells them."""
+    """Ask the administrators on the pull request of the task. GitHub tells them. An administrator keeps the rules
+    and is no reviewer and no answerer: the call is for a file that only they change, for a check or a deployment
+    that is broken for each task, and for a step on the server. A question about the business goes to the person
+    who asked for the change."""
     team, task = rules(root), load(root, task_id)
     if not task.number:
         raise ValueError("the task has no pull request: tell an administrator yourself")
@@ -1099,21 +1186,6 @@ def ask_help(root: Path, task_id: str, text: str) -> str:
         raise RuntimeError(f"gh pr comment failed: {done.stderr.strip()[:200]}")
     trace.note(root, "help", task=task.id, text=text[:300])
     return f"asked {people or 'the team'} on {task.pr}"
-
-
-def ask(root: Path, text: str) -> str:
-    """Ask the administrators a question that is not a change of the repository, for example about the data or the
-    server, in an issue. GitHub tells them."""
-    team, me = rules(root), repo.me(root)
-    people = " ".join(f"@{name}" for name in team.admins)
-    first = text.strip().splitlines()[0][:80] if text.strip() else "a question"
-    repo.gh(root, "label", "create", config.HELP_LABEL, "--color", "d93f0b", "--description", "Waits for an admin")
-    done = repo.gh(root, "issue", "create", "--label", config.HELP_LABEL, "--title", f"[akasha] {first}",
-                   "--body", f"{people}\n\n{text.strip()}\n\n— asked by @{me or 'unknown'} through Akasha".strip())
-    if done.returncode:
-        raise RuntimeError(f"gh issue create failed: {done.stderr.strip()[:200]}")
-    trace.note(root, "ask", text=text[:300])
-    return f"asked {people or 'the team'}: {done.stdout.strip().splitlines()[-1] if done.stdout.strip() else ''}"
 
 
 def tidy(root: Path, timeout: float = 20) -> list[str]:
@@ -1135,9 +1207,11 @@ def tidy(root: Path, timeout: float = 20) -> list[str]:
         if state in ("MERGED", "CLOSED"):
             task.status = state.lower()
             save(root, task)
-            # The branch of a merged task leaves the server, so that a new task can take the name. GitHub does it
-            # where the repository deletes branches on a merge; an auto-merge of gh does not
-            kept = work.delete_remote(root, task.branch, head) if state == "MERGED" else ""
+            # The branch of a merged or closed task leaves the server, so that a new task can take the name and
+            # no branch piles up. GitHub does it where the repository deletes branches on a merge; an auto-merge
+            # of gh does not, and a closed pull request never. GitHub keeps the commits of a closed pull request
+            # with the pull request, and can restore its branch
+            kept = work.delete_remote(root, task.branch, head)
             problem = drop(root, task, server=head)
             lines.append(problem or f"task {task.id} {state.lower()}: its work copy is removed")
             lines += [kept] if kept else []

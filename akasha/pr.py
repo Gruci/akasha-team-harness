@@ -42,6 +42,11 @@ def meta(task: Task) -> list[str]:
         what = "Change review" if task.kind == "quick" else "Plan review"
         lines.append(f"- {what}: {task.review.get('verdict')} by {who} (round {task.review.get('rounds', 1)})"
                      + _items(task.review))
+    if task.result:
+        who = {"reviewer": "the akasha-reviewer agent", "command": "the reviewer command of the team"}.get(
+            task.result.get("source"), "the agent engine itself")
+        lines.append(f"- Result review: {task.result.get('verdict')} by {who} (round {task.result.get('rounds', 1)}, "
+                     f"change `{task.result.get('sha', '')}`), see result.md")
     if task.checks:
         status = ", ".join(f"{name} {value}" for name, value in task.checks.get("status", {}).items())
         lines.append(f"- Checks on this computer: {status}")
@@ -55,8 +60,8 @@ def meta(task: Task) -> list[str]:
     for what, word in (("adds", "Adds"), ("changes", "Changes")):
         if task.defs.get(what):
             lines.append(f"- {word} the definitions: {', '.join(f'`{key}`' for key in task.defs[what])}")
-    kept = {"quick": "impact, preview, review, summary", "agent": "request, research, plan, review, summary",
-            "no-screen": "research, plan, review, summary"}.get(task.kind, "preview, research, plan, review, summary")
+    kept = {"quick": "impact, preview, review, summary", "agent": "request, plan, review, result, summary",
+            "no-screen": "plan, review, result, summary"}.get(task.kind, "preview, plan, review, result, summary")
     lines.append(f"- Records: `{records(task)}/` ({kept})")
     return lines
 

@@ -8,7 +8,6 @@
   "license": "MIT",
   "keywords": ["akasha", "team", "harness", "workflow", "claude-code", "codex"],
   "skills": ["./skills/akasha-build", "./skills/akasha-setup", "./skills/akasha-join", "./skills/akasha-retro"],
-  "agents": ["./agents/akasha-reviewer.md", "./agents/akasha-preview.md", "./agents/akasha-planner.md",
-             "./agents/akasha-builder.md", "./agents/akasha-lander.md"],
+  "agents": ["./agents/akasha-reviewer.md", "./agents/akasha-worker.md"],
   "hooks": "./.claude-plugin/hooks.json"
 }

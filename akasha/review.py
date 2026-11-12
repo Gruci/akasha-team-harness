@@ -1,17 +1,25 @@
-"""The review of the plan of a task by another AI, in place of a person.
+"""The two reviews of a task by another AI, in place of a person: of its plan before the build, and of its result
+after the build.
 
-The agent engine writes research.md and plan.md, then asks the akasha-reviewer agent to review them. The reviewer
-ends its answer with a mark: `AKASHA-REVIEW: <task> <plan digest> PASS` or `... CHANGES`. When the reviewer stops,
-the hook (SubagentStop) reads the mark and records the verdict for that version of the plan. A change of the plan
-after a pass needs a new review.
+The plan: the agent engine writes plan.md, then asks the akasha-reviewer agent to review it. The reviewer ends its
+answer with a mark: `AKASHA-REVIEW: <task> <digest> PASS` or `... CHANGES`. When the reviewer stops, the hook
+(SubagentStop) reads the mark and records the verdict for that version of the plan. A change of the plan after a
+pass needs a new review. The review of the plan asks what is cheap to repair before any code is there: is what the
+plan names real, what else does the change reach, does it use the code that exists, and can it be undone.
+
+The result: after the checks passed, the same agent in a new context reads the preview, the plan, and the change
+itself, and judges what a machine cannot see: is each rule built as the person approved it, with a test that proves
+it; is the new code in the area that keeps that work; is no second code there for the same work. Its mark holds the
+digest of the change, so a change of the code after a pass needs a new review. The result of a task is what merges,
+so this review is the one that the server asks for (evidence.py).
 
 A quick task has no plan: the reviewer reviews its change with impact.md, and the mark holds the digest of the change
-(quick.py).
+(quick.py). That is its only review.
 
 The reviewer judges each item of a fixed list (the akasha-reviewer agent names them, ITEMS here), one row each:
-`| R1 | PASS | <evidence> |`. A PASS mark counts only when each item of the task is PASS, or N/A where an item may be
-N/A. Else Akasha records CHANGES with the reason, so that a mark alone never passes a plan. The answer of the reviewer
-goes into review.md in the records: each change keeps why its plan passed.
+`| R1 | PASS | <evidence> |`. A PASS mark counts only when each item is PASS, or N/A where an item may be N/A. Else
+Akasha records CHANGES with the reason, so that a mark alone never passes. The answer of the reviewer goes into
+review.md (the plan) or result.md (the result) in the records: each change keeps why it passed.
 
 A review after a repair of the plan need not judge each item again. Akasha keeps the rows of the last review of the
 reviewer and the plan that it read; `akasha status <task> --review` gives the reviewer the items that did not pass
@@ -32,23 +40,26 @@ from pathlib import Path
 from akasha import forms, quick
 from collections.abc import Callable, Iterable
 
-from akasha.task import PLAN, PREVIEW, Task, digest, digest_of, load, record, save
+from akasha.task import PLAN, PREVIEW, Task, digest, digest_of, load, own_records, record, save
 
 MARK = re.compile(r"AKASHA-REVIEW:\s*([a-z0-9][a-z0-9-]*)\s+([0-9a-f]{12})\s+(PASS|CHANGES)\b", re.I)
 REVIEWER = "akasha-reviewer"
 REVIEW = "review.md"
-# The items of the review. A plan (of a task with a preview, or of an agent task) has R1 to R10; a quick task has a
-# change and no plan, and has Q1 to Q3. agents/akasha-reviewer.md tells what each item asks
-ITEMS = {"plan": tuple(f"R{number}" for number in range(1, 11)), "quick": ("Q1", "Q2", "Q3")}
-# A change without a behavior needs no test; a revert undoes most changes; a change of no shared code has no core
-# rule; a plan that makes no new code has nothing to reuse
-MAY_BE_NA = ("R5", "R6", "R9", "R10")
-ROW = re.compile(r"^\s*\|\s*([RQ][0-9]+)\b[^|\n]*\|\s*(PASS|FAIL|N/A|KEPT)\s*\|([^\n]*)$", re.I | re.M)
+RESULT = "result.md"
+# The items of each review. A plan has R1 to R4: Real, Reach, Reuse, Undo. The result of a task has V1 to V5: Rules,
+# Decisions, Place, One, Team. A quick task has a change and no plan, and has Q1 to Q3.
+# agents/akasha-reviewer.md tells what each item asks
+ITEMS = {"plan": ("R1", "R2", "R3", "R4"), "quick": ("Q1", "Q2", "Q3"), "result": ("V1", "V2", "V3", "V4", "V5")}
+# A plan that makes no new code has nothing to reuse; a revert undoes most changes; a result without a new function
+# has no second code for the same work
+MAY_BE_NA = ("R3", "R4", "V4")
+ROW = re.compile(r"^\s*\|\s*([RQV][0-9]+)\b[^|\n]*\|\s*(PASS|FAIL|N/A|KEPT)\s*\|([^\n]*)$", re.I | re.M)
 KEEPS = ("PASS", "N/A")       # the verdicts of the last review that a KEPT row may keep
-RESEARCH = "research.md"
-# What the review reads, by the kind of the task. One digest holds all of it: a preview that the person approved
-# again, or a research that changed, needs a new review, as a plan that changed does. A quick task has its change
-INPUTS = {"full": (PLAN, PREVIEW, RESEARCH), "no-screen": (PLAN, RESEARCH), "agent": (PLAN, RESEARCH, "request.md")}
+# What the review of the plan reads, by the kind of the task. One digest holds all of it: a preview that the person
+# approved again needs a new review, as a plan that changed does. A quick task has its change
+INPUTS = {"full": (PLAN, PREVIEW), "no-screen": (PLAN,), "agent": (PLAN, "request.md")}
+# The kinds of task whose result is reviewed after the build. A quick task has the review of its change
+RESULT_KINDS = ("full", "no-screen", "agent")
 # The first line of review.md: the round, the verdict, the digest of what the review read, and who reviewed
 FIRST = re.compile(r"^Round (\d+) · (PASS|CHANGES) · digest `([0-9a-f]{12})`(?: · ([\w-]+))?[ \t\r]*$", re.M)
 ANSWER = "## The answer of the reviewer"
@@ -102,6 +113,15 @@ def brief(task: Task) -> str:
     wanted = items(task)
     if quick.is_quick(task):
         return f"A quick task: judge each item, {', '.join(wanted)}."
+    if result_needed(task) and passed(task) and task.checks.get("commit") and result_digest(task):
+        now = result_digest(task)
+        if result_passed(task):
+            return f"Round {task.result.get('rounds', 1)} passed this result (digest {now}): it needs no new review."
+        return (f"The review of the result: the plan passed, and the checks passed on the build. Read the change "
+                f"itself, and judge each item, {', '.join(ITEMS['result'])}. Result digest {now}."
+                + (f" The last review of the result gave {task.result.get('verdict')}"
+                   + (f" ({task.result['problem']})" if task.result.get("problem") else "")
+                   + ": judge each item again." if task.result else ""))
     last = _last(task)
     if not last:
         return f"No earlier review of the akasha-reviewer agent to build on: judge each item, {', '.join(wanted)}."
@@ -187,6 +207,97 @@ def subject_digest(task: Task) -> str:
     of the change of a quick task. Each place uses this one: the request and the mark of a review, passed(), the
     gate, the review of the agent engine itself, and the evidence of the server."""
     return quick.digest(task) if quick.is_quick(task) else combined(inputs(task))
+
+
+def change_text(tree: Path, start: str, own: Iterable[str], end: str = "") -> str:
+    """The lines that a change adds and removes since `start`, file by file, without the records of the task (the
+    folders `own`): of the work copy, or up to the commit `end`. Only those lines count, not where they are and not
+    what is around them: a merge of the default branch that moves a line of the task, or changes another part of
+    the same file, changes nothing of this text. So a result that passed its review still holds after the landing
+    brings the task up to date."""
+    from akasha.repo import git
+    from akasha.task import each
+    shown = git(tree, "-c", "core.quotePath=false", "-c", "diff.algorithm=myers", "diff", "--no-renames",
+                "--no-color", "--no-ext-diff", "--no-textconv", "-U0", "--src-prefix=a/", "--dst-prefix=b/",
+                start, *([end] if end else []), "--", ".",
+                *(f":(exclude){folder.rstrip('/')}/**" for folder in each(own)))
+    kept = [line for line in shown.stdout.replace("\r\n", "\n").splitlines()
+            if line.startswith(("+", "-")) or line.startswith("Binary files ")]
+    return "\n".join(kept)
+
+
+def change_digest(tree: Path, start: str, own: Iterable[str], end: str = "") -> str:
+    """The digest of the result of a task: of the lines that its change adds and removes. "" for no change."""
+    text = change_text(tree, start, own, end)
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:12] if text else ""
+
+
+def result_needed(task: Task) -> bool:
+    """True for a task whose result the reviewer judges after the build."""
+    return task.kind in RESULT_KINDS
+
+
+def result_digest(task: Task) -> str:
+    """The digest of the result of the task as the work copy has it now, or "" before any change."""
+    if not task.workcopy or not result_needed(task):
+        return ""
+    tree = Path(task.workcopy)
+    return change_digest(tree, quick.base(tree), own_records(task))
+
+
+def result_passed(task: Task) -> bool:
+    """True when the reviewer passed the result as it is now."""
+    current = result_digest(task)
+    return bool(current) and task.result.get("verdict") == "PASS" and task.result.get("sha") == current
+
+
+def result_told(task: Task) -> str:
+    found = task.result.get("problem")
+    return (f" The last PASS mark did not count ({found}): ask the reviewer again, with one row for each item."
+            if found else "")
+
+
+def note_result(root: Path, task: Task, verdict: str, sha: str, source: str, rows: dict[str, dict] | None = None,
+                why: str = "") -> None:
+    """Record the verdict of a review of the result."""
+    rounds = int(task.result.get("rounds", 0)) + 1
+    task.result = {"verdict": verdict.upper(), "sha": sha, "at": time.strftime("%Y-%m-%d %H:%M"), "source": source,
+                   "rounds": rounds, **({"problem": why} if why else {}), **({"rows": rows} if rows else {})}
+    task.stats["result_rounds"] = rounds
+    save(root, task)
+
+
+def keep_result(task: Task, text: str) -> None:
+    """Write the answer of the review of the result into result.md in the records: it merges with the change, and
+    the server reads the verdict from it (evidence.py)."""
+    if not task.workcopy:
+        return
+    path = record(task, RESULT)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    said, rows = task.result, task.result.get("rows") or {}
+    table = ["| Item | Verdict | Evidence |", "|:--|:--|:--|"]
+    for item in ITEMS["result"]:
+        row = rows.get(item) or {"verdict": "—", "evidence": "no row"}
+        table.append(f"| {item} | {row['verdict']} | {row['evidence']} |")
+    source = str(said.get("source") or "reviewer")
+    path.write_text(f"# Review of the result of {task.id}\n\nRound {said.get('rounds', 1)} · {said.get('verdict')} · "
+                    f"digest `{said.get('sha')}` · {source}\n\n"
+                    + ("## The items\n\n" + "\n".join(table) + "\n\n" if rows or source != "self" else "")
+                    + f"{ANSWER}\n\n{text.strip()}\n", encoding="utf-8")
+
+
+def take_result(root: Path, task: Task, verdict: str, sha: str, source: str, text: str) -> str:
+    """Record the answer of a reviewer about the result, and give the line that tells it. A PASS mark without a
+    passed row for each item counts as CHANGES."""
+    answered = answer_rows(text)
+    rows = {item: {"verdict": said, "evidence": evidence} for item, (said, evidence) in answered.items()
+            if item in ITEMS["result"]}
+    found = {item: row["verdict"] for item, row in rows.items()}
+    why = problem_of(ITEMS["result"], found) if verdict == "PASS" else ""
+    note_result(root, task, "CHANGES" if why else verdict, sha, source, rows, why)
+    keep_result(task, text)
+    return (f"the reviewer gave {task.result['verdict']} to the result of {task.id}"
+            + (f" (the PASS mark did not count: {why})" if why else ""))
 
 
 def parse(text: str) -> dict:
@@ -301,6 +412,9 @@ counts as the row of the last review only when that row passed."""
         except LookupError:
             continue
         what = "change" if quick.is_quick(task) else "plan"
+        if sha != subject_digest(task) and sha == result_digest(task):
+            lines.append(take_result(root, task, verdict, sha, "reviewer", text))
+            continue
         if sha != subject_digest(task):
             lines.append(f"the review mark of {task_id} is for another version of the {what}")
             continue

@@ -14,7 +14,7 @@ their language and in simple words.
 1. Run `akasha doctor`. Repair each FIX line with the person before you continue, except the `akasha.toml` line,
    which step 3 writes.
 2. If the own rules or hooks of the repository forbid changes in the main checkout, make a git worktree on a new
-   branch first, and do steps 3 to 9 there.
+   branch first, and do steps 3 to 10 there.
 3. Ask first whether the repository starts now (it has no product code yet). If it does, ask which languages it
    uses, which folder holds one feature (an area, for example `domains/*`), and which file of an area is its
    entry for the other areas (for example `api.py`), then run `akasha setup --new --stack <languages> --areas
@@ -23,14 +23,16 @@ their language and in simple words.
    Where GitHub does not protect the default branch now, it records `[server] rules = "akasha"` and adds the watch.
    If a checker of the repository allows only listed files at the top, move `akasha.toml` to `.github/akasha.toml`
    and run `akasha setup` again: Akasha reads it there too.
-4. Read the own agent rules of the repository: `CLAUDE.md`, `AGENTS.md`, `.claude/skills/*/SKILL.md`, the hooks in
+4. Draw the map of the product before any other rule: see "The map of a repository that has code" below. Each
+   later task reads it to find where its code goes, so it comes first.
+5. Read the own agent rules of the repository: `CLAUDE.md`, `AGENTS.md`, `.claude/skills/*/SKILL.md`, the hooks in
    `.claude/settings.json`, the gates or scripts that they run, and the documents they point to. Decide with the
    person who keeps that own procedure (often the administrator who built it) → `[team] own_procedure`: Akasha does
    not stop their work outside its tasks, and the watch accepts their pull requests when the checks passed. For each
    other teammate, list each rule about scope interviews, a plan approval by a person, where plans, research, and
    mockups go, worktrees, task boards, and pushes, pull requests, and merges, and tell the person that Akasha's
    procedure comes first for teammates: Akasha wrote its block into `CLAUDE.md` and `AGENTS.md` with that sentence.
-   Keep the design and architecture documents: they go into `[guides]` in step 5. Look also for these:
+   Keep the design and architecture documents: they go into `[guides]` in step 6. Look also for these:
    - the hooks of the repository that start a session with maintenance or audits: Akasha tells the sessions of
      teammates to skip them, but the administrator does what is due before teammates join;
    - files that tools write in each work copy, for example caches of hooks: add them to `.gitignore` (with `**/` in
@@ -39,21 +41,21 @@ their language and in simple words.
      (`git rm --cached`), else each teammate gets the permissions of one person;
    - a folder that the repository already ignores for work copies, for example `worktrees`: `akasha setup` proposes it
      as `[work] folder`.
-5. Ask the person these questions, one at a time, and write each answer into `akasha.toml`:
+6. Ask the person these questions, one at a time, and write each answer into `akasha.toml`:
    - Who are the administrators? (GitHub names) → `[team] admins`. A team has only two roles: the administrators,
      who set up and maintain Akasha, and the teammates (each other person with write access), who approve the
-     previews of their own requests. Nobody reviews a task, except a change of existing lines of the core: an
-     administrator approves it on GitHub. Only the administrators change `akasha.toml`, `.github/`, CODEOWNERS, and
+     previews of their own requests. Nobody reviews a task, except a change of the structure: existing lines of
+     the core, and the sheet of an area. An administrator approves it on GitHub. Only the administrators change `akasha.toml`, `.github/`, CODEOWNERS, and
      the risky parts.
    - Which parts are risky, for example the database and the deployment? → `[risk] paths`. Only an administrator
-     changes them: a teammate's task stops there, and its AI asks an administrator with `akasha help`. Keep screens,
+     changes them: a teammate's task stops there, and its AI asks an administrator with `akasha help`. An
+     administrator keeps these rules, and is no reviewer and no answerer of the other tasks. Keep screens,
      features, and the own agent settings of each person out of the list, so that teammates rarely wait.
-   - Which folders hold one feature each? Look at the folders of the repository and propose them, for example
-     `domains/*` or `src/features/*` → `[core] areas`. A file that two or more other areas import is core: a change
-     of its existing lines waits for the approval of an administrator. New code is always free.
+   - The areas are named in step 4. A file that two or more other areas import is core: a change of its existing
+     lines waits for the approval of an administrator. New code is always free.
    - Which files must an administrator approve before a change of their existing lines, though a teammate can edit
      them, for example the definitions of the database? → `[core] paths`. Use it also for code that Akasha cannot
-     follow: Akasha sees the imports of Python, JavaScript, and TypeScript only.
+     follow: Akasha sees the imports of Python, JavaScript, TypeScript, Java, Kotlin, and Go only.
    - Does the repository have its own CI on GitHub? What are the names of its required checks, as GitHub shows the
      jobs (for example `checks`, not the name of the workflow)? → `[ci] required`. Akasha adds its own check in each
      case, also beside that CI: it runs `[checks]` and the checks of Akasha on GitHub.
@@ -73,7 +75,7 @@ their language and in simple words.
    - Which files do many new features change, for example the list of routes, the menu, or a generated index? →
      a short document for `[guides] build` that names them and tells how to merge each one when two tasks change it.
    - Does a checker of the repository examine Markdown or other files that it finds by their folder? The records of
-     each task (preview, research, plan, summary) go into git. → `[work] records`: a folder that those checkers skip,
+     each task (preview, plan, the answers of the reviews, summary) go into git. → `[work] records`: a folder that those checkers skip,
      for example `docs/tasks/akasha`.
    - Does a workflow deploy each merge to the default branch? → `[deploy] workflow`: its name or its file name.
      Then Akasha tells the person when the change is live, not only merged.
@@ -81,12 +83,12 @@ their language and in simple words.
      pages? → `[deploy] verify`. When it fails, Akasha tells the person and an administrator.
    - Does the repository already use the folder of `[work] folder` or branches that start with `akasha/`? →
      `[work]`.
-6. Run `akasha setup` again. It writes the workflow files from the answers.
-7. If the person administers the repository on GitHub, ask them to approve the GitHub changes, then run
+7. Run `akasha setup` again. It writes the workflow files from the answers.
+8. If the person administers the repository on GitHub, ask them to approve the GitHub changes, then run
    `akasha setup --apply`. It turns on the branch protection, or records that GitHub cannot protect the branch on
    this plan. Tell the person the result in simple words. If the person does not administer the repository, tell them
    to ask an administrator to run it on their own computer.
-8. If the team has its own CI, tell the person that each push of a draft pull request starts that CI. To save the
+9. If the team has its own CI, tell the person that each push of a draft pull request starts that CI. To save the
    time of the runners, the CI can skip drafts:
 
    ```yaml
@@ -98,12 +100,47 @@ their language and in simple words.
        if: ${{ !github.event.pull_request.draft }}
    ```
 
-9. Commit the files on a new branch, open a pull request, and wait until the required checks of the team pass on it.
+10. Commit the files on a new branch, open a pull request, and wait until the required checks of the team pass on it.
    Repair what fails, for example a checker that examines the new files. Then ask the administrator to merge it. Until
    this merge, the main checkout is free to change as the own rules of the repository allow. After it, each change is
    an Akasha task.
-10. Tell the person how teammates join: install the plugin once (`/plugin install akasha@akasha`), log in with
+11. Tell the person how teammates join: install the plugin once (`/plugin install akasha@akasha`), log in with
     `gh auth login`, and open the repository. The akasha-join skill helps each of them.
+
+## The map of a repository that has code
+
+The map tells each AI that comes later, on any computer and with any agent engine, what each part of the product
+keeps and whom it uses. Without it, new code goes into the nearest folder, and the same work appears in two places.
+The map is a sheet (`area.toml`) in the folder of each area, and `akasha map` joins the sheets with the code.
+
+1. Look at the folders with the person and name the folder of one area: `[core] areas`, for example `domains/*`,
+   `services/*`, or `src/features/*`. One area keeps one coherent business responsibility. Then name the file of an
+   area that other areas may call: `[boundaries.areas]` with `private` and `public`. Old imports that cross an area
+   stay: the checks look only at what a change makes new.
+2. Run `akasha map --draft`. It writes a first sheet for each area from the code: the purpose from the top of the
+   entry file, and `uses` from the imports.
+3. Read the code of each area, and correct its sheet with the person, one area at a time:
+   - `purpose`: one line that tells what the area keeps, in the words of the business. Two areas with the same
+     purpose are a finding: tell the administrator, and write both as they are. A later task joins them.
+   - `uses`: the areas that it may call. An import that should not be there stays in the code and out of `uses`:
+     `akasha map` shows it, and a later task removes it.
+   - `tables`: the tables that only this area writes. Search the code for `insert into`, `update`, and `delete
+     from`. A table that two areas write goes to the area that owns its meaning.
+   - `contracts`: the files of the area that code outside the repository relies on, for example an API file.
+   - `owners`: the GitHub names of the people who answer for the area, when the team has them.
+4. Run `akasha map`, and show the map to the administrator: is each area where they expect it, and does each arrow
+   go the right way? Run `akasha map --report` for what the code shows beside it: the files that several areas
+   import, the cycles, and the names that are in more than one file of an area.
+5. Ask the questions of the product checks, and write the answers into `akasha.toml`:
+   - Which files change the database, and which file names each setting of the server? → `[ops] migrations` and
+     `[ops] env`. A migration that removes a column, and a setting that the file does not name, then fail.
+   - Does a check run the queries against a real database? → `kind = "integration"` in its `[checks.<name>]`.
+     A change of the files of `[preview] data` then needs it.
+   - How long may a function, a file, and the change of one task be? → `[size]`. The defaults are 100, 800, and
+     1500 lines; 0 turns a limit off.
+
+After the merge, a change of a sheet waits for the approval of an administrator, as a change of core code does: a
+new area, a new arrow between two areas, and a new owner of a table are decisions about the structure.
 
 ## A repository that starts now
 

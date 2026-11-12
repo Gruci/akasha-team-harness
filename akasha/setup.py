@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from akasha import VERSION, checks, claude, codex, config, github, langs, repo, version, work
-from akasha.config import CONFIG_FILE, STATE_DIR
+from akasha.config import CONFIG_FILE, STATE_DIR, Team
 from akasha.task import all_local
 
 NEXT_STEPS = ("Next: answer the questions of the setup in akasha.toml and run `akasha setup` again. An administrator "
@@ -98,6 +98,23 @@ def first_config(root: Path, choice: Choice = Choice()) -> str:
     else:
         lines += ['# plan = ["docs/architecture.md"]    # ... before the plan, and the AI that checks the plan '
                   "reads them too", ""]
+    if not choice.new:
+        lines += ["# The map of the product. Name the folder of one area, then run `akasha map --draft` in this task: "
+                  "it writes a", "# sheet (area.toml) for each area, and new code then goes into the area that keeps "
+                  "that work.", '# [core]', '# areas = ["domains/*"]', "# [boundaries.areas]",
+                  '# private = ["domains/*/**"]', '# public = ["domains/*/api.py"]', ""]
+    lines += [
+        "[size]", f"function = {config.SIZE_FUNCTION}          # lines of one function that a change makes or makes "
+        "longer. 0: no limit",
+        f"file = {config.SIZE_FILE}              # lines of one file of code: a longer file does not grow",
+        f"task = {config.SIZE_TASK}             # lines of code that one task changes: a larger change goes in "
+        "parts", "",
+        "# [ops]                  # what a change needs to go live safely (the check ops)",
+        '# migrations = ["db/migrations/**"]   # a new line there that removes a table or a column fails',
+        '# env = [".env.example"]              # a new setting that this file does not name fails', "",
+        "# [models]               # the model of each agent, when the team chooses one",
+        '# work = "sonnet"        # akasha-worker: the preview, the plan, and the build',
+        '# review = "opus"        # akasha-reviewer: never weaker than the worker', ""]
     lines += [
         "[work]", f'folder = "{folder}"' + " " * max(1, 22 - len(folder)) + "# the work copies of the tasks: a "
         "folder that git ignores",
@@ -428,8 +445,9 @@ def doctor(root: Path) -> list[tuple[bool, str]]:
     except config.ConfigError as error:
         return found + [(False, f"{CONFIG_FILE}: {error}")]
     if team.version:
-        found.append((team.version == VERSION, version.mismatch(team.version, root=root) or
-                      f"Akasha {VERSION}, the version of the team"))
+        found.append((not version.mismatch(team.version, root=root), version.mismatch(team.version, root=root) or
+                      (f"Akasha {VERSION}, the version of the team" if team.version == VERSION else
+                       f"Akasha {VERSION}, with the same rules as {team.version}, the version of the team")))
         if team.unknown and team.version == VERSION:
             found.append((False, f"{CONFIG_FILE} has {', '.join(team.unknown[:3])}, which Akasha {VERSION}, the "
                                  "version of the team, does not know (an administrator removes them, or raises "
@@ -479,4 +497,33 @@ def doctor(root: Path) -> list[tuple[bool, str]]:
         found.append((True, "note: the only required check is secrets. Put the tests, the lint, and the type check of "
                             f"the team in [checks] required of {CONFIG_FILE}: then each person and each agent engine "
                             "runs the same checks, on the computer and on the server"))
-    return found
+    return found + product_notes(root, team, tracked)
+
+
+def product_notes(root: Path, team: Team, tracked: list[str]) -> list[tuple[bool, str]]:
+    """What the checks of the product cannot hold yet in this repository (product.py): a note for each one, with
+    what an administrator does about it. They are notes: a team turns each rule on when it is ready."""
+    from akasha import githooks, hooks, sheets
+    found = [(True, said if on else f"note: {said}") for on, said in githooks.state(root, hooks.command())]
+    notes = []
+    if not team.core_areas:
+        notes.append(f"the product has no map: {CONFIG_FILE} names no areas. Name the folder of one area ([core] "
+                     "areas, for example \"domains/*\"), then run `akasha map --draft` in a task: new code then goes "
+                     "into the area that keeps that work")
+    elif not sheets.drawn(team, tracked):
+        notes.append("the map of the product is not drawn: no area has a sheet (area.toml). An administrator runs "
+                     "`akasha map --draft` in a task and corrects each purpose")
+    if team.core_areas and not team.boundaries:
+        notes.append("the areas have no boundary: any file imports any file of another area. Name the entry of an "
+                     "area in [boundaries.areas] (private, public)")
+    real = [name for name in team.required_checks if name in team.checks and team.checks[name].kind == "integration"]
+    if team.data_paths and not real:
+        notes.append("no required check runs against a real store: a change of the files of [preview] data is proven "
+                     "only by tests that never run its queries. Mark such a check with kind = \"integration\" in "
+                     "[checks.<name>]")
+    if team.deploy_workflow and not team.deploy_verify:
+        notes.append("nothing examines the product after a deployment: [deploy] verify is a command that passes when "
+                     "the change works live, for example a request to the health address")
+    if not (team.size_function or team.size_file or team.size_task):
+        notes.append("each limit of [size] is off: a function, a file, and a task can grow without a signal")
+    return found + [(True, f"note: {said}") for said in notes]

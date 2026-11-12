@@ -86,10 +86,10 @@ Each task goes through six steps, and many tasks go through them at once:
 |:--|:--|:--|
 | 1.&nbsp;Request | The person says what they want | — |
 | 2.&nbsp;Preview | The AI makes a preview: the look, the values, the rules. The person checks it | The person approves it in the chat |
-| 3.&nbsp;Plan | The AI looks at the code that exists, then writes research and a plan | A second AI checks it until it passes. A later change of the plan, the preview, or the research needs the check again |
-| 4.&nbsp;Build | The AI changes the code in its own copy | No code before steps 2 and 3 |
-| 5.&nbsp;Check | The checks of the team run, and Akasha compares the new code with the code that exists | Each required check passes. New code that the repository has already needs a reason in the plan |
-| 6.&nbsp;Land | The pull request comes up to date and merges, in the order in which the tasks came | The checks pass on GitHub, and the records of the task hold the approval and the review of this version |
+| 3.&nbsp;Plan | The AI looks at the map and the code that exists, then writes the plan as a work order: steps with their files, rules, and tests | A second AI checks it until it passes. A later change of the plan or the preview needs the check again |
+| 4.&nbsp;Build | The AI builds the steps in its own copy | No code before steps 2 and 3 |
+| 5.&nbsp;Check | The checks of the team run, then the checks of the product: a test for each rule, the steps of the plan, the map, the rules of operation, and the sizes. Then the second AI reads the result | Each check passes, and the second AI passes the change itself |
+| 6.&nbsp;Land | The pull request comes up to date and merges, in the order in which the tasks came | The checks pass on GitHub, and the records of the task hold the approval and the reviews of this version |
 
 The hooks hold the AI on these steps.
 
@@ -101,15 +101,53 @@ The hooks hold the AI on these steps.
 
 Before the AI writes new code, `akasha start` shows it what the repository has: the guides of the team, the rules
 for names, the public names of the code near the task, and the definitions that the task touches. In Claude Code
-each step runs in an agent of its own, so a long task does not fill the conversation with the person.
+the work runs in one agent that keeps what it read from the preview to the build, and the reviews in another, so a
+long task does not fill the conversation with the person.
+
+The rules are outside the agent engine: in the commands, in two hooks of git, and on the server. An engine that
+reads no instruction of Akasha still meets them, and so does a person in a terminal.
 
 [How it works](docs/how-it-works.md) tells each detail.
 
 * * *
 
+## The Map of the Product
+
+An AI starts each task without a memory. Without a map, new code goes into the nearest folder, and the same work
+appears in two places. So each area of the product has a sheet, `area.toml`, in its own folder:
+
+```toml
+purpose = "Takes an order and changes its state"    # one line: what the area keeps
+uses = ["catalog", "payments"]                      # the areas that its code calls
+tables = ["orders", "order_items"]                  # the tables that only this area writes
+```
+
+`akasha map` joins the sheets with the code, on any computer and for any agent engine:
+
+```
+domains/orders — Takes an order and changes its state
+  entry domains/orders/api.py · uses catalog, payments · 42 files · 18 public names · writes orders, order_items
+domains/catalog — Keeps the products and their prices
+  entry domains/catalog/api.py · uses none · 27 files · 11 public names
+```
+
+| A change | What happens |
+|:--|:--|
+| New code inside an area | Free |
+| Code in a new folder outside each area | The check fails: it goes into the area that keeps that work |
+| A new area, or one area starts to use another | The sheet changes, and an administrator approves it at the landing |
+| A new public name of an entry | It needs one line that tells what it gives: the map shows that line |
+| Code of one area writes a table of another | The check fails |
+
+The check looks only at what a change makes new, so a repository with old code draws its map at any time:
+`akasha map --draft` writes the first sheets from the code. Akasha reads the names and the imports of Python,
+JavaScript, TypeScript, Java, Kotlin, and Go; in another language the sheets and the folders still make the map.
+
+* * *
+
 ## Many People at the Same Time
 
-<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams and an agent ask at the same time. Each person only approves a preview; the person who asked the agent approves its result before the merge. For each task an AI plans, a second AI checks the plan, the AI builds and tests. When two tasks plan the same file, each AI reads the other's change first. The tasks merge into one product one by one, and each later one is first updated from main and checked again.">
+<img src="docs/readme/how-it-works.svg" width="1000" alt="Several teams and an agent ask at the same time. Each person only approves a preview; the person who asked the agent approves its result before the merge. For each task an AI plans, a second AI checks the plan, the AI builds and tests, and the second AI checks the result. When two tasks plan the same file, each AI reads the other's change first. The tasks merge into one product one by one, and each later one is first updated from main and checked again.">
 
 Each person, from any team, works on their own task at the same time as the others.
 
@@ -122,7 +160,8 @@ Each person, from any team, works on their own task at the same time as the othe
 | The records of many tasks pile up | The records of a merged task move to an archive that no work copy holds. Old records are no input of a new task, however many there are |
 | A person stops, and another continues | `handoff` frees the task, `resume` continues it anywhere |
 | A task name is in use | The start refuses it, and the AI picks another |
-| The AI is stuck | It asks the administrators on the pull request |
+| Several sessions start on one computer | A new session asks the person about an open task that nobody works on: continue it, cancel it, or leave it |
+| A task needs what only an administrator can do | The AI asks the administrators on the pull request. A question about the business goes to the person who asked |
 
 * * *
 
@@ -132,7 +171,7 @@ A team has three roles: the administrators, the teammates, and the agent account
 
 | Who | Does | Does not have to |
 |:--|:--|:--|
-| **Administrator** | Sets up and maintains Akasha, the database, and the deployment | Review any task |
+| **Administrator** | Keeps the rules: Akasha, the map, the database, and the deployment. Approves a change of the structure | Review any task, or answer how to build one |
 | **Teammate** | Says what to make, and approves the preview | Read code or review plans |
 | **Agent account** | A program runs it, for example an operations agent: it works from the request of a person, and that person approves the result before the merge | Make a preview |
 
@@ -164,7 +203,10 @@ person can tune the harness freely.
 | The person approves a specification, not only a picture | Akasha refuses a preview without rules, or with a value from data that has no source, formula, value, and check |
 | The code waits for the approval and the plan check | The guard stops each edit of the code before both |
 | A change that failed the checks does not merge | The required checks must really run and pass on GitHub |
-| A change without a task, or with old evidence, does not pass | The check on GitHub reads the approval and the review from the records of the task. A preview that changed after the approval fails, and so does a plan, a preview, or a research that changed after the review |
+| A change without a task, or with old evidence, does not pass | The check on GitHub reads the approval and the two reviews from the records of the task. A preview that changed after the approval fails, and so does a plan that changed after its review, or code that changed after the review of the result |
+| Each rule that the person approved has a test | The check fails for a rule or a value of the preview without a test that carries its mark |
+| New code is in its place | The check fails for code in a new folder outside each area, and for a new use of another area that the map does not name |
+| A change stays small | The check fails for a task over the limit of size, a function over its limit, and a long file that grows |
 | A copy of existing code needs a reason | A new public name with the same name or the same body as existing code fails the check, until the plan tells why it is there |
 | Only an administrator changes the risky parts | A teammate's task stops at the database or the deployment |
 | Each change can be found and undone | One squash commit with its summary and records |
@@ -174,7 +216,8 @@ person can tune the harness freely.
 | A sandbox | The hooks keep a cooperative AI on the steps |
 | The meaning of an approval | The AI judges it. The pull request names who approved and when; the exact words stay on the computer of the session (`.docs/state`) |
 | Who typed | The records stop evidence that is missing or old. They do not prove who the person was |
-| Good design | Akasha shows the code that exists and the standard of the team, and checks what a machine can see. It does not make an AI design well |
+| Good design | Akasha shows the map, the code that exists, and the standard of the team, and checks what a machine can see. It does not make an AI design well |
+| A product that runs | Akasha sees the lines of a change, not a server. It stops a migration that removes a column, a setting that no file names, a call without a time limit, and a silent error; the deployment, the monitoring, and the capacity are of the team |
 | Protection before a merge on GitHub Free | A person can merge by hand. The watch reports it |
 | The business logic | The preview, the plan check, and the checks examine it |
 | The data | Undoing code does not undo data. Mark the database risky |
@@ -196,7 +239,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
-| **v2.0.0** | Evidence on the server · code map · consistency check · records archive · landing order |
+| **v2.0.0** | Evidence on the server · the map of the product (a sheet for each area) · the checks of the product (proof, scope, map, ops, size) · the review of the result · plans as work orders · one worker agent · hooks of git · Java, Kotlin, and Go · consistency check · records archive · landing order |
 
 Earlier versions: [Releases](https://github.com/Gruci/akasha-team-harness/releases)
 

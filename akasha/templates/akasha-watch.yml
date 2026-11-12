@@ -15,14 +15,14 @@ permissions:
 jobs:
   watch:
     if: github.ref_name == github.event.repository.default_branch
-    runs-on: ubuntu-latest
+    runs-on: @@AKASHA_RUNS_ON@@
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "@@AKASHA_PYTHON@@"
       - name: Install Akasha
         env:
           AKASHA_SOURCE: ${{ vars.AKASHA_SOURCE }}

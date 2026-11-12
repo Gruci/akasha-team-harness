@@ -41,11 +41,23 @@ INSTRUCTION = Path(__file__).parent / "templates" / "reviewer.md"
 
 def request(root: Path, team: Team, task: Task, base: str, command: str) -> dict:
     """What the command gets on its standard input."""
+    result = _of_result(task)
     return {"id": secrets.token_hex(8), "task": task.id, "kind": task.kind,
-            "subject": "change" if quick.is_quick(task) else "plan", "digest": review.subject_digest(task),
+            "subject": "change" if quick.is_quick(task) else "result" if result else "plan",
+            "digest": review.result_digest(task) if result else review.subject_digest(task),
             "workcopy": str(Path(task.workcopy).resolve()),
             "records": str((Path(task.workcopy) / records(task)).resolve()),
             "akasha": command, "instruction": str(INSTRUCTION.resolve()), "base": base}
+
+
+def _of_result(task: Task) -> bool:
+    """True when the review that the task needs now is of its result: the plan passed, and the checks passed on the
+    work as it is."""
+    from akasha import work
+    if not review.result_needed(task) or not review.passed(task) or not task.workcopy:
+        return False
+    tree = Path(task.workcopy)
+    return task.checks.get("commit") == work.head(tree) and not work.dirty(tree)
 
 
 def _files(root: Path, team: Team, base: str, folder: Path) -> None:
@@ -69,7 +81,8 @@ def run(root: Path, task_id: str) -> Task:
     if not team.review_command:
         raise ValueError("the team has no reviewer command ([review] command). In Claude Code, ask the akasha-reviewer "
                          "agent. Else review it yourself: `akasha review <task> --verdict pass|changes`")
-    sha = review.subject_digest(task)
+    of_result = _of_result(task)
+    sha = review.result_digest(task) if of_result else review.subject_digest(task)
     if not sha:
         raise ValueError(f"the records of task {task.id} are not complete yet: the review reads "
                          f"{', '.join(review.INPUTS.get(task.kind, review.INPUTS['full']))} in {records(task)}/")
@@ -96,10 +109,15 @@ def run(root: Path, task_id: str) -> Task:
         raise ValueError(f"the answer of the reviewer command has no mark for task {task.id} and the digest {sha} "
                          "(AKASHA-REVIEW: <task> <digest> PASS or CHANGES). Nothing is recorded")
     task = load(root, task_id)
-    if review.subject_digest(task) != sha:
-        raise ValueError("the plan changed while the reviewer read it. Nothing is recorded: run `akasha review "
-                         f"{task.id}` again")
+    if (review.result_digest(task) if of_result else review.subject_digest(task)) != sha:
+        raise ValueError("the plan or the code changed while the reviewer read it. Nothing is recorded: run "
+                         f"`akasha review {task.id}` again")
     verdict = mine[-1][2]
+    if of_result:
+        review.take_result(root, task, verdict, sha, "command",
+                           f"The reviewer command of the team ([review] command) ran with the files of the commit "
+                           f"{base}, request {asked['id']}.\n\n{answer}")
+        return load(root, task_id)
     rows = review.carry(task, review.answer_rows(answer))
     found = {item: row["verdict"] for item, row in rows.items()}
     why = review.problem(task, found) if verdict == "PASS" else ""

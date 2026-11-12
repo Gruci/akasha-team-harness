@@ -4,12 +4,14 @@ The records go into git with the change, so the server reads the same evidence a
 
 - approval.json: `akasha approve` writes it. It holds what the person approved (the preview, the plan of a task
   without a screen, or the change of a quick task) by its digest, who, and when. Never the words of the person.
-- review.md: the answer of the reviewer, with the verdict, the row of each item, and the digest of what it read.
+- review.md: the answer of the reviewer about the plan, with the verdict, the row of each item, and the digest of
+  what it read.
+- result.md: the answer of the reviewer about the result, with the digest of the change that it read.
 
 The check `evidence` of the server (checks.ci) fails a pull request that changes product files without them, or with
-evidence of an older version: a preview that changed after the approval, a plan, a preview, or a research that
-changed after the review. The watch reads the same records from a merge commit. This check stops evidence that is
-missing or old. It does not prove who the person was: an AI can write a file.
+evidence of an older version: a preview that changed after the approval, a plan or a preview that changed after the
+review, or code that changed after the review of the result. The watch reads the same records from a merge commit.
+This check stops evidence that is missing or old. It does not prove who the person was: an AI can write a file.
 
 An agent task has no approval in its records: the person approves its result after the checks of the server passed,
 and a commit for it would start them again. The landing and the watch examine that approval (agent.py)."""
@@ -67,6 +69,8 @@ class Facts:
     inputs: dict = field(default_factory=dict)    # the digest of each file that the review reads
     change: str = ""                   # the digest of the change of a quick task
     text_only: bool = False            # a quick task of only text for people: no review
+    result: dict = field(default_factory=dict)    # what result.md tells: the review of the result
+    result_now: str = ""               # the digest of the change as the pull request has it
     result_approved: bool = True       # an agent task that merged: the person approved its result
 
 
@@ -79,10 +83,10 @@ def _kind(found: set[str]) -> str:
 
 
 def from_records(read: Read, task: str, change: Callable[[str], str] | None = None, text_only: bool = False,
-                 result_approved: bool = True) -> Facts:
+                 result_approved: bool = True, result_now: str = "") -> Facts:
     """The facts of a task from its records. `read` gives the bytes of a record: from the checkout (the server
     check), or from a commit (the watch). `change` gives the digest of the change of a quick task from its
-    impact.md."""
+    impact.md. `result_now`: the digest of the lines that the change adds and removes (review.change_digest)."""
     kind = _kind({name for name in KIND_FILES if read(name) is not None})
     try:
         approval = json.loads((read(APPROVAL) or b"").decode("utf-8", errors="replace") or "{}")
@@ -95,7 +99,9 @@ def from_records(read: Read, task: str, change: Callable[[str], str] | None = No
                  plan=digest_of(read(PLAN) or b"") if read(PLAN) is not None else "",
                  inputs=review.input_digests(kind, read) if kind in review.INPUTS else {},
                  change=change(impact) if kind == "quick" and change else "",
-                 text_only=text_only, result_approved=result_approved)
+                 text_only=text_only, result_approved=result_approved,
+                 result=review.parse((read(review.RESULT) or b"").decode("utf-8", errors="replace")),
+                 result_now=result_now)
 
 
 def problem(team: Team, facts: Facts, merged: bool = False, author: str = "") -> str:
@@ -140,6 +146,17 @@ def problem(team: Team, facts: Facts, merged: bool = False, author: str = "") ->
         why = review.problem_of(review.ITEMS["quick" if kind == "quick" else "plan"], said.get("rows") or {})
         if why:
             return f"the review in {review.REVIEW} did not pass each item ({why}): {ask}"
+    if kind in review.RESULT_KINDS:
+        said = facts.result
+        ask = f"ask the akasha-reviewer agent to review the result of task {task} again"
+        if said.get("verdict") != "PASS":
+            return f"the records hold no review of the result that passed ({review.RESULT}): {ask}"
+        if not facts.result_now or said.get("digest") != facts.result_now:
+            return f"the code changed after the review of the result: {ask}"
+        if said.get("source") != "self":
+            why = review.problem_of(review.ITEMS["result"], said.get("rows") or {})
+            if why:
+                return f"the review in {review.RESULT} did not pass each item ({why}): {ask}"
     return ""
 
 
@@ -187,6 +204,23 @@ def plan_of(team: Team, root: Path, base: str, changed: list[str], head: str = "
         return "", True
 
 
+def preview_of(team: Team, root: Path, base: str, changed: list[str], head: str = "") \
+        -> tuple[str | None, tuple[str, ...]]:
+    """The preview of the task of a pull request, from its records in the checkout, and the folders of those records:
+    (the text of preview.html, or None for a task without one; the records). The checks of the product read them."""
+    from akasha import forms
+    added = names(root, "diff", "--name-only", "--no-renames", "--diff-filter=A", f"{base}...HEAD")
+    folder, task, why = choose(team, changed, head, lambda path: _at(root, base, path), added)
+    if why or not folder:
+        return None, ()
+    page = root / folder / PREVIEW
+    try:
+        text = page.read_text(encoding="utf-8", errors="replace") if forms.written(page) else None
+    except OSError:
+        text = None
+    return text, own_of(team, task, folder)
+
+
 def _at(root: Path, commit: str, path: str) -> bool:
     return git(root, "cat-file", "-e", f"{commit}:{path}").returncode == 0
 
@@ -219,7 +253,8 @@ def server(team: Team, root: Path, base: str, changed: list[str], author: str = 
 
     start = git(root, "merge-base", base, "HEAD").stdout.strip()
     facts = from_records(read, task, lambda impact: quick.change_digest(root, start, own, impact) if start else "",
-                         quick.text_only(changed, own))
+                         quick.text_only(changed, own),
+                         result_now=review.change_digest(root, start, own, "HEAD") if start else "")
     found = problem(team, facts, author=author)
     if found:
         return "FAIL", found
@@ -248,6 +283,7 @@ def merged(team: Team, root: Path, commit: str, changed: list[str], task: Task, 
         return shown.stdout.encode("utf-8") if shown.returncode == 0 else None
 
     facts = from_records(read, name, lambda impact: quick.change_digest(root, f"{commit}^1", own, impact, commit),
-                         quick.text_only(changed, own), task.approval.get("source") == "result")
+                         quick.text_only(changed, own), task.approval.get("source") == "result",
+                         review.change_digest(root, f"{commit}^1", own, commit))
     return problem(team, facts, merged=True, author=author)
 

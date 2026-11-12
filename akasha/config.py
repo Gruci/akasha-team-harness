@@ -29,11 +29,14 @@ LABEL = "akasha"                             # the label of each pull request of
 HELP_LABEL = "akasha-help"                   # a task that waits for an administrator
 SERVER_RULES = ("github", "akasha")          # who stops a merge without the checks: GitHub, or Akasha on each computer
 GUIDE_STEPS = ("join", "preview", "plan", "build", "review")
-CHECK_KEYS = ("command", "cwd", "only_when", "command_windows", "ready")
+CHECK_KEYS = ("command", "cwd", "only_when", "command_windows", "ready", "kind")
+CHECK_KINDS = ("", "integration")            # integration: the check runs against a real store, for example a
+#                                              database
 CHECK_SETTINGS = ("required", "setup", "run_all_when")
 # The checks of Akasha itself, in flow.py and on the server: a check of the team cannot take their names
 RESERVED_CHECKS = CHECK_SETTINGS + ("secrets", "data", "screen", "version", "quick", "admin_only", "gate",
-                                    "evidence", "consistency", "folders")
+                                    "evidence", "consistency", "folders", "map", "proof", "ops", "size", "scope",
+                                    "integration")
 ONE_LINE_CHECKS = ("tests", "lint")          # a check with one command line: tests = "<command>"
 CHECK_NAME = re.compile(r"[A-Za-z0-9_-]+")
 NOT_IN_BRANCH = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{")
@@ -66,7 +69,12 @@ _KEYS: dict[str, set[str] | None] = {
     "pins": {"policy"},
     "review": {"command", "files", "timeout"},
     "boundaries": None,                      # the team names its boundaries
+    "ops": {"migrations", "env", "off", "allow"},
+    "models": {"work", "review"},
+    "size": {"function", "file", "task"},
 }
+OPS_RULES = ("migration", "env", "timeout", "silent")
+SIZE_FUNCTION, SIZE_FILE, SIZE_TASK = 100, 800, 1500
 
 
 class ConfigError(ValueError):
@@ -95,6 +103,7 @@ class Check:
     only_when: tuple[str, ...] = ()          # the check runs only when a changed file matches. () is each change
     command_windows: str = ""                # the command on Windows, for cmd.exe
     ready: str = ""                          # a command that passes when this computer can run the check (doctor)
+    kind: str = ""                           # "integration": it runs against a real store, for example a database
 
 
 @dataclass(frozen=True)
@@ -136,6 +145,16 @@ class Team:
     review_files: tuple[str, ...] = ()       # the files of the repository that the command needs
     review_timeout: int = 900                # seconds
     boundaries: tuple[Boundary, ...] = ()    # which code may import which (boundaries.py)
+    ops_migrations: tuple[str, ...] = ()     # the files that change the database. () is a folder migrations (ops.py)
+    ops_env: tuple[str, ...] = ()            # the files that name each setting of the server. () is .env.example
+    ops_off: tuple[str, ...] = ()            # the rules of the check ops that the team does not use
+    ops_allow: tuple[tuple[str, str], ...] = ()      # (rule, file pattern): the rule does not hold for these files
+    size_function: int = SIZE_FUNCTION       # lines of one function. 0 turns the limit off (size.py)
+    size_file: int = SIZE_FILE               # lines of one file of code
+    size_task: int = SIZE_TASK               # lines of code that one task changes
+    # The model of each agent of a task, when the team chooses one: work (akasha-worker), review (akasha-reviewer).
+    # The status of a task names them, and the session starts the agent with it
+    models: dict[str, str] = field(default_factory=dict)
     unknown: tuple[str, ...] = ()            # settings of a newer Akasha that this one does not know
 
     @property
@@ -188,6 +207,12 @@ def _count(value: object, where: str) -> int:
     return value
 
 
+def _limit(value: object, where: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ConfigError(f"{CONFIG_FILE}: {where} must be a whole number: a limit of lines, or 0 for no limit")
+    return value
+
+
 def _flag(value: object, where: str) -> bool:
     if not isinstance(value, bool):
         raise ConfigError(f"{CONFIG_FILE}: {where} must be true or false")
@@ -237,11 +262,14 @@ def _check(name: str, value: object, unknown: list[str]) -> Check:
     only_when = _patterns(value.get("only_when", []), f"{where} only_when")
     if "only_when" in value and not only_when:
         raise ConfigError(f"{CONFIG_FILE}: {where} only_when needs one or more file patterns")
+    kind = value.get("kind", "")
+    if kind not in CHECK_KINDS:
+        raise ConfigError(f'{CONFIG_FILE}: {where} kind must be "integration": the check runs against a real store')
     return Check(command=_text(value.get("command"), f"{where} command"),
                  cwd=_relative(value.get("cwd", "."), f"{where} cwd", "frontend"), only_when=only_when,
                  command_windows=_text(value["command_windows"], f"{where} command_windows")
                  if "command_windows" in value else "",
-                 ready=_text(value["ready"], f"{where} ready") if "ready" in value else "")
+                 ready=_text(value["ready"], f"{where} ready") if "ready" in value else "", kind=kind)
 
 
 def _runs_on(value: object) -> tuple[str, ...]:
@@ -319,6 +347,26 @@ def _boundaries(section: dict) -> tuple[Boundary, ...]:
     return tuple(found)
 
 
+def _ops_rules(value: object, where: str) -> tuple[str, ...]:
+    rules = _strings(value, where)
+    wrong = [rule for rule in rules if rule not in OPS_RULES]
+    if wrong:
+        raise ConfigError(f"{CONFIG_FILE}: {where} names {wrong[0]}, and the rules are {', '.join(OPS_RULES)}")
+    return rules
+
+
+def _ops_allow(value: object) -> tuple[tuple[str, str], ...]:
+    """[ops] allow: each item is "<rule>: <file pattern>"."""
+    found = []
+    for item in _strings(value, "[ops] allow"):
+        rule, colon, files = item.partition(":")
+        if not colon or rule.strip() not in OPS_RULES or not files.strip():
+            raise ConfigError(f'{CONFIG_FILE}: [ops] allow is "<rule>: <file pattern>", for example "migration: '
+                              f'db/migrations/0042_drop.sql". The rules are {", ".join(OPS_RULES)}')
+        found.append((rule.strip(), pattern(files.strip())))
+    return tuple(found)
+
+
 def _policy(section: dict) -> str:
     """[pins] policy. A value that Akasha does not know is an error: it never counts as "observe"."""
     if "policy" not in section:
@@ -393,6 +441,14 @@ def team_from(data: dict) -> Team:
         review_files=_patterns(asked.get("files", []), "[review] files"),
         review_timeout=_count(asked.get("timeout", 900), "[review] timeout"),
         boundaries=boundaries,
+        ops_migrations=_patterns((ops := data.get("ops", {})).get("migrations", []), "[ops] migrations"),
+        ops_env=_patterns(ops.get("env", []), "[ops] env"),
+        ops_off=_ops_rules(ops.get("off", []), "[ops] off"),
+        ops_allow=_ops_allow(ops.get("allow", [])),
+        size_function=_limit((size := data.get("size", {})).get("function", SIZE_FUNCTION), "[size] function"),
+        size_file=_limit(size.get("file", SIZE_FILE), "[size] file"),
+        size_task=_limit(size.get("task", SIZE_TASK), "[size] task"),
+        models={step: _text(name, f"[models] {step}") for step, name in data.get("models", {}).items()},
         unknown=tuple(unknown),
     )
 

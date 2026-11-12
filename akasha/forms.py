@@ -7,7 +7,7 @@ and deletes the line.
 
 | Form | When | What it holds |
 | preview.html | `akasha start` (a full task) | the decisions, the look, the values, and the rules, each with how to fill it |
-| research.md, plan.md | `akasha approve` (a full task), `akasha start` (a task without a screen, an agent task) | the parts of each, with the table "Public changes" |
+| plan.md | `akasha approve` (a full task), `akasha start` (a task without a screen, an agent task) | the approach, the steps (steps.py), and the table "Public changes" |
 | impact.md | `akasha start --quick` | each changed file, who uses it, and why no other screen changes |
 
 summary.md has no form: its text goes as it is into the pull request and the commit."""
@@ -64,34 +64,31 @@ PREVIEW = """\
 </html>
 """
 
-RESEARCH = """\
-# Research
-
-<!-- Read the files of [guides] plan first. Write facts that you read in the code and the data, each with its file
-     and line. -->
-
-## How it works now
-
-## Who calls and reads what will change
-
-## Existing code that I looked for
-
-<!-- What `akasha find <words>` and `akasha map <folder>` showed for this task, and what the plan uses of it. A new
-     function with a name or a body that the repository has already needs an answer in "Public changes" of plan.md. -->
-
-## Limits
-"""
-
 PLAN = """\
 # Plan
 
-<!-- The plan keeps each rule and each value of what the person approved, also the ones that you proposed. No "TBD". -->
+<!-- The plan is a work order. An AI that never saw this conversation builds from this file alone, so write what it
+     must know: where the code is, what to call, and what each step makes. It keeps each rule and each value of what
+     the person approved, also the ones that you proposed. No "TBD". Read the files of [guides] plan first. -->
 
 ## Approach
 
-## Files
+<!-- A few lines: what the change does and why this way. Then the facts that the steps stand on, each with its file
+     and line: how the code and the data work now, each caller and reader of what will change, and what `akasha map`
+     and `akasha find <words>` showed of code that exists. Use that code: do not write it a second time. -->
 
-<!-- Each file and the exact change. -->
+## Steps
+
+<!-- The work in the order to build it. One step is small enough for one go. Akasha reads `files`, `rules`, and
+     `tests` (the check `scope`): each file of code that the task changes is in a step, and each rule of the preview
+     is in a step. A test file needs no step. Nobody marks a step as done: Akasha sees it in the change.
+
+     ### S1 <what the step makes>
+     - files: `path/of/file.py`, `path/of/other.py`
+     - uses: `existing_name(arguments)` in path/of/it.py:44, and what it gives
+     - rules: the keys of the rules and the values of the preview that this step builds
+     - tests: `path/of/test_file.py`, with the example of the preview as the expected value
+     - done when: what shows that the step is complete -->
 
 ## Public changes
 
@@ -104,11 +101,10 @@ PLAN = """\
 | Change | Where | Note |
 |:--|:--|:--|
 
-## Tests
-
-<!-- One test for each example of the rules and each value, with the expected values that the person approved. -->
-
 ## Risks
+
+<!-- What can break in another area or after the deployment, and what the plan does against it: each other caller of
+     what changes, a change of data, a new setting of the server. -->
 
 ## Undo
 

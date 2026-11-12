@@ -4,8 +4,9 @@ A task that makes a function looks first at what the repository has. The map giv
 the first line of each description; never a body. It is what the code is now, not a model: a name that many files use
 or that has a description is not good code for that reason. What to follow comes from the guides of the team.
 
-Python is read with `ast` of the standard library, JavaScript and TypeScript with patterns. What Akasha cannot read
-stays in the map by its kind (`unread`), and never counts as read.
+Python is read with `ast` of the standard library; JavaScript, TypeScript, Java, Kotlin, and Go with patterns. What
+Akasha cannot read stays in the map by its kind (`unread`), and never counts as read. A file of another language is
+not in the map of the names: the sheets of the areas still show what its area keeps (sheets.py).
 
 The map of each file is kept by the id of its content in .docs/state/map.json (the blob id of git for a file that the
 work copy did not change, a hash of the text else). A new version of the reader drops the copy. The server builds
@@ -29,7 +30,7 @@ from akasha.checks import matches
 from akasha.config import STATE_DIR, Team
 from akasha.repo import git, names, paths, write_whole
 
-READER = 1                     # the version of the reader: a change of it drops the kept maps
+READER = 2                     # the version of the reader: a change of it drops the kept maps
 CACHE = STATE_DIR / "map.json"
 MOST = 12_000                  # characters of the map in the output of `akasha start`
 FOUND = 20                     # the answers of `akasha find`
@@ -230,8 +231,58 @@ def read_script(path: str, text: str) -> FileMap:
     return found
 
 
+JAVA_TYPE = re.compile(r"^[ \t]*public[ \t]+(?:(?:static|final|abstract|sealed)[ \t]+)*"
+                       r"(?:class|interface|enum|record)[ \t]+([A-Za-z_]\w*)", re.M)
+JAVA_METHOD = re.compile(r"^[ \t]*public[ \t]+(?:(?:static|final|abstract|synchronized|default)[ \t]+)*"
+                         r"(?:<[^>\n]+>[ \t]+)?[\w.<>\[\], ?]+?[ \t]+([a-z_]\w*)[ \t]*(\([^)\n]*\))", re.M)
+KOTLIN_TYPE = re.compile(r"^(?:(?:public|open|data|sealed|abstract|enum|annotation|value)[ \t]+)*"
+                         r"(?:class|interface|object)[ \t]+([A-Za-z_]\w*)", re.M)
+KOTLIN_FUN = re.compile(r"^(?:(?:public|suspend|inline|operator|infix)[ \t]+)*fun[ \t]+(?:<[^>\n]+>[ \t]+)?"
+                        r"(?:[\w.<>?]+\.)?([A-Za-z_]\w*)[ \t]*(\([^)\n]*\))", re.M)
+GO_FUNC = re.compile(r"^func[ \t]+(?:\([^)\n]*\)[ \t]*)?([A-Z]\w*)[ \t]*(\([^)\n]*\))", re.M)
+GO_TYPE = re.compile(r"^type[ \t]+([A-Z]\w*)[ \t]+(?:struct|interface)\b", re.M)
+# The patterns of the public names of a language, each with the kind of its names
+PLAIN = {".java": ((JAVA_TYPE, "class"), (JAVA_METHOD, "function")),
+         ".kt": ((KOTLIN_TYPE, "class"), (KOTLIN_FUN, "function")),
+         ".kts": ((KOTLIN_TYPE, "class"), (KOTLIN_FUN, "function")),
+         ".go": ((GO_TYPE, "class"), (GO_FUNC, "function"))}
+
+
+def _said_before(text: str, at: int) -> str:
+    """The first line of the comment that ends right before the place `at`: a /** block, or lines with //."""
+    found = _jsdoc(text, at)
+    if found:
+        return found
+    lines = []
+    for line in reversed(text[:at].rstrip().splitlines()):
+        line = line.strip()
+        if not line.startswith("//"):
+            break
+        lines.insert(0, line.lstrip("/ "))
+    return _first_line("\n".join(lines))
+
+
+def read_plain(path: str, text: str) -> FileMap:
+    """Java, Kotlin, and Go: the public types and functions, with the comment before each. Patterns, not a parser:
+    they read the usual form of a declaration at the start of a line."""
+    found, seen = FileMap(), set()
+    for pattern, kind in PLAIN[posixpath.splitext(path)[1]]:
+        for hit in pattern.finditer(text):
+            name = hit.group(1)
+            if (name, kind) in seen or name in GIVEN:
+                continue
+            seen.add((name, kind))
+            signature = " ".join(hit.group(2).split())[:200] if kind == "function" else ""
+            found.symbols.append(Symbol(name, _line(text, hit.start(1)), kind, signature,
+                                        _said_before(text, hit.start())))
+    found.symbols.sort(key=lambda symbol: symbol.line)
+    return found
+
+
 def read_file(path: str, text: str) -> FileMap:
-    return read_python(text) if path.endswith(core.PY) else read_script(path, text)
+    if path.endswith(core.PY):
+        return read_python(text)
+    return read_plain(path, text) if path.endswith(core.OTHER) else read_script(path, text)
 
 
 def _restore(data: dict) -> FileMap:
@@ -257,7 +308,7 @@ class Map:
                 set(names(tree, "ls-files", "--others", "--exclude-standard"))
             staged = names(tree, "ls-files", "-s")
             blobs = {entry.split("\t", 1)[1]: entry.split()[1] for entry in staged if "\t" in entry}
-        listed = [path for path in listed if path.endswith(core.PY + core.JS) and not core.TEST.search(path)]
+        listed = [path for path in listed if path.endswith(core.READ) and not core.TEST.search(path)]
         kept = self._kept(keep)
         self.files: dict[str, FileMap] = {}
         ids, missing = {}, []
@@ -376,6 +427,28 @@ class Map:
                     scored.append((score, path, symbol))
         scored.sort(key=lambda item: (-item[0], item[1], item[2].line))
         return [(path, symbol) for _score, path, symbol in scored[:FOUND]]
+
+
+class Pair:
+    """The maps of a change: of the work copy, and of the commit before the change. Each one is read once, and only
+    when a check asks for it: the checks of the product share them (consistency.py, sheets.py)."""
+
+    def __init__(self, tree: Path, team: Team, keep: Path | None, base: str) -> None:
+        self.tree, self.team, self.keep, self.base = tree, team, keep, base
+        self._now: Map | None = None
+        self._before: Map | None = None
+
+    @property
+    def now(self) -> Map:
+        if self._now is None:
+            self._now = Map(self.tree, self.team, self.keep)
+        return self._now
+
+    @property
+    def before(self) -> Map:
+        if self._before is None:
+            self._before = Map(self.tree, self.team, self.keep, commit=self.base)
+        return self._before
 
 
 def _blobs_at(tree: Path, commit: str, skip: tuple[str, ...]) -> dict[str, str]:
@@ -533,6 +606,30 @@ def _definition_lines(team: Team, tree: Path, scope: list[str], title: str) -> l
     return [definitions.line_of(item) for item in definitions.touching(items, scope, title, matches)]
 
 
+def _sheet_lines(team: Team, tree: Path, found: Map, scope: list[str]) -> list[str]:
+    """The place of the task on the map of the product: the sheet of each area of the scope, and where the whole
+    map is. [] before the map is drawn."""
+    from akasha import sheets
+    skip = team.record_roots + (team.work_dir,)
+    files = paths(tree, skip, others=True)
+    if not sheets.drawn(team, files):
+        return []
+    held, areas = sheets.read(team, tree, files), sheets.areas_of(team, files)
+    lines = []
+    for area in _areas_of(found, scope):
+        sheet = held.get(area)
+        if sheet is None:
+            lines.append(f"area — {area}: not on the map. New code goes into the area that keeps that work: `akasha "
+                         "map` shows each area. A new area needs a sheet (area.toml) with its purpose")
+            continue
+        uses = ", ".join(sheets.short(sheets.resolve(name, areas) or name, areas) for name in sheet.uses) or "none"
+        lines.append(f"area — {area}: {sheet.purpose} · uses {uses}"
+                     + (f" · writes {', '.join(sheet.tables)}" if sheet.tables else ""))
+    return lines + ["area — `akasha map` shows the whole map: each area with what it keeps. Code that belongs to "
+                    "another area goes there, and a use of an area that the sheet does not name needs its name in "
+                    "`uses`"]
+
+
 def start_lines(team: Team, tree: Path, keep: Path | None, scope: list[str], title: str = "") -> list[str]:
     """What `akasha start` shows about the code, in this order: what to follow first (the guides of the team, the
     rules for names), then the code as it is now (the names of nearby code, the map, the shared components)."""
@@ -542,6 +639,7 @@ def start_lines(team: Team, tree: Path, keep: Path | None, scope: list[str], tit
     guides = list(dict.fromkeys(item for step in ("plan", "build") for item in team.guides.get(step, ())))
     lines = [f"guides — {' · '.join(guides)}"] if guides else []
     lines += naming.lines(files)
+    lines += _sheet_lines(team, tree, found, scope)
     lines += [f"definition — {line}" for line in _definition_lines(team, tree, scope, title)]
     for area in _areas_of(found, scope):
         lines += [f"names — {line}" for line in usual_words(found, area)]

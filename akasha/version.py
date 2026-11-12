@@ -1,9 +1,10 @@
 """The version of Akasha that the team uses ([team] version in akasha.toml), against the version that runs here.
 
-An administrator chooses the version of the team, and each computer, the CI, and the watch run that version only: an
-Akasha of another version, older or newer, starts, continues, and lands no task, because it runs other rules than the
-server. The shared settings of Claude Code pin the plugin to that version (claude.py), so a restart moves a computer to
-it. Without the setting, nothing is compared."""
+An administrator chooses the version of the team. The CI and the watch run that version itself: the server is the
+judge of each change. A computer runs that version or another patch of the same minor version (2.0.x): a patch
+changes no rule. An Akasha of another minor version, older or newer, starts, continues, and lands no task, because it
+runs other rules than the server. The shared settings of Claude Code pin the plugin to the version of the team
+(claude.py), so a restart moves a computer to it. Without the setting, nothing is compared."""
 
 from __future__ import annotations
 
@@ -52,10 +53,16 @@ def update(wanted: str, root: Path | None = None) -> str:
             f'`pip install "{source(wanted)}"`')
 
 
+def same_rules(wanted: str, running: str = VERSION) -> bool:
+    """True when the two versions hold the same rules: the same major and minor number. A patch changes no rule."""
+    return number(wanted)[:2] == number(running)[:2]
+
+
 def mismatch(wanted: str, running: str = VERSION, root: Path | None = None) -> str:
-    """Why this computer starts, continues, and lands no task: it runs another Akasha than the version of the team,
-    or "" when they are the same. An older and a newer Akasha both run other rules than the server."""
-    if not wanted or wanted == running:
+    """Why this computer starts, continues, and lands no task: it runs an Akasha with other rules than the version
+    of the team, or "" when the rules are the same. An older and a newer Akasha both run other rules than the
+    server."""
+    if not wanted or same_rules(wanted, running):
         return ""
     side = "older" if older(wanted, running) else "newer"
     return (f"This computer runs Akasha {running}, {side} than {wanted}, the version of the team in akasha.toml, so it "

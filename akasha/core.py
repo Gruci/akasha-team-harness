@@ -2,7 +2,8 @@
 
 A teammate's task adds code freely. A change of existing lines of a core file waits for the approval of an
 administrator on GitHub, because other screens use that code and nobody of them saw the change. Akasha finds the
-users in the imports of Python, JavaScript, and TypeScript; in other languages only [core] paths count."""
+users in the imports of Python, JavaScript, and TypeScript, and of Java, Kotlin, and Go (an import names a class or
+a package there: Akasha follows it to a file of that package). In other languages only [core] paths count."""
 
 from __future__ import annotations
 
@@ -19,10 +20,16 @@ from akasha.repo import git, gh_json, names, origin, paths, paths_at
 
 PY = (".py",)
 JS = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
+OTHER = (".java", ".kt", ".kts", ".go")       # an import names a class or a package, not a file
+READ = PY + JS + OTHER                        # the languages whose names and imports Akasha reads
+DOTTED_IMPORT = re.compile(r"^[ \t]*import[ \t]+(?:static[ \t]+)?([A-Za-z_][\w.]*)", re.M)     # Java, Kotlin
+GO_BLOCK = re.compile(r"^import[ \t]*\((.*?)\)", re.M | re.S)
+GO_LINE = re.compile(r'^import[ \t]+(?:[\w.]+[ \t]+)?"([^"\n]+)"', re.M)
+QUOTED = re.compile(r'"([^"\n]+)"')
 PY_FROM = re.compile(r"^[ \t]*from[ \t]+(\.*[\w.]*)[ \t]+import[ \t]+(\([^)]*\)|[^\n]*)", re.M)
 PY_IMPORT = re.compile(r"^[ \t]*import[ \t]+([^\n]+)", re.M)
 JS_IMPORT = re.compile(r"""(?:\bfrom|\bimport|\brequire)\s*\(?\s*['"]([^'"\n]+)['"]""")
-TEST = re.compile(r"(^|/)(tests?|__tests__)/|(^|/)test_[^/]*$|_test\.py$|\.(test|spec)\.[cm]?[jt]sx?$")
+TEST = re.compile(r"(^|/)(tests?|__tests__)/|(^|/)test_[^/]*$|_test\.(py|go)$|\.(test|spec)\.[cm]?[jt]sx?$")
 COMMENT = re.compile(r"#[^\n]*")
 BIGGEST = 1_000_000            # bytes: a larger file is data, not code
 REVIEWS = ("query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest("
@@ -33,7 +40,7 @@ def _key(path: str) -> str:
     """The name that an import uses for the file: the path without the extension of code, and the folder for an
     index. Other extensions stay, so that "./App.css" is not the file App.tsx."""
     stem, extension = posixpath.splitext(path)
-    stem = stem if extension in PY + JS else path
+    stem = stem if extension in READ else path
     return posixpath.dirname(stem) if posixpath.basename(stem) in ("__init__", "index") else stem
 
 
@@ -95,19 +102,31 @@ class Graph:
         known = listed | set(paths_at(tree, base, skip))                          # also files the task deleted
         self.exact: dict[str, str] = {}
         tails: dict[str, set[str]] = defaultdict(set)
-        for path in known:
-            if path.endswith(PY + JS):
+        folders: dict[str, set[str]] = defaultdict(set)
+        for path in sorted(known):
+            if path.endswith(READ):
                 key = _key(path)
                 self.exact[key] = path
                 parts = key.split("/")
                 for start in range(1, len(parts)):             # src layouts and aliases: "utils/format", "ui"
                     tails["/".join(parts[start:])].add(path)
+            if path.endswith(OTHER) and not TEST.search(path):
+                parts = posixpath.dirname(path).split("/")
+                for start in range(len(parts)):                # a package: "com/shop/orders", "services/orders/api"
+                    folders["/".join(parts[start:])].add(posixpath.dirname(path))
+        # The end of a folder path that only one folder has -> the first file of that folder
+        first = {}
+        for path in sorted(known):
+            if path.endswith(OTHER) and not TEST.search(path):
+                first.setdefault(posixpath.dirname(path), path)
+        self.packages = {tail: first[next(iter(found))] for tail, found in folders.items()
+                         if tail and len(found) == 1}
         unique = {tail: next(iter(paths)) for tail, paths in tails.items() if len(paths) == 1}
         self.tails = {tail: path for tail, path in unique.items() if "/" in tail}
         self.singles = {tail: path for tail, path in unique.items() if "/" not in tail}   # an alias or Python
         self.aliases = _aliases(tree)
         self.users: dict[str, set[str]] = defaultdict(set)
-        code = sorted(path for path in listed if path.endswith(PY + JS) and not TEST.search(path))
+        code = sorted(path for path in listed if path.endswith(READ) and not TEST.search(path))
         for path, text in _texts(tree, code).items():
             for used in self._imports(path, text):
                 if used != path:
@@ -132,10 +151,32 @@ class Graph:
             for line in PY_IMPORT.findall(text):
                 line = COMMENT.sub("", line).split(";")[0]
                 found |= {self._module(item.split()[0].replace(".", "/")) for item in line.split(",") if item.split()}
+        elif path.endswith(OTHER):
+            if path.endswith(".go"):
+                specs = GO_LINE.findall(text) + [spec for block in GO_BLOCK.findall(text)
+                                                 for spec in QUOTED.findall(block)]
+            else:
+                specs = [name.replace(".", "/") for name in DOTTED_IMPORT.findall(text)]
+            found |= {self._package(spec) for spec in specs}
         else:
             for spec in JS_IMPORT.findall(text):
                 found.add(self._script(path, spec))
         return found - {None}
+
+    def _package(self, spec: str) -> str | None:
+        """The file that an import of Java, Kotlin, or Go leads to: the file of the class, else the first file of
+        the package. `spec`: the import with / between its parts. Only the end of the import that one folder of the
+        repository has counts, so a library is no file."""
+        hit = self._find(spec)
+        if hit and hit.endswith(OTHER):
+            return hit
+        parts = spec.split("/")
+        for whole in (parts, parts[:-1]):              # a package, or a member of a package (a function, a *)
+            for start in range(len(whole)):
+                tail = "/".join(whole[start:])
+                if len(whole) - start >= 2 and tail in self.packages:
+                    return self.packages[tail]
+        return None
 
     @staticmethod
     def _python(path: str, module: str) -> str:
@@ -244,6 +285,8 @@ def approver(root: Path, tree: Path, number: int, team: Team, files: list[str]) 
 def request(task_id: str, files: dict[str, str]) -> str:
     """The text that asks the administrators for the approval."""
     listing = "\n".join(f"- `{path}`: {why}" for path, why in files.items())
-    return (f"The task changes existing lines of code that other areas use:\n\n{listing}\n\nExamine the change of "
-            f"these files, and approve the pull request on GitHub (Review changes → Approve). Akasha lands task "
+    return (f"The task changes the structure of the product: existing lines of code that other areas use, the "
+            f"sheet of an area (the map), or a contract.\n\n{listing}\n\nExamine the change of these files: does each "
+            "caller keep working, is a new area the right place for that work, and does a new arrow between two areas "
+            "go the right way? Then approve the pull request on GitHub (Review changes → Approve). Akasha lands task "
             f"`{task_id}` after the approval. A change of these files after the approval needs a new one.")

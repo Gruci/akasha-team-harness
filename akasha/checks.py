@@ -60,13 +60,18 @@ def folders_problem(team: Team, root: Path, base: str) -> str:
     """Why the change cannot move the folders of the records, or "". `team`: the rules of the base. [work] records
     and archive are set once, when Akasha comes into the repository. After a change of the archive folder, each new
     work copy would hold the old archive again, and Akasha would need a list of the old folders to leave them out.
-    So Akasha has no way to move them."""
+    So Akasha has no way to move them. One change is free: the task of an administrator that raises [team] version
+    to a new major version sets the folders again, and moves the old records in the same task, because a major
+    version can give the folders another meaning (1.x kept the records of merged tasks in the records folder)."""
     if config.shown(root, base) is None:
         return ""                                      # the base has no Akasha yet: this change brings it in
     try:
         new = config.load(root)
     except (config.ConfigError, OSError):
         return ""
+    from akasha import version
+    if team.version and new.version and version.number(new.version)[:1] > version.number(team.version)[:1]:
+        return ""                                      # a new major version: the folders can mean other things
     for key, old, now in (("records", team.records_dir, new.records_dir), ("archive", team.archive_dir, new.archive_dir)):
         if old != now:
             return (f"[work] {key} is {old} in the team rules, and this change makes it {now}. The folders of the "
@@ -216,11 +221,26 @@ def ci(team: Team, root: Path, base: str, author: str = "", head: str = "") -> R
     if start and config.shown(root, base) is not None:
         # The same function as `akasha check`. The plan comes from the records of the task of the pull request
         plan, is_task = evidence.plan_of(team, root, base, changed, head)
+        from akasha import codemap, product
+        maps = codemap.Pair(root, team, None, start)
+        admin = author.lower() in team.admins + team.own_procedure
         try:
-            status, why, notes = consistency.examine(team, root, start, None, plan, candidates=is_task,
-                                                     admin=author.lower() in team.admins + team.own_procedure)
+            status, why, notes = consistency.examine(team, root, start, None, plan, candidates=is_task, admin=admin,
+                                                     maps=maps)
         except (RuntimeError, OSError) as error:
             status, why, notes = "FAIL", f"Akasha could not compare the code: {error}", []
         result.status[consistency.CHECK] = status
         result.details[consistency.CHECK] = "\n".join([why, *notes]).strip()
+        # The checks of the product: the same functions as `akasha check`
+        # A pull request that is no task has no plan and no preview: the checks of the plan and of the proof are
+        # NOT_NEEDED for it
+        shown, own = evidence.preview_of(team, root, base, changed, head) if is_task else (None, ())
+        status_of, details, notes = product.run(product.Change(team, root, start, changed, maps, admin,
+                                                               plan if is_task else None, shown, own))
+        for name, status in status_of.items():
+            result.status[name] = status
+            result.details[name] = "\n".join([details[name], *(notes if status == "FAIL" else [])]).strip()
+        real, why = product.integration(team, changed, result.status)
+        if real != "NOT_NEEDED":
+            result.status[product.INTEGRATION], result.details[product.INTEGRATION] = real, why
     return result

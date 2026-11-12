@@ -56,7 +56,10 @@ class Candidate:
 
 
 def _family(path: str) -> str:
-    return "python" if path.endswith(core.PY) else "script"
+    """The language family of a file: a name of one family is no candidate of a name of another."""
+    if path.endswith(core.PY):
+        return "python"
+    return "script" if path.endswith(core.JS) else posixpath.splitext(path)[1]
 
 
 def rows(plan: str) -> list[tuple[str, str, str]]:
@@ -216,17 +219,19 @@ class Found:
 
 
 def examine(team: Team, tree: Path, base: str, keep: Path | None, plan: str | None, candidates: bool = True,
-            admin: bool = False, found_out: Found | None = None) -> tuple[str, str, list[str]]:
+            admin: bool = False, found_out: Found | None = None, maps: codemap.Pair | None = None)         -> tuple[str, str, list[str]]:
     """The check: (PASS or FAIL, what to do, the notes). `base`: the commit before the change. `candidates`: False
     for a pull request that is no task (the own procedure of the repository): it has no plan for an answer, and
     only the list of the definitions and the boundaries hold for it. `admin`: the change is of an administrator.
-    The rules of the team come from the base branch: a pull request cannot make the check weaker."""
+    The rules of the team come from the base branch: a pull request cannot make the check weaker. `maps`: the maps
+    of the change, when another check of the same run reads them too."""
     edited = names(tree, "diff", "--name-only", "--no-renames", "--diff-filter=AM", base)
     changed = [path for path in edited if path.endswith(core.PY + core.JS) and not core.TEST.search(path)]
     pinned = _pins(team, tree, base)                  # also for a pull request that is no task
     if not changed and not team.definitions_on:
         return ("FAIL" if pinned else "PASS"), "\n".join(pinned), []
-    now, before = Map(tree, team, keep), Map(tree, team, keep, commit=base)
+    maps = maps or codemap.Pair(tree, team, keep, base)
+    now, before = maps.now, maps.before
     table = rows(plan or "")
     stops: list[str] = list(pinned)
     loose: list[str] = []

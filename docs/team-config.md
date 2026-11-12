@@ -9,9 +9,9 @@ the merged rules, also when its checkout is old.
 
 ```toml
 [team]
-admins = ["lead", "dba"]           # GitHub names: they set up and maintain Akasha, and help when the AI is stuck
+admins = ["lead", "dba"]           # GitHub names: they keep the rules, and approve a change of the structure
 agents = ["ops-bot"]               # GitHub names of agent accounts: a person approves their result before the merge
-version = "2.0.0"                  # the Akasha of the team: each computer, the CI, and the watch run only this version
+version = "2.0.0"                  # the Akasha of the team: the CI and the watch run it, and each computer a 2.0.x
 
 [risk]
 paths = ["db/**", "**/migrations/**", "deploy/**"]     # only an administrator changes them
@@ -40,6 +40,24 @@ cwd = "frontend"
 only_when = ["frontend/**"]
 ready = "node --version"           # akasha doctor runs it: can this computer run the check?
 
+[checks.queries]
+command = "python -m pytest -q tests/db"
+only_when = ["src/queries/**", "db/**"]
+kind = "integration"               # it runs against a real database: a change of [preview] data needs it
+
+[ops]
+migrations = ["db/migrations/**"]  # a new line there that removes a table or a column fails
+env = [".env.example"]             # a new setting that this file does not name fails
+
+[size]
+function = 100                     # lines of one function that a change makes or makes longer
+file = 800                         # lines of one file of code: a longer file does not grow
+task = 1500                        # lines of code that one task changes
+
+[models]
+work = "sonnet"                    # the model of akasha-worker
+review = "opus"                    # the model of akasha-reviewer: never weaker than the worker
+
 [ci]
 required = ["checks"]              # the required checks of the own CI of the team
 
@@ -66,8 +84,9 @@ rules = "akasha"                   # setup writes it
 ## `[team]`
 
 A team has three roles: the administrators and the agent accounts, named here, and the teammates, who are each other
-person with write access. Nobody reviews a task, except a change of existing lines of the core (`[core]`): an
-administrator approves it on GitHub. The administrators set up and maintain Akasha and the risky parts; a teammate
+person with write access. Nobody reviews a task, except a change of the structure: existing lines of the core
+(`[core]`), the sheet of an area, and a contract. An administrator approves it on GitHub. The administrators keep the
+rules: Akasha, the map, and the risky parts. They are no reviewers and no answerers of the other tasks. A teammate
 approves the preview of their own request; the person who asked an agent account approves its result before the merge
 (see "An agent task" in [how it works](how-it-works.md)).
 
@@ -76,7 +95,7 @@ approves the preview of their own request; the person who asked an agent account
 | `admins` | The GitHub names of the administrators. Only they change `akasha.toml`, `.github/`, CODEOWNERS, and the paths of `[risk]`. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch. The AI talks with them as with developers, and they can make a task without a screen (`[preview] screens`) |
 | `own_procedure` | The GitHub names of the people who keep the own procedure of the repository outside Akasha, for example the administrator who built it. Akasha does not stop their work outside its tasks (their own work copies, edits in the main checkout, their merges), and the watch accepts their pull requests when the checks passed. The other rules (a force push, a push to the default branch, `.env`) stay |
 | `agents` | The GitHub names of agent accounts: a program (the relay) runs their sessions and gives them the requests of people. Each task of such an account is an agent task, without a preview: the person approves the result before the merge. An agent account has the rules of a teammate, so it cannot also be in `admins` or `own_procedure`. An older Akasha does not know this key: it treats an agent account as a teammate, which needs a preview |
-| `version` | The version of Akasha that the team uses, for example `"2.0.0"`. An administrator chooses it: `akasha setup` writes the running version only when the setting is empty, and never changes it after that. Setup refuses a version without a release tag in the public repository, and pins the version in three places: the marketplace of Claude Code in `.claude/settings.json` (`"ref"`), the pip line of Codex in `AGENTS.md`, and the workflows of the CI and the watch. Each computer runs this version only: an Akasha of another version, older or newer, also of an administrator, starts no task, takes over no task, and hands no task over to the merge; the session start notice names the difference with the commands that fix it, and `akasha doctor` fails. The server check and the watch fail when the Akasha on the server is another version, for example after a change of the repository variable `AKASHA_SOURCE`; the pull request that raises it passes with its new version. How to raise it: "Change the rules, or update Akasha" in [admin.md](admin.md). Without it, nothing is compared |
+| `version` | The version of Akasha that the team uses, for example `"2.0.0"`. An administrator chooses it: `akasha setup` writes the running version only when the setting is empty, and never changes it after that. The CI and the watch run that version itself. A computer runs it or another patch of the same minor version (2.0.x): a patch changes no rule. An Akasha of another minor version starts, continues, and lands no task. See "Change the rules, or update Akasha" in [set up a team](admin.md) |
 
 ## `[risk]`
 
@@ -163,6 +182,7 @@ section makes Akasha sure that a change of data shows its values: the AI cannot 
 | `only_when` | File patterns, relative to the top of the repository. The check runs only when a changed file matches; else it is NOT_NEEDED, which is a pass |
 | `command_windows` | The command on Windows, for `cmd.exe` |
 | `ready` | A quick command that passes when this computer can run the check, for example `python -c "import pytest"`. `akasha doctor` runs it; without it, doctor looks for the program of the command |
+| `kind` | `"integration"` for a check that runs against a real store, for example a database with the tables of the product. A change of a file of `[preview] data` then fails (the check `integration`) when no such check ran: a query that never ran is not proven. The check runs on the computer of the person, and on the server only where the team names it in `required` |
 
 The commands run in the shell of the operating system: `cmd.exe` on Windows, `/bin/sh` elsewhere. A pattern: `*`
 matches each character, also `/`; a leading `**/` also matches at the top; a pattern that ends with `/` matches each
@@ -293,6 +313,65 @@ not see a call through an address, or an access while the code runs. Two entries
 rule of the entries: a rule with `acyclic` fails a new relation between two of its areas that is on a cycle, also
 when that cycle was there before. It counts an import of a type only too, so it does not prove that the code
 has no cycle while it runs.
+
+## The sheet of an area: `area.toml`
+
+The map of the product is one sheet in the folder of each area of `[core] areas`. `akasha map --draft` writes the
+first sheets, and `akasha map` joins them with the code.
+
+```toml
+purpose = "Takes an order and changes its state"    # one line: what the area keeps
+owners = ["mina"]                                   # GitHub names
+uses = ["catalog", "payments"]                      # the areas that its code calls
+contracts = ["openapi.yaml"]                        # files of the area that other parts rely on
+tables = ["orders", "order_items"]                  # the tables that only this area writes
+```
+
+| Key | Value |
+|:--|:--|
+| `purpose` | One line that tells what the area keeps. A sheet without it, or with a TODO, fails the check `map` |
+| `owners` | The GitHub names of the people who answer for the area. `akasha map` shows them |
+| `uses` | The areas that the code of this area may call: the whole folder of an area, or its last folder when no other area ends with it. A new import of another area fails until the sheet names it |
+| `contracts` | File patterns inside the area. A change of existing lines of such a file waits for the approval of an administrator, as a change of core code does |
+| `tables` | The tables that only this area writes. New code of another area that writes one of them (`insert into`, `update`, `delete from`) fails. A table is in one sheet only |
+
+A change of a sheet waits for the approval of an administrator at the landing: a new area, a new arrow between two
+areas, and a new owner of a table are decisions about the structure. The check `map` looks only at what a change
+makes new, and runs only in a repository that has one sheet or more.
+
+## `[ops]`
+
+The check `ops` reads the lines that a change adds, and stops the usual ways in which code that passes its tests
+still fails after the deployment. Akasha cannot see a server: the deployment, the monitoring, and the capacity of the
+product are of the team, and `[deploy] verify` examines the product after each deployment.
+
+| Key | Value |
+|:--|:--|
+| `migrations` | The files that change the database. The default is each file in a folder `migrations` or `migrate`. A new line there that removes or renames a table or a column fails (`migration`): the code that runs now still reads the old shape while the deployment goes on. Two migrations with one number fail too |
+| `env` | The files that name each setting of the server. The default is `.env.example`, `.env.sample`, `.env.template`, or `.env.dist` in any folder. A new line that reads a setting that no such file names fails (`env`). A repository without such a file has no rule |
+| `off` | Rules that the team does not use: `migration`, `env`, `timeout` (a call of another system without a time limit: `requests`, `httpx`, and `urlopen` of Python), `silent` (an error that the code catches and does nothing with: Python, JavaScript, and TypeScript) |
+| `allow` | `"<rule>: <file pattern>"`: the rule does not hold for these files, for example the last task that removes an old column: `"migration: db/migrations/0042_drop_old.sql"` |
+
+## `[size]`
+
+| Key | Value |
+|:--|:--|
+| `function` | Lines of one function. A function that the change makes or makes longer is not over it (Python; the linter of the team holds it for another language). The default is `100`; `0` turns it off |
+| `file` | Lines of one file of code. A file over it does not grow, and a file under it does not go over it. The default is `800` |
+| `task` | Lines of code that one task changes, without tests and records. A move of a file counts as no change. The default is `1500`. An administrator gets a note in place of a failure: a rename across the repository is their task |
+
+A limit is a signal, and the goal is code where one part changes for one reason. So the check never asks to cut an
+old file into pieces: it looks only at what the change makes new or longer.
+
+## `[models]`
+
+| Key | Value |
+|:--|:--|
+| `work` | The model of the akasha-worker agent: the preview, the plan, and the build |
+| `review` | The model of the akasha-reviewer agent. Without it, the agent uses the model of its own file. Keep it as strong as the worker or stronger |
+
+`akasha status <task> --brief` names them, and the session starts each agent with its model. The checks of the
+product decide whether a weaker model can build, not the trust in the model.
 
 ## `[pins]`
 
