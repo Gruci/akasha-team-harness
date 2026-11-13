@@ -196,18 +196,15 @@ file in the folder.
 | `runs-on` | The machine of the check of Akasha: a label, or a list of labels of a runner of the team. The default is `ubuntu-latest` |
 | `python` | The Python of the check of Akasha, as text, 3.11 or higher. The default is `"3.12"` |
 
-Akasha opens a task as a draft pull request, pushes it only after `akasha check` passed on the computer, and marks it
-ready at the landing. The landing counts a run of a check that passed on the same commit while the pull request was a
-draft. So the CI of the team can run during the build, not only at the end. To get this, change the workflow of the
-own CI:
+The CI runs once for each task, at the landing. Akasha opens a task as a draft pull request, and each commit that it
+pushes before the landing carries `[skip ci]`: the preview, the checked code, and the records. GitHub starts no
+workflow of `push` or `pull_request` for such a head commit, so the check of Akasha and the CI of the team both wait.
+The landing marks the pull request ready and pushes a commit without the mark: that push starts the one run of each
+required check, on the code that merges. The team changes nothing in its own CI for this.
 
-- Run it on draft pull requests: remove a condition such as `if: github.event.pull_request.draft == false`.
-- Do not start it again when a draft gets ready: remove `ready_for_review` from `on: pull_request: types`. Keep
-  `opened`, `synchronize`, and `reopened`. Where GitHub protects the default branch, GitHub decides with the latest run
-  of a required check on the head, so a second run of the same commit makes the merge wait again.
-
-A CI that skips drafts still works: its checks run once, after the landing marks the pull request ready. The check
-of Akasha already runs on drafts.
+- A CI that skips drafts works too: the landing marks the pull request ready before its push.
+- Keep `opened`, `synchronize`, and `reopened` in `on: pull_request: types`. They are the default.
+- A push of a person without the mark starts a run as always. The landing reads only the runs of the head commit.
 
 ## `[guides]`
 

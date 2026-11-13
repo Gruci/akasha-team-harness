@@ -111,8 +111,7 @@ administrator counts. The changes of the administrators and of the people of `[t
 Write the names of its required checks in `[ci] required`, as GitHub shows the jobs (for example `checks`, not the name
 of the workflow). Akasha waits for these checks on GitHub, together with its own check (`akasha`), which it
 installs in each case. The CI of the team need not run a command of Akasha: when it ran
-`python -m akasha check --ci`, remove that step. Let the CI run on draft pull requests, and do not start it again
-when a draft gets ready:
+`python -m akasha check --ci`, remove that step. The CI needs no other change:
 
 ```yaml
 on:
@@ -120,9 +119,8 @@ on:
     types: [opened, synchronize, reopened]
 ```
 
-Akasha pushes a draft only after `akasha check` passed on the computer, and the landing counts a run that passed on
-the same commit while the pull request was a draft. A second run on `ready_for_review` makes the merge wait again.
-See `[ci]` in [team-config.md](team-config.md#ci).
+The CI runs once for each task, at the landing: each commit that Akasha pushes before it carries `[skip ci]`, and the
+push of the landing does not. See `[ci]` in [team-config.md](team-config.md#ci).
 
 ## Teammates
 

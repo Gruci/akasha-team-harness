@@ -371,7 +371,7 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
     task.heard = {}
     save(root, task)
     if board.available(root) and task.number:
-        # Only a record: no run of the CI. The push of the checks and the push of the landing run it
+        # Only a record: no run of the CI. The push of the landing runs it
         work.commit(Path(task.workcopy), f"akasha: preview of {task.title} [skip ci]")
         try:
             work.push(Path(task.workcopy), task.branch)
@@ -736,7 +736,9 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
                          "task. An administrator takes only what is theirs: when the check itself is broken for each "
                          f"task, `akasha help {task.id} \"<which check, and how it fails>\"`")
     elif checks.passed(result.status) and not only:
-        work.commit(tree, task.title)
+        # No run of the CI for this push: the server asks for the review of the result, which comes after it, and
+        # the merge reads only the run of the landing. The push of the landing starts that run (land._hand_over)
+        work.commit(tree, f"{task.title} [skip ci]")
         task.failures = 0
         found = {} if core.exempt(team, me) else {**core.changed(team, tree, base), **sheets.changed(team, tree, base)}
         task.checks = {"status": result.status, "commit": work.head(tree), "at": time.strftime("%Y-%m-%d %H:%M"),

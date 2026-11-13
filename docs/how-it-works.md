@@ -387,17 +387,22 @@ and pushes it. A file that a check makes, for example `__pycache__`, never goes 
 engine to add its pattern to `.gitignore`.
 
 The same rules run on GitHub: the check of Akasha (`.github/workflows/akasha.yml`) runs `[checks]` with the rules of
-the default branch, or the CI of the team runs its own checks (`[ci] required`).
+the default branch, and the CI of the team runs its own checks (`[ci] required`). They run once for each task, at the
+landing. Each commit of a task before the landing carries `[skip ci]`: the preview, the checked code, and the records.
+The server asks for the review of the result, which comes after the push of the checked code, and the merge reads
+only the run of the landing: an earlier run could not pass, and nothing would read it.
 
 ## The landing
 
 `akasha land <task> --wait 540` needs the approval, the passed review, passed checks on the current work, and
 `summary.md`. Then it merges the latest default branch into the task, makes the pull request ready, pushes it, and
-follows the pull request:
+follows the pull request. That push starts the run of the CI that the merge reads: its head commit carries no
+`[skip ci]`. When the merge and the move of the records made no commit (a second landing after a repair), the landing
+makes an empty one for it:
 
 | What Akasha sees | What it does |
 |:--|:--|
-| A required check runs | Waits. A check that a draft skipped is not a pass: one run must really run and pass. When a check ran more than once on the head, the latest run that ended decides. A run that passed while the pull request was a draft counts: a second run of the same commit, which marking it ready started, does not make the landing wait (see `[ci]` in [team config](team-config.md)) |
+| A required check runs | Waits. A check that a draft skipped is not a pass: one run must really run and pass. When a check ran more than once on the head, the latest run that ended decides. A run that passed does not wait for a second run of the same commit (see `[ci]` in [team config](team-config.md)) |
 | A required check failed | Stops with FAILED. The agent engine repairs, checks, and lands again |
 | A required check was cancelled | Starts it again once. Cancelled again: stops with FAILED and asks for an administrator |
 | A required check never ran, or waits for a runner | Waits; at the end of the wait it names the check, so that an administrator can correct `[ci] required` or the runner |

@@ -156,11 +156,17 @@ def _hand_over(root: Path, team: Team, task: Task, akasha_merges: bool) -> tuple
         archive.move(root, team, task)
     except RuntimeError as error:
         return BLOCKED, [str(error)]
+    # The push of the landing starts the one run of the CI that the merge reads. The commits of a task before the
+    # landing carry a skip mark, and GitHub starts no run for a head commit with one. The merge of the default branch
+    # and the move of the records make a commit without the mark. When they made none (a second landing after a
+    # repair: the records are in the archive already), the landing makes an empty one. Else no run would start, and
+    # the landing would wait for ever
+    if work.skips_ci(tree):
+        work.commit(tree, f"akasha: land {task.title}", allow_empty=True)
     task.checks["landed"] = work.head(tree)
     save(root, task)
-    # Ready only now: a draft is a task in work on the board, and ready asks the code owners for a review. First, so
-    # that the run of the push is a real run where the CI skips drafts; where the CI runs on drafts, a run that passed
-    # on the draft counts (_states), so ready starts no wait for a second run of the same commit.
+    # Ready only now: a draft is a task in work on the board, and ready asks the code owners for a review. Before the
+    # push, so that the run of the push is a real run where the CI skips drafts.
     repo.gh(root, "pr", "ready", str(task.number))
     work.push(tree, task.branch)
     task.status = "landing"
@@ -215,8 +221,8 @@ def _states(view: dict, names: tuple[str, ...]) -> dict[str, str]:
 
     One check can have several runs on the head: a run that a draft skipped, a run that a newer run cancelled, a run
     again, and a run that marking the draft ready started. The latest run that ended and did not skip decides. When it
-    passed, a run that still runs on the same commit does not hide it: a run on the draft that passed counts, so the
-    landing does not wait for a second run of the same commit. Else a run that did not end decides first, for example
+    passed, a run that still runs on the same commit does not hide it, so the landing does not wait for a second run
+    of the same commit. Else a run that did not end decides first, for example
     the run again after a cancel. A skipped run alone is the draft: the real run has not started yet. The watch
     (watch.py) counts the runs in the same way."""
     runs: dict[str, list[tuple[str, str]]] = {}

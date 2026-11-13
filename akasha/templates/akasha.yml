@@ -1,9 +1,8 @@
 # The check of Akasha. Akasha installs this file in each repository that uses it, also beside the CI of the team
 # ([ci] required in akasha.toml): the CI of the team need not run a command of Akasha.
-# It runs the required checks of akasha.toml on each push to a pull request, also to a draft: Akasha pushes a task only
-# after its checks passed on the computer, and the landing counts the run on the draft, so marking the draft ready
-# starts no second run of the same commit. The rules come from the default branch, so a pull request cannot make its
-# own checks weaker.
+# It runs the required checks of akasha.toml on a push to a pull request. Each commit that Akasha pushes before the
+# landing carries [skip ci], so a task has one run: at the landing, on the code that merges. The rules come from the
+# default branch, so a pull request cannot make its own checks weaker.
 name: akasha
 on:
   pull_request:

@@ -186,6 +186,18 @@ def head(tree: Path) -> str:
     return git(tree, "rev-parse", "HEAD").stdout.strip()
 
 
+SKIP_CI = "[skip ci]"          # the mark of a commit that starts no run of the CI
+# GitHub starts no workflow of a push or of a pull request when the message of the head commit holds one of these
+SKIP_MARKS = (SKIP_CI, "[ci skip]", "[no ci]", "[skip actions]", "[actions skip]")
+SKIP_TRAILER = re.compile(r"^skip-checks:\s*true\s*$", re.I | re.M)
+
+
+def skips_ci(tree: Path) -> bool:
+    """True when a push of the head commit starts no run of the CI on GitHub: its message holds a skip mark."""
+    message = git(tree, "log", "-1", "--format=%B").stdout
+    return any(mark in message.lower() for mark in SKIP_MARKS) or bool(SKIP_TRAILER.search(message))
+
+
 def commit(tree: Path, message: str, allow_empty: bool = False) -> bool:
     """Commit each change of the work copy. True when a commit was made."""
     if not allow_empty and not dirty(tree):
