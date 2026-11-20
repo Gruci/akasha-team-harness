@@ -240,9 +240,9 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
-| **v2.0.2** | The team fixes the version for each computer · `/plugin update akasha@akasha` moves a computer |
-| **v2.0.1** | Notes between the steps · one window for each preview · pnpm and ESLint by default |
-| **v2.0.0** | The map of the product · product checks · result review |
+| **v2.0.2** | The team fixes the version · after a raise, one `/plugin update akasha@akasha` on each computer |
+| **v2.0.1** | Notes between the steps, so no step reads the code again · one window for each preview · pnpm and ESLint by default for TypeScript |
+| **v2.0.0** | A map of the product by area (`akasha map`) · checks of each change against the map, the plan, and the tests · a second AI also reviews the result |
 
 Earlier versions: [Releases](https://github.com/Gruci/akasha-team-harness/releases)
 
