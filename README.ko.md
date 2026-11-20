@@ -239,9 +239,9 @@ domains/catalog — 상품과 가격을 보관한다
 
 | 버전 | 변경 내용 |
 |:--|:--|
-| **v2.0.2** | 버전은 팀이 고정 · 올린 뒤 PC 는 `/plugin update akasha@akasha` 한 번 |
-| **v2.0.1** | 단계 간 인계 기록으로 코드 재탐색 제거 · 시안 창은 판마다 한 번 · TypeScript 기본값 pnpm·ESLint |
-| **v2.0.0** | 영역별 제품 지도(`akasha map`) · 변경을 지도·계획·테스트와 대조하는 검사 · 결과물도 다른 AI 가 검토 |
+| **v2.0.2** | 아카샤 버전 올리기가 명령 한 번으로 |
+| **v2.0.1** | 과업이 더 빠르고 싸게 |
+| **v2.0.0** | 여럿이 동시에 만들어도 제품이 어긋나지 않게 |
 
 이전 버전: [Releases](https://github.com/Gruci/akasha-team-harness/releases)
 
