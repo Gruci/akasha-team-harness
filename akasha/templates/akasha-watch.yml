@@ -23,10 +23,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "@@AKASHA_PYTHON@@"
+      # The Akasha of the team: [team] version in akasha.toml of this checkout, so a raise of the version changes no
+      # line here. A pull request that raises the version installs its new version, and the version check compares
+      # it with the base branch. The repository variable AKASHA_SOURCE replaces the source.
       - name: Install Akasha
+        shell: bash
         env:
           AKASHA_SOURCE: ${{ vars.AKASHA_SOURCE }}
-        run: pip install "${AKASHA_SOURCE:-@@AKASHA_SOURCE@@}"
+        run: |
+          if [ -z "$AKASHA_SOURCE" ]; then
+            version=$(python -c "import pathlib, tomllib; found = [place for place in ('akasha.toml', '.github/akasha.toml') if pathlib.Path(place).is_file()]; print(tomllib.loads(pathlib.Path(found[0]).read_text(encoding='utf-8-sig')).get('team', {}).get('version', '') if found else '', end='')")
+            version="${version#v}"
+            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::akasha.toml has no [team] version such as 2.0.2, so the server cannot install Akasha: an administrator runs akasha setup in a task"
+              exit 1
+            fi
+            AKASHA_SOURCE="@@AKASHA_SOURCE@@$version"
+          fi
+          pip install "$AKASHA_SOURCE"
       - name: Examine the new commits
         env:
           GH_TOKEN: ${{ github.token }}

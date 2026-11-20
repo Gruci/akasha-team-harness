@@ -10,7 +10,7 @@
 엉뚱한 결과가 나오고, 아무도 시키지 않은 곳까지 바뀝니다.<br>
 Akasha 와 함께면 각자 시안 하나를 승인하고, 그것만 팀 규칙대로 만들어집니다.
 
-<img src="https://img.shields.io/badge/version-2.0.1-7c3aed" alt="버전 2.0.1">
+<img src="https://img.shields.io/badge/version-2.0.2-7c3aed" alt="버전 2.0.2">
 <a href="#라이선스"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT 라이선스"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 이상">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="엔진: Claude Code, Codex">
@@ -73,7 +73,7 @@ AI 가 분명해질 때까지 묻고, 브라우저에 시안을 띄웁니다.<br
 나머지는 AI 가 하고, 병합되면 알려 주고, 배포가 끝나면 다시 알려 줍니다.
 
 > **참고:** Python 3.11 이상(훅이 `py -3`, `python3`, `python` 순서로 찾습니다), git, GitHub, GitHub 명령줄 `gh` 가
-> 필요합니다. Codex 는 그 Python 에 `pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.1"` 도 필요합니다
+> 필요합니다. Codex 는 그 Python 에 `pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.2"` 도 필요합니다
 > (Windows 에서는 `py -3 -m pip install …`).
 
 * * *
@@ -239,6 +239,7 @@ domains/catalog — 상품과 가격을 보관한다
 
 | 버전 | 변경 내용 |
 |:--|:--|
+| **v2.0.2** | PC 는 패치를 스스로 받음 · 패치를 올릴 때 저장소에서 바뀌는 것은 두 줄 |
 | **v2.0.1** | 단계 사이의 인계 기록 · 시안 창은 판마다 한 번 · pnpm·ESLint 기본값 |
 | **v2.0.0** | 제품의 지도 · 제품 검사 · 결과물 검토 |
 

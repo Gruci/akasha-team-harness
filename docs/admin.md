@@ -124,15 +124,16 @@ push of the landing does not. See `[ci]` in [team-config.md](team-config.md#ci).
 
 ## Teammates
 
-Each teammate installs the plugin once (`/plugin marketplace add Gruci/akasha-team-harness#v<version of the team>`,
-then `/plugin install akasha@akasha`), logs in with `gh auth login`, and opens the repository. The committed
-`.claude/settings.json` registers the marketplace at the version of the team when they trust the folder. The akasha-join skill reads
+Each teammate installs the plugin once (`/plugin marketplace add Gruci/akasha-team-harness#v<minor version of the
+team>`, for example `#v2.0`, then `/plugin install akasha@akasha`), logs in with `gh auth login`, and opens the
+repository. The committed `.claude/settings.json` registers the marketplace at that branch, with its updates on, when
+they trust the folder. The akasha-join skill reads
 `[guides] join` and checks the rest with `akasha doctor`: Python 3.11 or higher for the hooks (they try `py -3`,
 `python3`, and `python`), the name of git, the GitHub CLI and its login for git, write access, and each check of the
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.1"`, elsewhere `python3 -m pip install …`.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.2"`, elsewhere `python3 -m pip install …`.
 Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
 
 ## Agent accounts
@@ -172,23 +173,55 @@ Each release of Akasha has its own tag. `[team] version` in `akasha.toml` holds 
 administrator chooses it. The CI and the watch run that version itself: the server is the judge of each change. A
 computer runs it or another patch of the same minor version (2.0.x), because a patch changes no rule. An Akasha of
 another minor version, older or newer, also of an administrator, starts no task, takes over no task, and hands no
-task over to the merge. `akasha setup` pins it in three places: the marketplace of
-Claude Code in `.claude/settings.json` (`"ref": "v<version>"`), the pip line of Codex in `AGENTS.md`, and the
-workflows. It writes this Akasha into `[team] version` only when the setting is empty. To raise the version:
+task over to the merge.
+
+The version is written in two places beside `akasha.toml`. The workflows name none: their install step reads
+`[team] version` of the checkout when it runs.
+
+| Place | What it names | When it changes |
+|:--|:--|:--|
+| The pip line of Codex in `AGENTS.md` | The tag of the version (`@v2.0.2`) | At each raise |
+| The marketplace of Claude Code in `.claude/settings.json`, and the install line in `CLAUDE.md` | The branch of the minor version (`"ref": "v2.0"`), with `"autoUpdate": true` | Only at a new minor version |
+
+The public repository moves the branch `v2.0` at each release of a patch. So a computer with Claude Code takes a patch
+by itself, in the background of a session, and runs it from the next start of the agent app. It can run a newer patch
+than the server for a time: that is allowed, because a patch changes no rule. `akasha setup` writes this Akasha into
+`[team] version` only when the setting is empty. To raise the version:
 
 1. On a computer that runs the version of the team now, start a task.
 2. In its work copy, change `[team] version` in `akasha.toml` to the new version, and run `akasha setup` there. It
-   refuses a version without a release tag in the public repository. The pins name the new version; the workflows and
-   the agent instructions still come from the Akasha that ran, and the setup says so.
+   refuses a version without a release tag in the public repository. For a patch it changes only the pip line in
+   `AGENTS.md`. The agent instructions still come from the Akasha that ran, and the setup says so.
 3. Check and land it. Its own server check runs the new version.
-4. After the merge, each computer pulls the default branch and restarts the agent app: Claude Code loads the pinned
-   version. The session start notice names a difference with the commands that fix it, and `akasha doctor` fails until
-   the computer runs the version of the team. Codex: `pip install "git+https://github.com/Gruci/akasha-team-harness@v<version>"`.
+4. After the merge:
+   - A patch: nothing in Claude Code. A computer that did not take it yet runs `/plugin marketplace update akasha`,
+     then `/plugin update akasha@akasha` (the second one alone does not refresh the marketplace), and restarts the
+     agent app; `akasha doctor` names these commands. Codex:
+     `pip install "git+https://github.com/Gruci/akasha-team-harness@v<version>"`.
+   - A new minor version: each computer pulls the default branch and restarts the agent app. The session start
+     notice names a difference with the commands that fix it, and `akasha doctor` fails until the computer runs the
+     minor version of the team.
 5. When `akasha doctor` of the new version names old server rules, run `akasha setup` again in a task.
 
+A computer that ran `claude plugin marketplace add` holds its own declaration of the marketplace, and that one wins
+over the shared settings of the repository. For a patch that does not matter: both name the same branch. At a new minor
+version, and once for a computer that still names the tag of a patch (an Akasha before 2.0.2 wrote `"ref": "v2.0.1"`),
+run:
+
+```
+claude plugin marketplace remove akasha --scope user
+claude plugin marketplace add Gruci/akasha-team-harness#v2.0
+claude plugin update akasha@akasha
+```
+
+Then restart the agent app. The session start notice and `akasha doctor` name a computer that needs this. Always
+give `--scope user`: without it, the first command also removes the marketplace
+and the plugin from `.claude/settings.json` of the repository, and `git checkout -- .claude/settings.json` brings them
+back.
+
 When the server check or the watch fails with "The server runs Akasha …", the Akasha on the server differs from
-`[team] version`: run `akasha setup` again in a task, and remove the repository variable `AKASHA_SOURCE` or set it to
-the same version.
+`[team] version`: remove the repository variable `AKASHA_SOURCE` or set it to the same version. Workflows that an
+Akasha before 2.0.2 wrote name the version themselves: run `akasha setup` again in a task.
 
 ### From 1.x to 2.0
 

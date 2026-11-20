@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-from akasha import VERSION, config, repo, source
+from akasha import config, repo, source
 from akasha.config import CONFIG_FILE, HELP_LABEL, LABEL, Team
 
 TEMPLATES = Path(__file__).parent / "templates"
@@ -41,9 +41,11 @@ def runs_on(labels: tuple[str, ...]) -> str:
 
 
 def _template(name: str, team: Team) -> str:
+    """A workflow file of the team. It names no version: its install step reads [team] version when it runs, so a
+    raise of the version does not change the file."""
     text = (TEMPLATES / name).read_text(encoding="utf-8")
     for mark, value in ((RUNS_ON_MARK, runs_on(team.runs_on)), (PYTHON_MARK, team.python),
-                        (SOURCE_MARK, source(team.version or VERSION))):
+                        (SOURCE_MARK, source(""))):
         text = text.replace(mark, value)
     return text
 

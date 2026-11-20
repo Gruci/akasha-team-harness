@@ -1,13 +1,14 @@
 """The files that Claude Code reads: the shared settings of the repository, which register the marketplace of Akasha
-at the version of the team and turn the plugin on, so that a teammate who opens the repository gets that Akasha after
-one install; and the Akasha block of CLAUDE.md, which Claude reads in each session. Other keys and other text stay."""
+at the branch of the minor version of the team (v2.0), turn its updates on, and turn the plugin on, so that a teammate
+who opens the repository gets that Akasha after one install, and each patch after it without a change here; and the
+Akasha block of CLAUDE.md, which Claude reads in each session. Other keys and other text stay."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from akasha import REPOSITORY, VERSION
+from akasha import REPOSITORY, VERSION, line
 from akasha.codex import END, PRECEDENCE, START, with_block
 from akasha.guide import ARCHIVE, CORE
 
@@ -32,15 +33,16 @@ change, or repair something, also for a small fix. {PRECEDENCE}
 {ARCHIVE}
 
 If the akasha-build skill is
-not there, the plugin is missing: stop, and ask the person to run `/plugin marketplace add {REPOSITORY}#v{VERSION}` and
-`/plugin install {PLUGIN}`, then to restart.
+not there, the plugin is missing: stop, and ask the person to run
+`/plugin marketplace add {REPOSITORY}#{line(VERSION)}` and `/plugin install {PLUGIN}`, then to restart.
 {END}
 """
 
 
 def settings_text(text: str | None, wanted: str = VERSION) -> str | None:
-    """The settings with the marketplace of Akasha pinned to the version `wanted`, the plugin, the read-only commands,
-    and the mode of edits when the team set none, or None when the file is not a JSON object."""
+    """The settings with the marketplace of Akasha at the branch of the minor version of `wanted` and its updates on,
+    the plugin, the read-only commands, and the mode of edits when the team set none, or None when the file is not a
+    JSON object. A patch changes nothing here: the branch moves, and each computer follows it."""
     try:
         data = json.loads(text) if text and text.strip() else {}
     except ValueError:
@@ -55,7 +57,8 @@ def settings_text(text: str | None, wanted: str = VERSION) -> str | None:
     allow = permissions.setdefault("allow", [])
     if not isinstance(allow, list):
         return None
-    places[MARKETPLACE] = {"source": {"source": "github", "repo": REPOSITORY, "ref": f"v{wanted}"}}
+    places[MARKETPLACE] = {"source": {"source": "github", "repo": REPOSITORY, "ref": line(wanted)},
+                           "autoUpdate": True}
     plugins[PLUGIN] = True
     allow += [rule for rule in READ_ONLY if rule not in allow]
     permissions.setdefault("defaultMode", MODE)
@@ -66,7 +69,7 @@ def write(root: Path, wanted: str = VERSION) -> list[str]:
     """Write the Akasha part of each file, at the version `wanted` of the team. Return the files that changed and the
     problems."""
     changed = []
-    rules = RULES.replace(f"#v{VERSION}", f"#v{wanted}")
+    rules = RULES.replace(f"#{line(VERSION)}", f"#{line(wanted)}")
     for name, maker in ((SETTINGS, lambda text: settings_text(text, wanted)),
                         (INSTRUCTIONS, lambda text: with_block(text, rules))):
         path = root / name

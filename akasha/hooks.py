@@ -33,7 +33,6 @@ TIDY_SECONDS = 8
 SESSION_SECONDS = 10
 OTHERS_SHOWN = 8
 SEEN = config.STATE_DIR / "seen.json"
-UPDATE = "/plugin marketplace update akasha, then /plugin update akasha@akasha, then restart the agent app"
 # Commands that the agent engine runs without a permission prompt, with the options that each one may have: they
 # change only the task of this person. `check --ci --config`, `resume --force`, and the others ask the person first.
 SAFE_COMMANDS: dict[str, tuple[str, ...]] = {
@@ -120,13 +119,15 @@ def _team_lines(root: Path) -> list[str]:
     differs = version.mismatch(team.version, root=root)
     if differs:
         lines.append(f"[AKASHA] {differs} Tell the person.")
+    elif version.stale(team.version):
+        lines.append(f"[AKASHA] {version.stale(team.version)}. Tell the person.")
     elif team.unknown and team.version:
         lines.append(f"[AKASHA] akasha.toml has settings that Akasha {team.version}, the version of the team, does not "
                      f"know ({', '.join(team.unknown[:3])}). Tell an administrator: they remove them, or raise [team] "
                      "version to an Akasha that knows them.")
     elif team.unknown:
         lines.append(f"[AKASHA] akasha.toml has settings that this Akasha does not know ({', '.join(team.unknown[:3])}). "
-                     f"Ask the person to update it: {UPDATE}")
+                     f"Ask the person to update it: {version.REFRESH}")
     return lines
 
 
