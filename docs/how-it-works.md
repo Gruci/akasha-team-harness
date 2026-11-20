@@ -50,7 +50,7 @@ A task is one change of one person.
 | The work copy | A git worktree in `.claude/worktrees/<task>`, on the branch `akasha/<task>` (`[work]` changes both). Claude Code moves a session into it without asking |
 | The board entry | A draft pull request with the label `akasha`, from the first minute. The open pull requests with the label are the board of the team |
 | What the start shows | `akasha start` prints what to follow first, then the code as it is now: the guides of the team (`[guides]`), the rules for names of the languages of the scope, the usual word of nearby code for each kind of work (only where one word is usual; else the count as a fact, and no verdict), the public names of the areas of the scope (the map: names, signatures, and the first line of each description, in at most 12,000 characters), and the components that more than one area uses. The map is what the code is now, not a model |
-| The records | `.docs/tasks/<task>/` in the branch while the task is in work (`[work] records`): `preview.html`, `plan.md`, `review.md`, `result.md`, `summary.md`. The landing moves them to `.docs/archive/YYYY/MM/YYYY-MM-DD-<task>/` (`[work] archive`), and they merge with the change, so each change keeps why it looks as it does. No work copy holds the archive of other tasks |
+| The records | `.docs/tasks/<task>/` in the branch while the task is in work (`[work] records`): `preview.html`, `plan.md`, `notes.md`, `review.md`, `result.md`, `summary.md`. The landing moves them to `.docs/archive/YYYY/MM/YYYY-MM-DD-<task>/` (`[work] archive`), and they merge with the change, so each change keeps why it looks as it does. No work copy holds the archive of other tasks |
 | The state on this computer | `.docs/state/tasks/<task>.json`. Git ignores it |
 | The state for the other computers | A hidden block at the end of the body of the pull request |
 
@@ -207,15 +207,16 @@ the build. A machine examined what a machine can see; the reviewer judges the re
   the count from the code before the change).
 - Akasha writes the frame of each record when the AI needs it: `preview.html` at the start, `plan.md` at the
   approval (at the start for a task without a preview), `impact.md` for a quick task. Each form tells how to fill
-  it. Its first line is a mark, and a file that still has it counts as not written.
+  it. Its first line is a mark, and a file that still has it counts as not written. `notes.md` has a frame without
+  a mark: each step adds its part.
 - A task belongs to the session of the agent engine that works on it. The start notice of another session names
   the task without a next step, and the guard stops its edits of that work copy. When no session worked on the task
   for half an hour, the notice tells the AI to ask the person: continue it here, cancel it, or leave it. `akasha
   status <task> --resume` moves the task to the session that runs it; a preview that the other session showed is
   shown again there. A session after `/clear` is another session. A subagent has the session of its main agent.
 - In Claude Code the work of a task runs in two agents, each in a context of its own. akasha-worker writes the
-  draft of the preview, the plan, and the build, one step at each request: the main session asks the same worker
-  again, so it keeps the code that it read. akasha-reviewer reviews the plan and the result. The main session talks
+  draft of the preview, the plan, and the build, one step at each request, and each step in a new context: see
+  "The notes between the steps". akasha-reviewer reviews the plan and the result. The main session talks
   with the person, takes the approvals, runs the landing, and chooses the next step from `akasha status <task>
   --brief`. Only a message that the person types approves: a report of a subagent arrives as a prompt too, and
   Akasha never keeps it as the words of the person.
@@ -254,6 +255,40 @@ does what the title says, and nothing more), Q2 Reach (it reaches no other scree
   the agent engine reviews itself and runs `akasha review <task> --verdict pass`: the pull request tells that it was
   a self-review. Akasha refuses it in Claude Code, and a self-review never replaces a CHANGES of the
   akasha-reviewer agent for the same version.
+
+## The notes between the steps
+
+The work of a task runs in three steps: the preview, the plan, and the build. An agent reads its whole conversation
+again at each call, so an agent that goes on from one step to the next pays for the guides and the code of the first
+step at each call of the last one. So each step runs in a new context, and what a step found is in a file: `notes.md`
+in the records of the task.
+
+- Each step ends with its own part of the notes: `## Preview`, `## Plan`, or `## Build`. A part has seven fields:
+
+  | Field | What it holds |
+  |:--|:--|
+  | Facts | What the step found in the code, each fact with its file and line (`path:line`) |
+  | Decisions | What it decided, each way that it did not take, and why not |
+  | Next | Where the next step works: each file with its lines, in the order of the work |
+  | Examples | The existing code whose form the next step follows, with its file and line |
+  | Traps | What it tried and what did not work, and what breaks when it changes |
+  | Not verified | What is still a guess. The next step verifies it first |
+  | Commands | The commands of the checks and the tests, with what they print when they pass |
+
+- `akasha notes <task>` examines the part of the step that ends: each field is there (`none` for a field with
+  nothing), each fact names a file with a line, and each `path:line` of the part is in the work copy. A reference to
+  a file that is not there, or to a line after its end, fails. Akasha keeps the digest of the part that passed.
+- Akasha does not go on to the next step without the part: `akasha preview` shows no preview without the part
+  Preview, no code changes without the part Plan (the gate of the build), and the status asks for the part Build
+  before the review of the result. Akasha examines a part once, at the end of its step: the build moves the lines
+  that the part Plan names, and that stops nothing.
+- The next step starts from `akasha status <task> --brief` and the notes. It opens the lines that the notes name
+  and the files that it changes, and does not explore the code again. Inside one step the same agent goes on: for
+  a repair after a review, or with an answer of the person.
+- The reviewer never reads the notes. They hold what the worker believes, and a mistake of the worker must not reach
+  the review through them: the reviewer reads the code itself.
+- A quick task has no steps and keeps no notes. A task that an Akasha before 2.0.1 started keeps none either, and
+  nothing stops it. The notes are no evidence: the server does not read them.
 
 ## The hooks of git
 

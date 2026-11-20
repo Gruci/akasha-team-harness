@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import os
+import subprocess
 import sys
 import time
 import webbrowser
@@ -14,6 +15,7 @@ from collections.abc import Iterable
 
 from akasha import (agent, approval, archive, board, checks, codemap, config, consistency, core, definitions, evidence,
                     forms, guard, pr, product, quick, repo, review, screen, sheets, spec, trace, version, work)
+from akasha import notes as step_notes     # `notes` names the lines that a command gives
 from akasha.config import Team
 from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id,
                          own_records, record, records, replaced, save)
@@ -24,6 +26,7 @@ DECISIONS = 'id="akasha-decisions"'       # the box of the questions and the ans
 QUICK = "quick"                            # the check that the change of a quick task is a quick change
 DATA = "data"                              # the check that a change of data has the values of its preview defined
 GATE = "gate"                              # the check that the person approved and the plan passed its review
+OPEN_SECONDS = 30                          # the time that the command of the team has to open a preview
 
 
 def rules(root: Path) -> Team:
@@ -56,9 +59,14 @@ def gate(task: Task) -> str:
 
 
 def _unreviewed(task: Task) -> str:
-    """What the plan of the task still needs from the akasha-reviewer agent, or ""."""
+    """What the plan of the task still needs before the build, or "": the pass of the akasha-reviewer agent, and the
+    notes of the step for the build (notes.py). The notes come first: the agent that wrote the plan writes them
+    before it returns, and the reviewer does not read them."""
+    lacks = step_notes.missing(task, "plan")
     if review.passed(task):
-        return ""
+        return lacks
+    if lacks and forms.written(record(task, PLAN)):
+        return f"{lacks} Then ask the akasha-reviewer agent to review the plan of task {task.id}."
     return (f"The plan did not pass the review. Write {records(task)}/{PLAN} (the approach, and the work as steps), "
             f"ask the akasha-reviewer agent to review the plan of task {task.id}, and repair the plan until it "
             "passes." + review.told(task))
@@ -101,6 +109,9 @@ def next_step(task: Task) -> str:
                     f"at {records(task)}/{PREVIEW}: the decisions, the look (an HTML mockup of the screen, or a diagram "
                     "of the flow and the data), the values from data with their source and formula, and the rules "
                     "with an example each (akasha-build step 2).")
+        lacks = step_notes.missing(task, "preview")
+        if lacks:
+            return lacks
         if not task.shown_at or digest(record(task, PREVIEW)) != task.preview_sha:
             return f"Show the preview: `akasha preview {task.id}`."
         if time.time() - task.shown_at > approval.MAX_AGE:
@@ -118,6 +129,9 @@ def next_step(task: Task) -> str:
     tree = Path(task.workcopy)
     if work.dirty(tree) or task.checks.get("commit") != work.head(tree):
         return f"Build the change in {task.workcopy}, then run `akasha check {task.id}`." + _steps_line(task)
+    lacks = step_notes.missing(task, "build")
+    if lacks:
+        return f"{lacks} Then run `akasha check {task.id}` again: it saves the notes."
     if review.result_needed(task) and not review.result_passed(task):
         return (f"Ask the akasha-reviewer agent, in a new context, to review the result of task {task.id} (result "
                 f"digest {review.result_digest(task)}): it reads the change against the preview and the plan. Repair "
@@ -223,6 +237,7 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
                 kind="agent" if request else "quick" if fast else screen.KIND if no_screen else "full")
     task.branch = team.branch_prefix + task.id
     task.records_name = task.id
+    task.notes = step_notes.parts(task.kind)          # each step of the work ends with its part of notes.md
     entries = board.read(root) if online else []
     if entries is None:
         raise RuntimeError("gh cannot read the board. Log in to GitHub: gh auth login. Then do the step again")
@@ -342,9 +357,39 @@ def _quick_preview(root: Path, task: Task) -> None:
     path.write_text(quick.preview_text(task), encoding="utf-8")
 
 
-def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tuple[Task, str]:
+def _open(command: str, path: Path, tree: Path) -> str:
+    """Open the preview for the person, and tell where: with the command of the team ([preview] open), which gets the
+    path as its last argument, else in the default browser. Only this function opens a preview: the agent engine
+    opens it nowhere else. A command that fails does not hide the preview: the browser opens it."""
+    if command:
+        try:
+            done = subprocess.run(f'{command} "{path}"', shell=True, cwd=tree, capture_output=True,
+                                  timeout=OPEN_SECONDS)
+        except subprocess.TimeoutExpired:
+            return f"with the command of the team ([preview] open), which did not end in {OPEN_SECONDS} seconds"
+        if done.returncode == 0:
+            return "with the command of the team ([preview] open)"
+        why = checks._decode(done.stdout + done.stderr).strip()[-200:] or f"exit code {done.returncode}"
+        webbrowser.open(path.resolve().as_uri())
+        return f"in the browser, because the command of [preview] open failed ({why})"
+    webbrowser.open(path.resolve().as_uri())
+    return "in the browser"
+
+
+def _seen(task: Task, sha: str, session: str) -> bool:
+    """True when the person saw this very version of the preview in this session, in the last day: a second window
+    would show nothing new."""
+    return bool(task.shown_at) and task.preview_sha == sha and task.shown_in == session and \
+        time.time() - task.shown_at <= approval.MAX_AGE
+
+
+def preview(root: Path, task_id: str, text: str = "", show: bool = True, again: bool = False) -> tuple[Task, str]:
     """Show the preview to the person and wait for the approval. A preview that changed after an approval needs a new
-    approval. `text` makes a plain preview for a change without a screen, when the file is not there."""
+    approval. `text` makes a plain preview for a change without a screen, when the file is not there.
+
+    Each version of a preview opens one window. For the version that the person already saw in this session, the
+    command examines the preview and changes nothing: no window, and the answer of the person since then still
+    counts. `again` opens the window once more, when the person asks for it."""
     task = load(root, task_id)
     holder = taken(root, task)
     if holder:
@@ -361,13 +406,24 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
         raise ValueError(f"write the preview first: {path}" + (" (fill the form, and delete its first line)"
                                                               if path.is_file() else ""))
     _examine_preview(root, task, path)
-    sha = digest(path)
+    lacks = step_notes.missing(task, "preview")
+    if lacks:                                         # the agent that wrote the preview is still there to write them
+        raise ValueError(lacks)
+    opener, tree = rules(root).preview_open, Path(task.workcopy)
+    sha, session = digest(path), approval.session(root)
+    if _seen(task, sha, session):
+        if again and show:
+            return task, (f"Opened {path} again {_open(opener, path, tree)}. It is the version that the person "
+                          f"already saw. next: {next_step(task)}")
+        return task, (f"The preview {path} did not change since the person saw it: Akasha opened no window again, and "
+                      f"the answer of the person since then still counts. next: {next_step(task)} Only when the "
+                      f"person asks to see it again: `akasha preview {task.id} --open`.")
     changed = bool(task.approval) and task.approval.get("preview_sha") != sha
     if changed:
         task.approval, task.status = {}, "preview"
         evidence.forget(task)
     # Claude Code gives its commands the session: only a message of that session, after now, approves this preview
-    task.preview_sha, task.shown_at, task.shown_in = sha, time.time(), approval.session(root)
+    task.preview_sha, task.shown_at, task.shown_in = sha, time.time(), session
     task.heard = {}
     save(root, task)
     if board.available(root) and task.number:
@@ -378,13 +434,14 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True) -> tupl
         except RuntimeError:
             pass                                      # the next push sends it
         pr.update(root, task)
-    if show:
-        webbrowser.open(path.resolve().as_uri())
-    again = " The preview changed after the approval, so the person approves it again." if changed else ""
-    return task, (f"Showed {path} in the browser.{again} Tell the person in simple words what they see, and ask them "
+    where = _open(opener, path, tree) if show else "without a window (--no-open)"
+    renewed = " The preview changed after the approval, so the person approves it again." if changed else ""
+    return task, (f"Showed {path} {where}.{renewed} Akasha opened it for the person: open it nowhere else, and do "
+                  "not show this version again. Tell the person in simple words what they see, and ask them "
                   "in plain chat whether to build it like this, or what to change. When their own message approves "
                   f"it, run `akasha approve {task.id}`. Do not ask with AskUserQuestion or another choice tool: only a "
-                  "message that the person types counts.")
+                  "message that the person types counts. After a repair of the preview, examine it with `akasha "
+                  f"preview {task.id} --check`, which shows nothing; show only a version that the person did not see.")
 
 
 def preview_check(root: Path, task_id: str) -> str:
@@ -399,8 +456,9 @@ def preview_check(root: Path, task_id: str) -> str:
         raise ValueError(f"write the preview first: {path}" + (" (fill the form, and delete its first line)"
                                                               if path.is_file() else ""))
     _examine_preview(root, task, path)
-    return (f"The preview {path} passes its check. The main session shows it to the person: `akasha preview "
-            f"{task.id}`.")
+    lacks = step_notes.missing(task, "preview")
+    return (f"The preview {path} passes its check. " + (f"{lacks} Then the" if lacks else "The")
+            + f" main session shows it to the person: `akasha preview {task.id}`.")
 
 
 def brief(root: Path, task_id: str) -> str:
@@ -430,6 +488,9 @@ def brief(root: Path, task_id: str) -> str:
             now = review.result_digest(task)
             said = task.result.get("verdict") if task.result.get("sha") == now else "no review of this code"
             lines.append(f"result: {said} · digest {now} · the answer is in {record(task, review.RESULT)}")
+    noted = "" if task.status in ("merged", "closed", "landing") else step_notes.line(task)
+    if noted:
+        lines.append(noted)
     names = {"preview": "before the preview", "plan": "before the plan", "build": "while you build",
              "review": "for the reviewer"}
     lines += [f"guides {names[step]}: {', '.join(files)}" for step, files in team.guides.items() if step in names]
@@ -472,6 +533,9 @@ def _show_plan(root: Path, task: Task) -> tuple[Task, str]:
     that changed after an approval needs a new approval."""
     if not review.passed(task):
         raise ValueError("the akasha-reviewer agent did not pass this version of the plan yet. " + _unreviewed(task))
+    lacks = step_notes.missing(task, "plan")
+    if lacks:
+        raise ValueError(lacks)
     sha = review.plan_digest(task)
     changed = bool(task.approval) and task.approval.get("plan_sha") != sha
     if changed or not task.approval:
@@ -576,7 +640,9 @@ def approve(root: Path, task_id: str, here: bool = False, **terminal) -> tuple[T
                   "anything more unless the plan must change what they approved. Next, without stopping: write "
                   "plan.md in the records folder of the task (the work as steps), ask the akasha-reviewer agent to "
                   "review the plan until it passes, build each step, run `akasha check`, ask the akasha-reviewer "
-                  "agent to review the result, write summary.md, and run `akasha land`.")
+                  "agent to review the result, write summary.md, and run `akasha land`."
+                  + (f" The plan and the build each start in a new context, from {records(task)}/{step_notes.NOTES}, "
+                     f"and each ends with its part of it (`akasha notes {task.id}`)." if task.notes else ""))
 
 
 def result(root: Path, task_id: str) -> str:
@@ -844,6 +910,7 @@ def _forms(team: Team, task: Task) -> None:
         forms.put(record(task, PREVIEW), forms.preview(task.title, task.id, team.definitions_on, words))
     else:                                             # a task without a screen, an agent task: no preview
         forms.put(record(task, PLAN), forms.PLAN)
+    step_notes.put(task)
 
 
 def _first_area(team: Team, tree: Path, base: str) -> str:
@@ -996,6 +1063,8 @@ def upgrade(root: Path, task_id: str) -> Task:
         raise ValueError(f"task {task.id} is {task.status}: it cannot change now")
     task.kind, task.status = "full", "preview"
     task.approval, task.review, task.checks = {}, {}, {}
+    task.notes = step_notes.parts(task.kind)
+    step_notes.put(task)
     task.preview_sha, task.shown_at, task.shown_in, task.heard = "", 0.0, "", {}
     record(task, PREVIEW).unlink(missing_ok=True)               # Akasha made it from the change: not a preview
     evidence.forget(task)

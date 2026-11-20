@@ -1,8 +1,8 @@
 name = "typescript"
 extensions = [".ts", ".tsx", ".js", ".jsx"]
-setup = "npm ci"
-tests = "npm test --silent"
-lint = "npx eslint ."
+setup = "pnpm install --frozen-lockfile"
+tests = "pnpm test"
+lint = "pnpm exec eslint ."
 ignore = ["node_modules/", "coverage/"]
 manifests = ["package.json", "tsconfig.json"]
 rules = ["**/eslint.config.*"]

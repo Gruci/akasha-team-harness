@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from akasha import VERSION, board, checks, config, flow, land, repo, retro, setup
+from akasha import notes as step_notes     # `notes` names the lines that a command gives
 from akasha.task import Task, all_local, load, records
 
 # 3: run the same landing again. 4: an agent task waits for the person (`akasha result`, then end the turn)
@@ -55,7 +56,11 @@ def _parser() -> argparse.ArgumentParser:
     preview.add_argument("--text", default="", help="make a plain preview from this text when there is none")
     preview.add_argument("--no-open", action="store_true", help="do not open the browser")
     preview.add_argument("--check", action="store_true", help="only examine the preview: show nothing, and change "
-                         "no state of the task (for a step in a new context)")
+                         "no state of the task (for a step in a new context, and after a repair)")
+    preview.add_argument("--open", action="store_true", help="open the window again for a preview that the person "
+                         "already saw: only when the person asks")
+    noted = commands.add_parser("notes", help="examine the notes of the step that ends, for the step after it")
+    noted.add_argument("task")
     approve = commands.add_parser("approve", help="record the approval from the last message of the person")
     approve.add_argument("task")
     approve.add_argument("--here", action="store_true", help="the person approves in their own terminal: for an "
@@ -282,8 +287,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             print(flow.preview_check(root, args.task))
             return 0
-        _task, message = flow.preview(root, args.task, args.text, not args.no_open)
+        _task, message = flow.preview(root, args.task, args.text, not args.no_open, again=args.open)
         print(message)
+        return 0
+    if args.command == "notes":
+        print(step_notes.examine(root, args.task))
         return 0
     if args.command == "approve":
         _task, message = flow.approve(root, args.task, here=args.here)

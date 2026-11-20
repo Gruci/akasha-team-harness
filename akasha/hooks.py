@@ -37,8 +37,8 @@ UPDATE = "/plugin marketplace update akasha, then /plugin update akasha@akasha, 
 # Commands that the agent engine runs without a permission prompt, with the options that each one may have: they
 # change only the task of this person. `check --ci --config`, `resume --force`, and the others ask the person first.
 SAFE_COMMANDS: dict[str, tuple[str, ...]] = {
-    "start": ("--name", "--scope", "--quick", "--no-screen"), "preview": ("--text", "--no-open", "--check"),
-    "approve": (),
+    "start": ("--name", "--scope", "--quick", "--no-screen"),
+    "preview": ("--text", "--no-open", "--check", "--open"), "approve": (), "notes": (),
     "status": ("--review", "--resume", "--brief"),
     "upgrade": (), "split": ("--scope",), "join": ("--keep",),
     "check": ("--only",), "land": ("--wait",), "result": (), "board": ("--scope",), "help": (),

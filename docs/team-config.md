@@ -11,7 +11,7 @@ the merged rules, also when its checkout is old.
 [team]
 admins = ["lead", "dba"]           # GitHub names: they keep the rules, and approve a change of the structure
 agents = ["ops-bot"]               # GitHub names of agent accounts: a person approves their result before the merge
-version = "2.0.0"                  # the Akasha of the team: the CI and the watch run it, and each computer a 2.0.x
+version = "2.0.1"                  # the Akasha of the team: the CI and the watch run it, and each computer a 2.0.x
 
 [risk]
 paths = ["db/**", "**/migrations/**", "deploy/**"]     # only an administrator changes them
@@ -25,6 +25,7 @@ used_by = 2                               # a file that 2 or more other areas im
 data = ["src/queries/**"]          # files that make data: their previews define each value that they show
 screens = ["frontend/**", "**/*.html"]   # files that make a screen: an administrator's task without them has no preview
 check = "python scripts/check_words.py"  # a check of a preview: `akasha preview` runs it once, with the path of the preview
+# open = "<command>"               # the command that opens a preview, in place of the default browser
 
 [checks]
 required = ["secrets", "tests", "front"]
@@ -95,7 +96,7 @@ approves the preview of their own request; the person who asked an agent account
 | `admins` | The GitHub names of the administrators. Only they change `akasha.toml`, `.github/`, CODEOWNERS, and the paths of `[risk]`. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch. The AI talks with them as with developers, and they can make a task without a screen (`[preview] screens`) |
 | `own_procedure` | The GitHub names of the people who keep the own procedure of the repository outside Akasha, for example the administrator who built it. Akasha does not stop their work outside its tasks (their own work copies, edits in the main checkout, their merges), and the watch accepts their pull requests when the checks passed. The other rules (a force push, a push to the default branch, `.env`) stay |
 | `agents` | The GitHub names of agent accounts: a program (the relay) runs their sessions and gives them the requests of people. Each task of such an account is an agent task, without a preview: the person approves the result before the merge. An agent account has the rules of a teammate, so it cannot also be in `admins` or `own_procedure`. An older Akasha does not know this key: it treats an agent account as a teammate, which needs a preview |
-| `version` | The version of Akasha that the team uses, for example `"2.0.0"`. An administrator chooses it: `akasha setup` writes the running version only when the setting is empty, and never changes it after that. The CI and the watch run that version itself. A computer runs it or another patch of the same minor version (2.0.x): a patch changes no rule. An Akasha of another minor version starts, continues, and lands no task. See "Change the rules, or update Akasha" in [set up a team](admin.md) |
+| `version` | The version of Akasha that the team uses, for example `"2.0.1"`. An administrator chooses it: `akasha setup` writes the running version only when the setting is empty, and never changes it after that. The CI and the watch run that version itself. A computer runs it or another patch of the same minor version (2.0.x): a patch changes no rule. An Akasha of another minor version starts, continues, and lands no task. See "Change the rules, or update Akasha" in [set up a team](admin.md) |
 
 ## `[risk]`
 
@@ -162,13 +163,14 @@ section makes Akasha sure that a change of data shows its values: the AI cannot 
 | `screens` | File patterns of the files that make a screen, for example `["frontend/**", "templates/**", "**/*.css"]`. An administrator can start a task whose scope holds none of them with `akasha start --no-screen`: the person approves its plan in place of a preview, and the check `screen` fails when its change touches one (see "A task without a screen" in [how it works](how-it-works.md)). Name each kind of file that a screen shows: a file that this list misses can change without a preview. Without it, each task of a person has a preview |
 | `data` | File patterns of files that make data that people see, for example `["src/queries/**", "src/reports/**"]`. A task that plans one must mark one value or more in its preview, `akasha check` fails the check `data` when the change touches one and the preview defines no value, and a quick task never changes one. How a teammate reads the data for a preview (a copy of the database, a read-only account, an API) goes into a file of `[guides] preview` and `[guides] join` |
 | `check` | A command of the team that examines a preview, for example the words of the screen. `akasha preview` runs it once in the work copy of the task, with the path of `preview.html` as its last argument, before the person sees the preview. When it fails, Akasha does not show the preview, and gives the output of the command to the AI. Use it for a check that is needed once for each preview: a check at the end of each turn of the agent runs many times for nothing. A quick task has no such check |
+| `open` | A command of the team that opens a preview for the person, in place of the default browser: for example the command of the agent app that opens a file in a tab of its own. `akasha preview` runs it in the work copy of the task, with the path of `preview.html` as its last argument, and it has 30 seconds. When it fails, the default browser opens the preview. Akasha opens each version of a preview once, and only here: the agent engine opens it nowhere else. An Akasha before 2.0.1 does not know this key, and opens the default browser |
 
 ## `[checks]`
 
 | Key | Value |
 |:--|:--|
 | `required` | The checks that must pass. `secrets` is built in: it finds secret keys in the changed files. The default is `["secrets"]` |
-| `setup` | The command that prepares a new work copy and the checkout of the check of Akasha, for example `npm ci` |
+| `setup` | The command that prepares a new work copy and the checkout of the check of Akasha, for example `pnpm install --frozen-lockfile` |
 | `run_all_when` | File patterns: a change of one runs each check, also a check with `only_when`. The default is the dependency files, `akasha.toml`, and `.github/workflows/**` |
 | `tests`, `lint` | One command line, the same as a table with only `command` |
 | `[checks.<name>]` | One check, below |
@@ -224,7 +226,7 @@ The files of the team that the AI reads in each step. The session start notice n
 |:--|:--|
 | `folder` | The folder of the work copies, in the repository. The default is `.claude/worktrees`: Claude Code moves a session into a folder there without asking, and asks once for each task anywhere else. Git must not track files in it |
 | `branch_prefix` | The prefix of the task branches. The default is `akasha/` |
-| `records` | The folder of the records of a task in work (preview, research, plan, summary): `<records>/<task>/`. The default is `.docs/tasks`. Only the branch of the task has this folder: the default branch never holds it. Choose a folder that the own checkers of the team skip, for example a Markdown checker |
+| `records` | The folder of the records of a task in work (preview, plan, notes, summary): `<records>/<task>/`. The default is `.docs/tasks`. Only the branch of the task has this folder: the default branch never holds it. Choose a folder that the own checkers of the team skip, for example a Markdown checker |
 | `archive` | The folder of the records of the merged tasks. The default is `.docs/archive`. The landing moves the records of a task there, into `<archive>/YYYY/MM/YYYY-MM-DD-<task>/` (the date of the move), in the push that it makes anyway, and the merge brings them into the default branch. No work copy and no main checkout holds the archive of other tasks (git sparse-checkout), and Akasha reads the folder of one task only: the records of old tasks are no input of a new task, however many there are. A task changes no folder of another task in the archive: only an administrator does. A merged task gives its name free: the date keeps the folders apart, and a second task of the same name on the same day gets `YYYY-MM-DD.<number of the pull request>-<task>` |
 
 > **IMPORTANT:** Choose `records` and `archive` when Akasha comes into the repository. Akasha refuses a later change
@@ -364,7 +366,7 @@ old file into pieces: it looks only at what the change makes new or longer.
 
 | Key | Value |
 |:--|:--|
-| `work` | The model of the akasha-worker agent: the preview, the plan, and the build |
+| `work` | The model of the akasha-worker agent: the preview, the plan, and the build. Without it, the worker runs on the model of the main session, also when that one is the most costly: name a model here |
 | `review` | The model of the akasha-reviewer agent. Without it, the agent uses the model of its own file. Keep it as strong as the worker or stronger |
 
 `akasha status <task> --brief` names them, and the session starts each agent with its model. The checks of the

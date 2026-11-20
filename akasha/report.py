@@ -3,24 +3,30 @@
 A repository that has code starts with the definitions and the boundaries off. This report shows what is there: the
 files that several areas import, the addresses that screens call, the names that are in more than one file of an
 area, the words of the names, the cycles between areas, the path of the lint of names, the languages without a
-required check, and the versions that float. It makes no rule: the direction of the imports of today is not the right
-structure for that reason. An administrator reads it and decides, in a task without a screen.
+required check, the package tool of TypeScript and JavaScript, and the versions that float. It makes no rule: the
+direction of the imports of today is not the right structure for that reason. An administrator reads it and
+decides, in a task without a screen.
 
 Each line says what it is: `observed` (a fact of the code now) or `policy` (what the team wrote into akasha.toml)."""
 
 from __future__ import annotations
 
+import json
+import posixpath
 import re
 import shutil
 from pathlib import Path
 
-from akasha import boundaries, codemap, core, langs
+from akasha import boundaries, codemap, core, langs, repo
 from akasha.checks import matches
 from akasha.codemap import Map
 from akasha.config import Boundary, Team
 
 MOST = 8
 LINT_FILES = ("ruff.toml", ".ruff.toml", "pyproject.toml")
+ESLINT = re.compile(r"(^|/)(eslint\.config\.[cm]?[jt]s|\.eslintrc[^/]*)$")
+PNPM = re.compile(r"pnpm@\d+\.\d+\.\d+")         # `packageManager` of package.json: pnpm at one exact version
+OTHER_LOCKS = ("package-lock.json", "npm-shrinkwrap.json", "yarn.lock")
 
 
 def _shared(found: Map, team: Team) -> list[str]:
@@ -98,12 +104,62 @@ def _crossings(found: Map, team: Team) -> list[str]:
         [f"observed — {why.split('. Go through')[0]}" for why in hits[:MOST]]
 
 
+def _commands(team: Team) -> str:
+    """The command lines of the required checks, as one text."""
+    return " ".join(f"{check.command} {check.command_windows}" for name, check in team.checks.items()
+                    if name in team.required_checks)
+
+
+def eslint(team: Team, files: list[str]) -> tuple[bool, bool]:
+    """Whether a config of ESLint is in the repository, and whether a required check runs ESLint."""
+    return any(ESLINT.search(path) for path in files), "eslint" in _commands(team)
+
+
+def _names_pnpm(data: dict) -> bool:
+    """True when a package.json names pnpm with a version: `packageManager` with one exact version, or
+    `devEngines.packageManager`, whose version pnpm keeps in its lock."""
+    if PNPM.match(str(data.get("packageManager") or "")):
+        return True
+    engines = data.get("devEngines")
+    tools = engines.get("packageManager") if isinstance(engines, dict) else None
+    return any(isinstance(tool, dict) and tool.get("name") == "pnpm" and bool(tool.get("version"))
+               for tool in (tools if isinstance(tools, list) else [tools]))
+
+
+def package_tool(root: Path, files: list[str]) -> list[str]:
+    """Each package.json whose package tool is not pnpm at one version: the lock beside it is not pnpm-lock.yaml, or
+    the file names no version of pnpm. pnpm runs the version that the file names, so each computer and the CI
+    install with the same tool, and `--frozen-lockfile` then installs what the lock holds. A package.json below
+    another one is a package of its workspace: the one at the top holds the lock and the version."""
+    tracked = set(files)
+    folders = {posixpath.dirname(path) for path in files if posixpath.basename(path) == "package.json"}
+    found = []
+    for folder in sorted(folders):
+        if any(other != folder and (not other or folder.startswith(f"{other}/")) for other in folders):
+            continue
+        path, missing = posixpath.join(folder, "package.json"), []
+        if posixpath.join(folder, "pnpm-lock.yaml") not in tracked:
+            other = next((name for name in OTHER_LOCKS if posixpath.join(folder, name) in tracked), "")
+            missing.append(f"the lock beside it is {other}, not pnpm-lock.yaml" if other else
+                           "no pnpm-lock.yaml is beside it")
+        try:
+            data = json.loads((root / path).read_text(encoding="utf-8", errors="replace"))
+        except (OSError, ValueError):
+            data = None
+        if not isinstance(data, dict):
+            missing.append("Akasha could not read it")
+        elif not _names_pnpm(data):
+            missing.append("it names no version of pnpm (`packageManager`)")
+        if missing:
+            found.append(f"{path}: " + " · ".join(missing))
+    return found
+
+
 def lint_path(root: Path, team: Team, files: list[str]) -> list[str]:
     """How the lint of names reaches a change, in four steps that Akasha can see: installed, the rule of names is
     on, wired to a required check, or not confirmed. It never says that the rule holds when it could not see it."""
     lines = []
-    commands = " ".join(f"{check.command} {check.command_windows}" for name, check in team.checks.items()
-                        if name in team.required_checks)
+    commands = _commands(team)
     if any(path.endswith(".py") for path in files):
         on = False
         for name in LINT_FILES:
@@ -122,8 +178,7 @@ def lint_path(root: Path, team: Team, files: list[str]) -> list[str]:
             lines.append("proposal — a required check `python -m ruff check --extend-select N .` with only_when = "
                          "[\"**/*.py\"], in a task of an administrator")
     if any(path.endswith(core.JS) for path in files):
-        has_config = any(re.search(r"(^|/)(eslint\.config\.[cm]?[jt]s|\.eslintrc[^/]*)$", path) for path in files)
-        wired = "eslint" in commands
+        has_config, wired = eslint(team, files)
         lines.append("observed — TypeScript and JavaScript names (ESLint, naming-convention): "
                      + ("a config of ESLint is in the repository" if has_config else "no config of ESLint") + " · "
                      + "the rule of names is not confirmed (Akasha does not run ESLint) · "
@@ -153,6 +208,9 @@ def lines(root: Path, team: Team, keep: Path | None = None) -> list[str]:
     found = Map(root, team, keep)
     files = list(found.files)
     pins = setup.pin_listings(root, team)
+    tracked = repo.paths(root, team.record_roots + (team.work_dir,))
+    manifests = any(posixpath.basename(path) == "package.json" for path in tracked)
+    tool = [f"observed — {item}" for item in package_tool(root, tracked)]
     said = [
         "# What Akasha observes in this repository. It is what the code is now, and no rule.",
         "## Files that several areas import (which of them hold a definition of the team?)", *_shared(found, team),
@@ -163,6 +221,9 @@ def lines(root: Path, team: Team, keep: Path | None = None) -> list[str]:
         *_cycles(found, team),
         "## The lint of names", *lint_path(root, team, files),
         "## Languages without a required check", *(unchecked(team, files) or ["observed — each language has one"]),
+        *(["## The package tool of TypeScript and JavaScript (pnpm at one version)",
+           *(tool or ["observed — each package.json has the lock of pnpm and names its version"])] if manifests
+          else []),
         "## Versions ([pins] policy)",
         f"policy — [pins] policy = \"{team.pins_policy}\"" if team.pins_policy else
         "policy — not answered yet: observe, new, or all",

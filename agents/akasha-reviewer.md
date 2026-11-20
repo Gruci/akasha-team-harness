@@ -24,7 +24,8 @@ long (`akasha check`). You judge what it cannot see.
    person approved) and `plan.md`. The preview specifies the change: the box of the rules (`akasha-rules`: when,
    then, and an example for each rule) and the box of the values (`akasha-data`: the source, the formula, the value
    now, and the check of each value that comes from data). The approval made each rule a decision, also the rules
-   that the AI proposed.
+   that the AI proposed. Never read `notes.md` of the records: the worker wrote there what it believes about the
+   code, and a mistake of the worker must not reach you through it. Read the code itself.
 3. Read the files that `[guides] plan` and `[guides] review` of `akasha.toml` name. They are the rules of the team.
    Run the Akasha command with `map`: it shows what each area of the product keeps and whom it uses.
 4. Judge each item of the review that the request names, one by one.

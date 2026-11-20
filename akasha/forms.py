@@ -10,7 +10,8 @@ and deletes the line.
 | plan.md | `akasha approve` (a full task), `akasha start` (a task without a screen, an agent task) | the approach, the steps (steps.py), and the table "Public changes" |
 | impact.md | `akasha start --quick` | each changed file, who uses it, and why no other screen changes |
 
-summary.md has no form: its text goes as it is into the pull request and the commit."""
+summary.md has no form: its text goes as it is into the pull request and the commit. notes.md has a frame of its
+own (notes.py): each step of the work adds its part, so the file has no mark to delete."""
 
 from __future__ import annotations
 

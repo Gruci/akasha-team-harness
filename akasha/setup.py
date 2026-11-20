@@ -332,6 +332,11 @@ def _new_notes(root: Path, choice: Choice) -> list[str]:
         notes.append("new — the boundaries are not on yet: answer which folder is one area and which file is its "
                      "entry ([core] areas, [boundaries.areas]), or run the setup with --areas and --entries")
     if any(pack.name == "typescript" for pack in packs):
+        notes.append("new — the package tool of TypeScript is pnpm: the checks run `pnpm install --frozen-lockfile`, "
+                     "`pnpm test`, and `pnpm exec eslint .`. The first task with a package.json writes "
+                     "`packageManager` there with one exact version of pnpm, and adds pnpm-lock.yaml: pnpm then runs "
+                     "that version on each computer and on the CI. Each computer needs pnpm once (`npm install -g "
+                     "pnpm`, or `corepack enable`)")
         notes.append("new — the lint of TypeScript needs a config of ESLint in the repository. Propose to the "
                      "administrator: @typescript-eslint/naming-convention, react/jsx-handler-names, and "
                      "complexity, in eslint.config.*")
@@ -497,7 +502,37 @@ def doctor(root: Path) -> list[tuple[bool, str]]:
         found.append((True, "note: the only required check is secrets. Put the tests, the lint, and the type check of "
                             f"the team in [checks] required of {CONFIG_FILE}: then each person and each agent engine "
                             "runs the same checks, on the computer and on the server"))
+    if admin and "work" not in team.models:
+        found.append((True, "note: no model is named for the work of a task ([models] work): the akasha-worker "
+                            "agent then runs on the model of each main session, also on the most costly one, and "
+                            f"can be stronger than the reviewer. Name one in {CONFIG_FILE}, for example work = "
+                            "\"opus\""))
+    if admin:
+        found += [(True, f"note: {said}") for said in script_notes(root, team, tracked)]
     return found + product_notes(root, team, tracked)
+
+
+def script_notes(root: Path, team: Team, tracked: list[str]) -> list[str]:
+    """What an administrator of a repository with TypeScript or JavaScript still decides: ESLint as a required
+    check, and pnpm at one version as the package tool. They are the defaults of Akasha for a new repository, and
+    notes for a repository that has code: nothing stops."""
+    from akasha import core, report
+    notes = []
+    if any(path.endswith(core.JS) for path in tracked):
+        has_config, wired = report.eslint(team, tracked)
+        if not (has_config and wired):
+            what = " and ".join(([] if has_config else ["the repository has no config of ESLint (eslint.config.*)"])
+                                + ([] if wired else ["no required check runs ESLint"]))
+            notes.append(f"{what}: ESLint is the lint of Akasha for TypeScript and JavaScript. Add its config, and a "
+                         f"check with `pnpm exec eslint .` to [checks] required of {CONFIG_FILE}, with these files in "
+                         "only_when")
+    tool = report.package_tool(root, tracked)
+    if tool:
+        notes.append("pnpm at one version is the package tool of Akasha for TypeScript and JavaScript — "
+                     + "; ".join(tool) + ". Write `packageManager` into the package.json with one exact version "
+                     "(`pnpm@<version>`) and keep pnpm-lock.yaml in git: pnpm then runs that version on each "
+                     "computer and on the CI, and `pnpm install --frozen-lockfile` installs what the lock holds")
+    return notes
 
 
 def product_notes(root: Path, team: Team, tracked: list[str]) -> list[tuple[bool, str]]:

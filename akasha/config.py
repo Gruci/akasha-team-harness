@@ -64,7 +64,7 @@ _KEYS: dict[str, set[str] | None] = {
     "core": {"paths", "areas", "used_by"},
     "deploy": {"workflow", "verify"},
     "quick": {"paths"},
-    "preview": {"data", "screens", "check"},
+    "preview": {"data", "screens", "check", "open"},
     "definitions": {"on"},
     "pins": {"policy"},
     "review": {"command", "files", "timeout"},
@@ -139,6 +139,7 @@ class Team:
     data_paths: tuple[str, ...] = ()         # files that make data people see: their task defines its values (spec.py)
     screen_paths: tuple[str, ...] = ()       # files that make a screen: a task without one changes none (screen.py)
     preview_check: str = ""                  # a command of the team that examines a preview before the person sees it
+    preview_open: str = ""                   # a command of the team that opens a preview, in place of the browser
     definitions_on: bool = False             # the list of the definitions holds (definitions.py)
     pins_policy: str = ""                    # "" (not answered), observe, new, or all (pins.py)
     review_command: str = ""                 # a command that reviews a plan in its own process (reviewer.py)
@@ -434,6 +435,7 @@ def team_from(data: dict) -> Team:
         screen_paths=_patterns(data.get("preview", {}).get("screens", []), "[preview] screens"),
         preview_check=_text(preview["check"], "[preview] check") if "check" in (preview := data.get("preview", {}))
         else "",
+        preview_open=_text(preview["open"], "[preview] open") if "open" in preview else "",
         definitions_on=_flag(data.get("definitions", {}).get("on", False), "[definitions] on"),
         pins_policy=_policy(data.get("pins", {})),
         review_command=_text(asked["command"], "[review] command") if "command" in (asked := data.get("review", {}))

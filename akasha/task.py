@@ -4,7 +4,7 @@ The task lives in three places. Its branch and its draft pull request are on Git
 the label akasha are the shared board. A block in the body of the pull request holds the state of the task for the
 other computers. A file in .docs/state/tasks/ holds the state on this computer, with the work copy.
 
-The records of a task (preview, research, plan, review, summary) are in one folder. While the task is in work, the
+The records of a task (preview, plan, notes, review, summary) are in one folder. While the task is in work, the
 folder is <records>/<task>, and only the branch of the task has it. The landing moves it to the archive,
 <archive>/YYYY/MM/YYYY-MM-DD-<task>, and the merge brings it into the default branch (archive.py). Akasha reads
 the folder of one task only: never the archive of the other tasks."""
@@ -68,6 +68,9 @@ class Task:
     # is a work copy on this computer only, on a local branch from the branch of the task; `akasha join` merges it
     parts: list[dict] = field(default_factory=list)
     defs: dict = field(default_factory=dict)                # the keys of the definitions that the task adds, changes
+    # The parts of the notes between the steps (notes.py): part -> the digest of the part that passed, or "" before.
+    # Empty for a quick task, and for a task that an older Akasha started: it keeps no notes
+    notes: dict = field(default_factory=dict)
     session: str = ""               # the session of the agent engine that works on the task on this computer
     active_at: float = 0.0          # when that session last edited the work copy or named the task in a command
 

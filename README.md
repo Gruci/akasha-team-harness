@@ -10,7 +10,7 @@ When people who don't code build with AI on their own, the product drifts:<br>
 odd results, and changes nobody asked for.<br>
 With Akasha, each person approves one preview, and only that gets built, under your team's rules.
 
-<img src="https://img.shields.io/badge/version-2.0.0-7c3aed" alt="Version 2.0.0">
+<img src="https://img.shields.io/badge/version-2.0.1-7c3aed" alt="Version 2.0.1">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -73,7 +73,7 @@ Approve it in your own words, in any language, or tell what to change.<br>
 The AI does the rest, and tells you when the change is merged and when it is live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.0"` in that Python
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.1"` in that Python
 > (on Windows `py -3 -m pip install …`).
 
 * * *
@@ -101,8 +101,9 @@ The hooks hold the AI on these steps.
 
 Before the AI writes new code, `akasha start` shows it what the repository has: the guides of the team, the rules
 for names, the public names of the code near the task, and the definitions that the task touches. In Claude Code
-the work runs in one agent that keeps what it read from the preview to the build, and the reviews in another, so a
-long task does not fill the conversation with the person.
+the work runs in agents of its own, a new one for each step, and the reviews in another, so a long task does not
+fill the conversation with the person. Each step leaves notes with the file and the line of what it found, and the
+next step starts from them, not from the code again.
 
 The rules are outside the agent engine: in the commands, in two hooks of git, and on the server. An engine that
 reads no instruction of Akasha still meets them, and so does a person in a terminal.
@@ -239,6 +240,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
+| **v2.0.1** | Notes between the steps · one window for each preview · pnpm and ESLint by default |
 | **v2.0.0** | The map of the product · product checks · result review |
 
 Earlier versions: [Releases](https://github.com/Gruci/akasha-team-harness/releases)

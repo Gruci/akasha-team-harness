@@ -161,6 +161,8 @@ first code, from fixed text and the answers of the administrator, never from the
    the rules that the setup names for the config of ESLint. Ask whether the team wants a rule of complexity;
    its limit is of the team.
 5. The first task that adds a library adds the lock of its package tool. Propose `[pins] policy = "all"` then.
+   For TypeScript the package tool is pnpm: that task writes `packageManager` into `package.json` with one exact
+   version of pnpm, which the administrator chooses, and adds `pnpm-lock.yaml`.
 6. The first area that a task makes is not an example of the team. After a check of its real code, an
    administrator names it in the structure guide, in a task without a screen whose plan names the file, the
    line of the guide that it shows, and the checks that ran.

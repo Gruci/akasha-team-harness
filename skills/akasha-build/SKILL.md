@@ -44,23 +44,27 @@ step from `akasha status <task> --brief`, never from what an agent says about it
 | Who | What |
 |:--|:--|
 | You | The request and the questions, `akasha start`, `akasha preview` and the approval, the result for the person, `akasha land` |
-| akasha-worker | The draft of the preview, the plan, and the build with its checks: one step at each request |
+| akasha-worker | The draft of the preview, the plan, and the build with its checks: one step at each request, each step in a new context |
 | akasha-reviewer | The review of the plan before the build, and the review of the result after the checks passed |
 
 - The order of a full task: you ask and start → the worker drafts the preview → you show it and take the approval →
   the worker writes the plan → the reviewer reviews the plan → the worker builds and checks → the reviewer reviews the
   result → you land. A task without a screen and an agent task have no preview: the status tells their order.
-- Ask the same worker again for its next step (SendMessage, when this session started it): it keeps the code that it
-  read. Start a new worker only when that fails: the records and the status carry the task.
+- Start a new worker for each step: the preview, the plan, the build. A worker that goes on to the next step reads
+  all that it read before again at each call. Each step ends with its part of `notes.md` in the records (`akasha
+  notes <task>`), and the next worker starts from it: Akasha does not go on to the next step without it. Ask the same
+  worker again (SendMessage) only inside one step: for a repair after a review, or with the answer of the person
+  to its question.
 - Give each agent the name of the task and the Akasha command, and the decisions of the person that the records do
-  not hold yet. Never paste this conversation.
+  not hold yet. Never paste this conversation, the notes, or code: the agent reads the records itself.
 - Only you ask the person and take an approval. When a step returns a question, ask it, then call the step again
   with the answer.
 - A review: ask the akasha-reviewer agent with the request that the status gives (the task, the work copy, the digest,
   the Akasha command). After CHANGES, give the failed items to the worker, then ask the reviewer again. Ask the same
   reviewer for a plan after a repair; ask a new one for the result, so that it reads the change with fresh eyes.
-- A quick task is small: do each step yourself. Do the same where the agent app has no agents of this kind: then a
-  new session loses nothing where the status says "safe point".
+- A quick task is small: do each step yourself, without notes. Do the same where the agent app has no agents of
+  this kind: write the notes of each step yourself, and a new session loses nothing where the status says "safe
+  point".
 - If the team names a model for a step, the status shows it (`models —`): start that agent with it.
 
 ## With the person
@@ -74,9 +78,12 @@ step from `akasha status <task> --brief`, never from what an agent says about it
    the words of the person>" --name <short-name> --scope <file patterns>` with a shell timeout of 600000 ms. Both
    tasks go on when another one touches the same files: the task that merges later takes the earlier change.
 3. The preview specifies what to make: the decisions, the look, the values, and the rules. The task builds it as it
-   is, words included. Run `akasha preview <task>`: it opens in the browser. Tell the person what they see in a few
-   short lines: what changes, what stays the same, what cannot be undone, and how many rules you proposed. Then ask in
-   plain chat: "Shall I build it like this, or what should change?" Never ask this with a choice tool.
+   is, words included. Run `akasha preview <task>`: it opens the preview for the person, once for each version.
+   Never open it a second time yourself, in a browser or in a tab of the agent app. After a repair of a preview,
+   examine it with `akasha preview <task> --check`, which shows nothing: run `akasha preview <task>` again only for
+   a version that the person did not see. Tell the person what they see in a few short lines: what changes, what
+   stays the same, what cannot be undone, and how many rules you proposed. Then ask in plain chat: "Shall I build it
+   like this, or what should change?" Never ask this with a choice tool.
 4. When the message of the person approves the preview as it is, in any words and any language, run `akasha approve
    <task>`. A yes with a change ("good, but move the table") is a change: change the preview and show it again. When
    you cannot tell whether a message approves, ask again. Never run it without a message of the person.
@@ -109,9 +116,11 @@ Each other step stays as it is.
 
 ## The landing
 
-Write `summary.md` in the records folder, in the language of the person: why, what changed, and how to undo it when
-a revert is not enough. Run `akasha check <task>`, then `akasha land <task> --wait 540` in the background, with a
-shell timeout of 600000 ms. It waits by itself; run the same command again while it says WAITING or DEPLOYING.
+The worker wrote `summary.md` at the end of the build. When the status says that it is missing, write it in the
+records folder from the part `## Build` of `notes.md`, in the language of the person: why, what changed, and how to
+undo it when a revert is not enough. Run `akasha check <task>`, then `akasha land <task> --wait 540` in the
+background, with a shell timeout of 600000 ms. It waits by itself; run the same command again while it says WAITING
+or DEPLOYING.
 
 | It says | Do |
 |:--|:--|

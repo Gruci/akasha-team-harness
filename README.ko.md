@@ -10,7 +10,7 @@
 엉뚱한 결과가 나오고, 아무도 시키지 않은 곳까지 바뀝니다.<br>
 Akasha 와 함께면 각자 시안 하나를 승인하고, 그것만 팀 규칙대로 만들어집니다.
 
-<img src="https://img.shields.io/badge/version-2.0.0-7c3aed" alt="버전 2.0.0">
+<img src="https://img.shields.io/badge/version-2.0.1-7c3aed" alt="버전 2.0.1">
 <a href="#라이선스"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT 라이선스"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 이상">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="엔진: Claude Code, Codex">
@@ -73,7 +73,7 @@ AI 가 분명해질 때까지 묻고, 브라우저에 시안을 띄웁니다.<br
 나머지는 AI 가 하고, 병합되면 알려 주고, 배포가 끝나면 다시 알려 줍니다.
 
 > **참고:** Python 3.11 이상(훅이 `py -3`, `python3`, `python` 순서로 찾습니다), git, GitHub, GitHub 명령줄 `gh` 가
-> 필요합니다. Codex 는 그 Python 에 `pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.0"` 도 필요합니다
+> 필요합니다. Codex 는 그 Python 에 `pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.1"` 도 필요합니다
 > (Windows 에서는 `py -3 -m pip install …`).
 
 * * *
@@ -99,9 +99,10 @@ AI 가 분명해질 때까지 묻고, 브라우저에 시안을 띄웁니다.<br
 - 다른 폴더에서 시작한 대화가 이 레포를 고치거나 `git -C` 로 다뤄도 같은 규칙이 적용됩니다.
 
 AI 가 새 코드를 쓰기 전에 `akasha start` 가 레포에 이미 있는 것을 보여 줍니다. 팀의 가이드, 이름 규칙,
-과업 가까이에 있는 코드의 공개 이름, 과업이 건드리는 정의입니다. Claude Code 에서는 작업을 에이전트 하나가
-시안부터 구현까지 읽은 것을 들고 이어 가고, 검토는 다른 에이전트가 맡아서, 긴 과업이 사람과의 대화를 채우지
-않습니다.
+과업 가까이에 있는 코드의 공개 이름, 과업이 건드리는 정의입니다. Claude Code 에서는 작업을 단계마다 새
+에이전트가 맡고 검토는 다른 에이전트가 맡아서, 긴 과업이 사람과의 대화를 채우지 않습니다. 단계가 끝나면
+알아낸 것을 파일과 줄 번호를 붙여 인계 기록으로 남기고, 다음 단계는 코드를 다시 뒤지지 않고 그 기록에서
+시작합니다.
 
 규칙은 에이전트 엔진 밖에 있습니다. 명령, git 훅 두 개, 서버입니다. Akasha 의 지시문을 읽지 않는 엔진도, 터미널에서
 직접 git 을 치는 사람도 같은 규칙을 만납니다.
@@ -238,6 +239,7 @@ domains/catalog — 상품과 가격을 보관한다
 
 | 버전 | 변경 내용 |
 |:--|:--|
+| **v2.0.1** | 단계 사이의 인계 기록 · 시안 창은 판마다 한 번 · pnpm·ESLint 기본값 |
 | **v2.0.0** | 제품의 지도 · 제품 검사 · 결과물 검토 |
 
 이전 버전: [Releases](https://github.com/Gruci/akasha-team-harness/releases)
