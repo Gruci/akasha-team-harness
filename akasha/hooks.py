@@ -116,11 +116,9 @@ def _team_lines(root: Path) -> list[str]:
     # No map at the start of a session: the first one takes seconds. `akasha start` shows the map of its scope
     lines.append("[AKASHA] Before new code: `akasha find <words>` searches the names and the descriptions of the "
                  "code that the repository has, and `akasha map <folder>` shows each public name of a folder.")
-    differs = version.mismatch(team.version, root=root)
+    differs = version.mismatch(team.version, root=root) or version.other_patch(team.version, root=root)
     if differs:
         lines.append(f"[AKASHA] {differs} Tell the person.")
-    elif version.stale(team.version):
-        lines.append(f"[AKASHA] {version.stale(team.version)}. Tell the person.")
     elif team.unknown and team.version:
         lines.append(f"[AKASHA] akasha.toml has settings that Akasha {team.version}, the version of the team, does not "
                      f"know ({', '.join(team.unknown[:3])}). Tell an administrator: they remove them, or raise [team] "

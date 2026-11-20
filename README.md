@@ -240,7 +240,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
-| **v2.0.2** | A computer takes each patch by itself · a raise of a patch changes two lines of the repository |
+| **v2.0.2** | The team fixes the version for each computer · `/plugin update akasha@akasha` moves a computer |
 | **v2.0.1** | Notes between the steps · one window for each preview · pnpm and ESLint by default |
 | **v2.0.0** | The map of the product · product checks · result review |
 

@@ -297,8 +297,8 @@ def run(root: Path, apply: bool = False, choice: Choice = Choice()) -> list[str]
     if wanted != VERSION:
         report.append(f"The team uses Akasha {wanted}, and this computer runs {VERSION}: the files pin {wanted}, and "
                       f"the workflows and the agent instructions (AGENTS.md, CLAUDE.md, .codex/hooks.json) come from "
-                      f"{VERSION}. After the merge each computer moves to {wanted}. When `akasha doctor` then names old "
-                      "server rules, run `akasha setup` again in a task.")
+                      f"{VERSION}. After the merge each computer moves to {wanted} with `{version.UPDATE}`. When "
+                      "`akasha doctor` then names old server rules, run `akasha setup` again in a task.")
     main = repo.main_root(root)
     in_task = main is not None and any(task.workcopy and Path(task.workcopy).resolve() == root.resolve()
                                        for task in all_local(main))
@@ -450,13 +450,8 @@ def doctor(root: Path) -> list[tuple[bool, str]]:
     except config.ConfigError as error:
         return found + [(False, f"{CONFIG_FILE}: {error}")]
     if team.version:
-        found.append((not version.mismatch(team.version, root=root), version.mismatch(team.version, root=root) or
-                      (f"Akasha {VERSION}, the version of the team" if team.version == VERSION else
-                       f"Akasha {VERSION}, with the same rules as {team.version}, the version of the team" +
-                       (f" (to take {team.version}, {version.update(team.version)})"
-                        if version.older(team.version) and not version.stale(team.version) else ""))))
-        if version.stale(team.version) and not version.mismatch(team.version, root=root):
-            found.append((False, version.stale(team.version)))
+        differs = version.mismatch(team.version, root=root) or version.other_patch(team.version, root=root)
+        found.append((not differs, differs or f"Akasha {VERSION}, the version of the team"))
         if team.unknown and team.version == VERSION:
             found.append((False, f"{CONFIG_FILE} has {', '.join(team.unknown[:3])}, which Akasha {VERSION}, the "
                                  "version of the team, does not know (an administrator removes them, or raises "

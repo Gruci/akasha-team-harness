@@ -11,10 +11,3 @@ def source(version: str) -> str:
 
 
 SOURCE = source(VERSION)                     # the pip source of this Akasha
-
-
-def line(version: str) -> str:
-    """The branch of the public repository that the plugin of Claude Code follows: one for each minor version, for
-    example v2.0. Each release of a patch moves it, so a computer takes a patch without a change in the repository of
-    the team. The tag of a release (v2.0.2) never moves: pip and the server install from it."""
-    return "v" + ".".join(version.split(".")[:2])

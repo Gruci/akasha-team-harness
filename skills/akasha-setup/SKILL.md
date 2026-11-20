@@ -104,8 +104,10 @@ their language and in simple words.
    Repair what fails, for example a checker that examines the new files. Then ask the administrator to merge it. Until
    this merge, the main checkout is free to change as the own rules of the repository allow. After it, each change is
    an Akasha task.
-11. Tell the person how teammates join: install the plugin once (`/plugin install akasha@akasha`), log in with
-    `gh auth login`, and open the repository. The akasha-join skill helps each of them.
+11. Tell the person how teammates join: in the top folder of the repository, run `claude plugin marketplace add
+    ./.github/akasha` and `claude plugin install akasha@akasha` once, log in with `gh auth login`, and open the
+    repository. The akasha-join skill helps each of them. The administrator runs the first command too: the
+    marketplace file of the repository then fixes the Akasha of each computer.
 
 ## The map of a repository that has code
 

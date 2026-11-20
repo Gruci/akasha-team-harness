@@ -3,9 +3,11 @@
 An administrator chooses the version of the team. The CI and the watch run that version itself: the server is the
 judge of each change. A computer runs that version or another patch of the same minor version (2.0.x): a patch
 changes no rule. An Akasha of another minor version, older or newer, starts, continues, and lands no task, because it
-runs other rules than the server. The shared settings of Claude Code make the plugin follow the branch of that minor
-version (claude.py), so a computer takes each patch by itself, also before the team raises its version. Only a new
-minor version changes the settings. Without the setting, nothing is compared."""
+runs other rules than the server. The team fixes the version for the computers too, as it fixes the version of
+Python: the marketplace file of the repository (claude.py) names the release tag of that version, and nothing moves a
+computer without a change of that file. After the change, one command of Claude Code moves a computer: `/plugin update
+akasha@akasha`. A computer that runs another patch is told, and nothing stops. Without the setting, nothing is
+compared."""
 
 from __future__ import annotations
 
@@ -13,10 +15,14 @@ import json
 import os
 from pathlib import Path
 
-from akasha import REPOSITORY, VERSION, claude, line, repo, source
+from akasha import REPOSITORY, VERSION, claude, repo, source
 
 CHECK = "version"                            # the name of the version check of the server
-# The commands of Claude Code that take the newest patch: the second one does not refresh the marketplace itself
+# The one command of Claude Code that moves a computer to the version that the team fixes, newer or older. It reads
+# the marketplace file of the repository where it is, so it needs no refresh of a marketplace before it
+UPDATE = "/plugin update akasha@akasha"
+# Where the team fixes no version ([team] version is empty): the commands that take the newest Akasha of the
+# marketplace that this computer follows. The second one does not refresh the marketplace itself
 REFRESH = "/plugin marketplace update akasha, then /plugin update akasha@akasha, then restart the agent app"
 
 
@@ -29,19 +35,13 @@ def older(wanted: str, running: str = VERSION) -> bool:
     return bool(wanted) and number(running) < number(wanted)
 
 
-def _ref(text: str | None) -> str:
-    """The ref that settings of Claude Code name for the marketplace of Akasha, or ""."""
-    try:
-        return str(json.loads(text or "")["extraKnownMarketplaces"][claude.MARKETPLACE]["source"].get("ref") or "")
-    except (ValueError, KeyError, TypeError, AttributeError):
-        return ""
-
-
 def _pin(text: str | None) -> str:
-    """The branch of the minor version that shared settings of Claude Code name for the plugin of Akasha, or "".
-    Settings that an Akasha before 2.0.2 wrote name the tag of a patch (v2.0.1): that is the branch v2.0."""
-    ref = _ref(text)
-    return line(ref.removeprefix("v")) if ref else ""
+    """The version that a marketplace file of the team fixes for the plugin of Akasha, or ""."""
+    try:
+        plugins = json.loads(text or "")["plugins"]
+        return next(str(item["version"]) for item in plugins if item["name"] == claude.MARKETPLACE)
+    except (ValueError, KeyError, TypeError, StopIteration):
+        return ""
 
 
 def own_settings() -> Path:
@@ -49,37 +49,37 @@ def own_settings() -> Path:
     return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "settings.json"
 
 
-def _renew(wanted: str) -> str:
-    """The commands that replace the own declaration of this person. The first one names its scope: without
-    `--scope user`, Claude Code also removes the marketplace and the plugin from the shared settings of the
-    repository. The last one is `update`: `install` changes no plugin that is there."""
-    return (f"`claude plugin marketplace remove akasha --scope user`, `claude plugin marketplace add "
-            f"{REPOSITORY}#{line(wanted)}`, and `claude plugin update akasha@akasha`, then restart")
+def market(root: Path) -> Path:
+    """The folder of the marketplace of the team, in the main checkout: Claude Code reads the file where it is, and
+    the work copy of a task goes away."""
+    return (repo.main_root(root) or root) / claude.MARKET
 
 
-def stale(wanted: str, settings: Path | None = None) -> str:
-    """Why this computer takes no new patch, or "": the own declaration of this person names another ref of the
-    marketplace of Akasha than the branch of the minor version of the team. It wins over the shared settings of the
-    repository. An Akasha before 2.0.2 told the person to add the tag of a patch (v2.0.1), and a tag never moves."""
+def _register(root: Path, settings: Path | None = None) -> str:
+    """The step before the update, once for a computer that takes Akasha from another place than the folder of a
+    team, for example from a tag of the public repository that an older Akasha told the person to add: there
+    `/plugin update` finds nothing new. The command replaces that declaration, and keeps the plugin. "" when the
+    computer follows a folder, and when Claude Code holds no declaration of this person (Codex)."""
     path = settings or own_settings()
     try:
-        ref = _ref(path.read_text(encoding="utf-8-sig"))
-    except OSError:
+        kind = json.loads(path.read_text(encoding="utf-8-sig"))["extraKnownMarketplaces"][claude.MARKETPLACE]["source"]
+        kind = str(kind["source"])
+    except (OSError, ValueError, KeyError, TypeError):
         return ""
-    if not wanted or not ref or ref == line(wanted):
+    if kind == "directory":
         return ""
-    return (f"Claude Code on this computer follows {ref} of the marketplace of Akasha ({path.as_posix()} names it), "
-            f"not {line(wanted)}, the branch that the team follows, so it takes no new patch. Once, run "
-            f"{_renew(wanted)}")
+    return (f'once run `claude plugin marketplace add "{market(root).as_posix()}"` (this computer takes Akasha from '
+            f"a {kind} source, where no team fixes the version), then ")
 
 
 def _pull(root: Path, wanted: str) -> str:
-    """The step before a restart when this checkout is behind: the default branch on the server names the minor
-    version of the team, and the shared settings of this checkout do not yet (also when they name nothing)."""
-    path, branch = root / claude.SETTINGS, repo.default_branch(root)
+    """The step before the update when the main checkout is behind: the default branch on the server fixes the
+    version of the team in the marketplace file, and the main checkout does not yet (also when it has no file)."""
+    main, branch = repo.main_root(root) or root, repo.default_branch(root)
+    path = main / claude.MARKET_FILE
     here = _pin(path.read_text(encoding="utf-8") if path.is_file() else None)
-    there = _pin(repo.git(root, "show", f"origin/{branch}:{claude.SETTINGS}").stdout) if branch else ""
-    return f"pull the default branch into {root.as_posix()}, then " if there == line(wanted) != here else ""
+    there = _pin(repo.git(root, "show", f"origin/{branch}:{claude.MARKET_FILE}").stdout) if branch else ""
+    return f"pull the default branch into {main.as_posix()}, then " if there == wanted != here else ""
 
 
 def same_rules(wanted: str, running: str = VERSION) -> bool:
@@ -87,16 +87,22 @@ def same_rules(wanted: str, running: str = VERSION) -> bool:
     return number(wanted)[:2] == number(running)[:2]
 
 
-def update(wanted: str, root: Path | None = None, running: str = VERSION) -> str:
-    """The commands that move this computer to the version of the team. Another patch of the same minor version: the
-    plugin follows the branch of the minor version, so a refresh takes it. Another minor version: a restart loads the
-    plugin from the branch that the shared settings name, and the three commands move a computer whose own
-    declaration of the marketplace (`claude plugin marketplace add` wrote it) still names the old one."""
-    if same_rules(wanted, running):
-        return f'in Claude Code run {REFRESH}. For Codex run `pip install "{source(wanted)}"`'
-    pull = _pull(root, wanted) if root else ""
-    return (f"in Claude Code {pull}restart the agent app: it loads the Akasha that .claude/settings.json names. When "
-            f'it still runs another one, run {_renew(wanted)}. For Codex run `pip install "{source(wanted)}"`')
+def update(wanted: str, root: Path | None = None, settings: Path | None = None) -> str:
+    """How this computer moves to the version of the team: one command of Claude Code, after a pull when the main
+    checkout is behind, and after the registration of the marketplace of the repository when the computer does not
+    follow one yet."""
+    first = _pull(root, wanted) + _register(root, settings) if root else ""
+    return (f"in Claude Code {first}run `{UPDATE}`, then restart the agent app. For Codex run "
+            f'`pip install "{source(wanted)}"`')
+
+
+def other_patch(wanted: str, running: str = VERSION, root: Path | None = None) -> str:
+    """What the person does on a computer that runs another patch than the team fixes, older or newer, or "". The
+    rules are the same, so nothing stops: the session start notice and `akasha doctor` tell it."""
+    if not wanted or wanted == running or not same_rules(wanted, running):
+        return ""
+    return (f"This computer runs Akasha {running}, and the team fixes {wanted} ([team] version in akasha.toml). To "
+            f"move to {wanted}, {update(wanted, root)}.")
 
 
 def mismatch(wanted: str, running: str = VERSION, root: Path | None = None) -> str:
