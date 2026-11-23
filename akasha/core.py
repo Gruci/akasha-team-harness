@@ -16,7 +16,7 @@ from pathlib import Path
 
 from akasha.checks import matches
 from akasha.config import Team
-from akasha.repo import git, gh_json, names, origin, paths, paths_at
+from akasha.repo import batches, git, gh_json, names, origin, paths, paths_at
 
 PY = (".py",)
 JS = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
@@ -277,7 +277,8 @@ def approver(root: Path, tree: Path, number: int, team: Team, files: list[str]) 
         commit = str((node.get("commit") or {}).get("oid") or "")
         if node.get("state") == "APPROVED" and commit \
                 and git(tree, "cat-file", "-e", f"{commit}^{{commit}}").returncode == 0 \
-                and git(tree, "diff", "--quiet", commit, "HEAD", "--", *files).returncode == 0:
+                and all(git(tree, "diff", "--quiet", commit, "HEAD", "--", *part).returncode == 0
+                        for part in batches(files)):
             return login
     return ""
 

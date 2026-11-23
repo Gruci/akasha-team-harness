@@ -6,22 +6,23 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from akasha.repo import git
+from akasha.repo import batches, git
 
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 
 def added(tree: Path, base: str, paths: list[str]) -> dict[str, list[tuple[int, str]]]:
     """path -> the lines that the work copy has and the base commit does not: (line number, text). One process of
-    git reads each file. A binary file has no lines."""
-    if not paths:
-        return {}
-    done = git(tree, "-c", "core.quotePath=false", "diff", "-U0", "--no-renames", "--no-color", base, "--", *paths)
-    if done.returncode:
-        raise RuntimeError(f"git diff failed: {done.stderr.strip()[:300]}")
+    git reads the files of one command line. A binary file has no lines."""
+    lines: list[str] = []
+    for part in batches(paths):
+        done = git(tree, "-c", "core.quotePath=false", "diff", "-U0", "--no-renames", "--no-color", base, "--", *part)
+        if done.returncode:
+            raise RuntimeError(f"git diff failed: {done.stderr.strip()[:300]}")
+        lines += done.stdout.splitlines()
     found: dict[str, list[tuple[int, str]]] = {}
     path, at = "", 0
-    for line in done.stdout.splitlines():
+    for line in lines:
         if line.startswith("+++ "):
             path = line[6:] if line.startswith("+++ b/") else ""
             continue

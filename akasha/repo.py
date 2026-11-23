@@ -49,6 +49,21 @@ def git(cwd: Path, *args: str, timeout: float | None = None, env: dict | None = 
     return subprocess.CompletedProcess(["git", *args], process.returncode, output, errors)
 
 
+def batches(paths: Iterable[str], room: int = 20000) -> Iterable[list[str]]:
+    """The paths in parts, each short enough for one command line. Windows takes at most 32,767 characters in a
+    command line, and a change of more than a thousand files does not fit."""
+    part: list[str] = []
+    size = 0
+    for path in paths:
+        if part and size + len(path) + 1 > room:
+            yield part
+            part, size = [], 0
+        part.append(path)
+        size += len(path) + 1
+    if part:
+        yield part
+
+
 def names(cwd: Path, *args: str, env: dict | None = None) -> list[str]:
     """File names from a git listing. Names with Korean or other non-ASCII letters stay as they are. The option -z
     goes before `--`: after it, git takes -z as a file pattern and gives an empty listing without an error."""
