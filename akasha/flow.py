@@ -14,7 +14,8 @@ from pathlib import Path
 from collections.abc import Iterable
 
 from akasha import (agent, approval, archive, board, checks, codemap, config, consistency, core, definitions, evidence,
-                    forms, guard, pr, product, quick, repo, review, screen, sheets, spec, trace, version, work)
+                    forms, guard, pr, product, quick, repo, review, screen, sheets, spec, trace, usage, version,
+                    work)
 from akasha import notes as step_notes     # `notes` names the lines that a command gives
 from akasha.config import Team
 from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id,
@@ -88,6 +89,23 @@ def _plan_step(task: Task) -> str:
         return f"The person saw the plan more than a day ago. Show it again: `akasha preview {task.id}`."
     return (f"Wait for the message of the person. When it approves the plan, run `akasha approve {task.id}`; else "
             "change the plan as the person tells, and ask the akasha-reviewer agent again.")
+
+
+def stage(task: Task, reviews: bool = False) -> str:
+    """The step of the task now, for the record of the usage (usage.py): preview, plan, build, or land, and "" for
+    a task that ended. `reviews`: the step of a reviewer that stops now: the review of the plan, or the review of
+    the result, which comes after the checks passed once. A quick task has no plan: its review judges the change."""
+    if reviews:
+        return "result" if quick.is_quick(task) or (review.passed(task) and task.checks.get("commit")) else "review"
+    if task.status in ("merged", "closed"):
+        return ""
+    if task.status == "landing":
+        return "land"
+    if quick.is_quick(task):
+        return "build"
+    if task.kind == "full" and (task.status == "preview" or not task.approval):
+        return "preview"
+    return "build" if not gate(task) else "plan"
 
 
 def next_step(task: Task) -> str:
@@ -234,6 +252,7 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
             raise ValueError(problem)
     request = _request(root, team, owner, fast)
     task = Task(id=new_id(title, name), title=title.strip(), scope=patterns, records_dir=team.records_dir,
+                stats={"uid": usage.new_uid()},
                 kind="agent" if request else "quick" if fast else screen.KIND if no_screen else "full")
     task.branch = team.branch_prefix + task.id
     task.records_name = task.id
@@ -307,6 +326,7 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
         save(root, task)
         pr.update(root, task)
         board.forget(root)
+    usage.note_event(root, task, "start", stage(task))
     return task, notes + _prepare(team, path)        # after the pull request: a slow setup does not lose the task
 
 
@@ -426,6 +446,7 @@ def preview(root: Path, task_id: str, text: str = "", show: bool = True, again: 
     task.preview_sha, task.shown_at, task.shown_in = sha, time.time(), session
     task.heard = {}
     save(root, task)
+    usage.note_event(root, task, "shown", stage(task) if changed else None, digest=sha)
     if board.available(root) and task.number:
         # Only a record: no run of the CI. The push of the landing runs it
         work.commit(Path(task.workcopy), f"akasha: preview of {task.title} [skip ci]")
@@ -544,6 +565,7 @@ def _show_plan(root: Path, task: Task) -> tuple[Task, str]:
     task.preview_sha, task.shown_at, task.shown_in = sha, time.time(), approval.session(root)
     task.heard = {}
     save(root, task)
+    usage.note_event(root, task, "shown", digest=sha)
     if board.available(root) and task.number:
         work.commit(Path(task.workcopy), f"akasha: plan of {task.title} [skip ci]")
         try:
@@ -619,6 +641,7 @@ def approve(root: Path, task_id: str, here: bool = False, **terminal) -> tuple[T
         task.approval["change_sha"] = change
         save(root, task)
     evidence.keep(task)                               # the server reads the approval from the records
+    usage.note_event(root, task, "approved", stage(task))
     if task.kind == "full":                           # the frame of the next step: the plan
         forms.put(record(task, PLAN), forms.PLAN)
     if board.available(root) and task.number:
@@ -658,6 +681,7 @@ def result(root: Path, task_id: str) -> str:
                          "when the checks of GitHub passed")
     text = agent.show(root, task, approval.session(root))
     save(root, task)
+    usage.note_event(root, task, "shown")
     if board.available(root) and task.number:
         pr.update(root, task)
     return text
@@ -823,6 +847,9 @@ def check(root: Path, task_id: str, only: tuple[str, ...] = ()) -> tuple[checks.
                 notes.append(f"note — {error}. The landing pushes again")
             pr.update(root, task)
     save(root, task)
+    if not only:                                      # the record of the usage: a failure starts a repair
+        usage.note_event(root, task, "check", verdict="FAIL" if failed else "PASS" if checks.passed(result.status)
+                         else "NONE")
     return result, notes
 
 
@@ -890,6 +917,7 @@ def _link(root: Path, task: Task, session: str) -> tuple[Task, str]:
         again = (f" The {what} was shown in another session: show it here with `{command}`, then ask the person. "
                  "Only then their words approve it.")
     save(root, task)
+    usage.note_event(root, task, "taken", stage(task), **({"was": was} if was and was != session else {}))
     moved = " The session that held it before is stopped at its next edit." if was and was != session else ""
     return task, f"Task {task.id} continues in this session.{moved}{again} next: {next_step(task)}"
 
@@ -1044,6 +1072,7 @@ def resume(root: Path, ref: str, force: bool = False) -> tuple[Task, list[str]]:
     if mine:
         task.session, task.active_at = mine, time.time()
     save(root, task)
+    usage.note_event(root, task, "resumed", stage(task))
     notes = _prepare(team, path)
     if not mine:
         notes.append(f"note — Akasha cannot tell which session this is. Before the first edit: `akasha status "
@@ -1070,6 +1099,7 @@ def upgrade(root: Path, task_id: str) -> Task:
     evidence.forget(task)
     save(root, task)
     trace.note(root, "upgraded", task=task.id)
+    usage.note_event(root, task, "upgraded", stage(task))
     if board.available(root) and task.number:
         pr.update(root, task)
     return task
@@ -1212,9 +1242,19 @@ def handoff(root: Path, task_id: str) -> str:
     tree = Path(task.workcopy)
     work.commit(tree, f"akasha: handoff of {task.title}")
     work.push(tree, task.branch)
+    owner = task.owner
     task.owner, task.checks["handoff"] = "", work.head(tree)
+    usage.freeze(root, task, usage.HANDOFF)           # the next computer adds its own sums to these
     save(root, task)                                  # tidy ends what is left of a task that this computer handed off
-    pr.update(root, task)
+    if not pr.update(root, task) and task.number and board.available(root):
+        # The pull request carries the state of the task to the next computer, with the usage so far and each
+        # CHANGES that is open: without it the handoff does not go on, and the task stays here
+        task.owner = owner
+        task.checks.pop("handoff")
+        save(root, task)
+        raise RuntimeError(f"GitHub did not take the update of the pull request, so task {task.id} stays on this "
+                           f"computer. Run `akasha handoff {task.id}` again")
+    usage.note_event(root, task, "handoff", "")
     if task.number:
         repo.gh(root, "pr", "edit", str(task.number), "--remove-assignee", "@me")
     problem = drop(root, task, server=task.checks["handoff"])
@@ -1235,8 +1275,14 @@ def cancel(root: Path, task_id: str, force: bool = False) -> str:
         if task.number:
             repo.gh(root, "pr", "close", str(task.number), "--delete-branch", "--comment",
                     "Akasha: the task is cancelled.")
-        return drop(root, task, force=True) or f"cancelled task {task.id}"
-    problem = drop(root, task, force=True) if force else drop(root, task, server=str(found.get("headRefOid") or "?"))
+        problem = drop(root, task, force=True)
+    else:
+        problem = drop(root, task, force=True) if force else \
+            drop(root, task, server=str(found.get("headRefOid") or "?"))
+    if not problem:                                   # no status is saved: the task left this computer now
+        usage.note_event(root, task, "cancelled", "")
+    if not holder:
+        return problem or f"cancelled task {task.id}"
     return problem or f"@{holder} holds task {task.id}: removed only the copy on this computer"
 
 
@@ -1278,6 +1324,7 @@ def tidy(root: Path, timeout: float = 20) -> list[str]:
         if state in ("MERGED", "CLOSED"):
             task.status = state.lower()
             save(root, task)
+            usage.note_event(root, task, state.lower(), "")
             # The branch of a merged or closed task leaves the server, so that a new task can take the name and
             # no branch piles up. GitHub does it where the repository deletes branches on a merge; an auto-merge
             # of gh does not, and a closed pull request never. GitHub keeps the commits of a closed pull request
@@ -1288,6 +1335,8 @@ def tidy(root: Path, timeout: float = 20) -> list[str]:
             lines += [kept] if kept else []
         elif state == "OPEN" and (holder := _holder(root, found)):
             problem = drop(root, task, server=head)
+            if not problem:                           # the session works on it no more
+                usage.note_event(root, task, "dropped", "")
             lines.append(problem or f"@{holder} holds task {task.id} now: the copy on this computer is removed")
     return lines
 

@@ -11,7 +11,7 @@ the merged rules, also when its checkout is old.
 [team]
 admins = ["lead", "dba"]           # GitHub names: they keep the rules, and approve a change of the structure
 agents = ["ops-bot"]               # GitHub names of agent accounts: a person approves their result before the merge
-version = "2.0.3"                  # the Akasha of the team: the CI, the watch, and each computer run it
+version = "2.0.4"                  # the Akasha of the team: the CI, the watch, and each computer run it
 
 [risk]
 paths = ["db/**", "**/migrations/**", "deploy/**"]     # only an administrator changes them
@@ -96,7 +96,7 @@ approves the preview of their own request; the person who asked an agent account
 | `admins` | The GitHub names of the administrators. Only they change `akasha.toml`, `.github/`, CODEOWNERS, and the paths of `[risk]`. They change the GitHub settings, and get the questions of `akasha help` and the reports of the watch. The AI talks with them as with developers, and they can make a task without a screen (`[preview] screens`) |
 | `own_procedure` | The GitHub names of the people who keep the own procedure of the repository outside Akasha, for example the administrator who built it. Akasha does not stop their work outside its tasks (their own work copies, edits in the main checkout, their merges), and the watch accepts their pull requests when the checks passed. The other rules (a force push, a push to the default branch, `.env`) stay |
 | `agents` | The GitHub names of agent accounts: a program (the relay) runs their sessions and gives them the requests of people. Each task of such an account is an agent task, without a preview: the person approves the result before the merge. An agent account has the rules of a teammate, so it cannot also be in `admins` or `own_procedure`. An older Akasha does not know this key: it treats an agent account as a teammate, which needs a preview |
-| `version` | The version of Akasha that the team uses, for example `"2.0.3"`. An administrator chooses it: `akasha setup` writes the running version only when the setting is empty, and never changes it after that. The CI and the watch run that version itself, and each computer too: after a raise, `/plugin update akasha@akasha` moves a computer, and no computer takes a new Akasha by itself. A computer of another patch of the same minor version (2.0.x) is told and does not stop: a patch changes no rule. An Akasha of another minor version starts, continues, and lands no task. See "Change the rules, or update Akasha" in [set up a team](admin.md) |
+| `version` | The version of Akasha that the team uses, for example `"2.0.4"`. An administrator chooses it: `akasha setup` writes the running version only when the setting is empty, and never changes it after that. The CI and the watch run that version itself, and each computer too: after a raise, `/plugin update akasha@akasha` moves a computer, and no computer takes a new Akasha by itself. A computer of another patch of the same minor version (2.0.x) is told and does not stop: a patch changes no rule. An Akasha of another minor version starts, continues, and lands no task. See "Change the rules, or update Akasha" in [set up a team](admin.md) |
 
 ## `[risk]`
 

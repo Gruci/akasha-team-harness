@@ -38,11 +38,12 @@ or `akasha <command>`.
 | `names [<language>]` | The rules for names: the whole card, or the entries of one language. `akasha start` and `status --review` give the lines that fit the task |
 | `board [--scope <patterns>]` | The open tasks of the team. With `--scope`, only the open tasks that plan or already change files of these patterns, before a start: the AI reads what they change before it plans |
 | `resume <task or #number> [--force]` | Continue a task of the board on this computer. It runs `[checks] setup` in the new work copy |
-| `handoff <task>` | Save the work on the server and free the task |
+| `handoff <task>` | Save the work on the server and free the task. When GitHub does not take the update of the pull request, the task stays on this computer: run it again |
 | `cancel <task> [--force]` | Stop a task for good: close its pull request and remove the work copy. When another person holds it, only remove the copy here |
 | `help <task> "<text>"` | Ask the administrators on the pull request of the task for what only they can do: a file that only they change, a check or a deployment that is broken for each task, a step on the server. A question about the business goes to the person who asked for the change |
 | `tidy` | Remove the work copies of the tasks whose pull request merged or closed, or that another person holds now, and the branch of each of them on the server. Each session start does it |
-| `retro` | What stops the work again and again |
+| `retro` | What stops the work again and again, and what the merged tasks used: each step on average, the tasks that used most, and what a CHANGES of a review costs |
+| `usage <task>` | The tokens that the task used on this computer, by phase (the preview, each repair of the preview after the person saw it, the plan, its review, each repair after a CHANGES, the build, each repair of failed checks, the review of the result, the landing), by who used them (the main session, the worker, the reviewer, another agent), and by model: the rounds, the calls, the largest call, the tokens, and an estimate at the list prices of the API. The phases add up to the task. With the price of each time of each repair, and what could not be read. It changes nothing |
 | `version` | The version of Akasha |
 
 The results of `land`: MERGED, DEPLOYED, and CLOSED end the task (exit code 0). WAITING and DEPLOYING ask for the same
@@ -57,4 +58,4 @@ The workflows run `check --ci` (the check of Akasha) and `server watch` (the wat
 run `hook --event` through `hook.sh`, which finds Python 3.11 or higher. The hooks of git run `hook --git pre-commit`
 and `hook --git pre-push`. A shell line that is exactly one of these commands with the
 launcher of the plugin runs without a permission prompt: `start`, `upgrade`, `split`, `join`, `preview`, `notes`, `approve`, `status`, `check`, `land`,
-`result`, `board`, `help`, `handoff`, `resume` (without `--force`), `tidy`, `doctor`, `version`, `retro`.
+`result`, `board`, `help`, `handoff`, `resume` (without `--force`), `tidy`, `doctor`, `version`, `retro`, `usage`.

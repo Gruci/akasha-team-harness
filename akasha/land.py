@@ -20,7 +20,8 @@ import re
 import time
 from pathlib import Path
 
-from akasha import agent, archive, board, checks, core, github, pr, quick, repo, review, trace, turn, version, work
+from akasha import (agent, archive, board, checks, core, github, pr, quick, repo, review, trace, turn, usage, version,
+                    work)
 from akasha.config import Team
 from akasha.flow import ask_help, drop, gate, pending, rules, taken
 from akasha.task import SUMMARY, Task, load, record, records, save
@@ -172,6 +173,10 @@ def _hand_over(root: Path, team: Team, task: Task, akasha_merges: bool) -> tuple
     task.status = "landing"
     task.checks["landed"] = work.head(tree)
     turn.enter(task)                                  # the end of the line of the landings (turn.py)
+    # The usage of the task so far goes into its stats, and with them into the pull request: the retro of the
+    # team reads it there. The landing that sees the merge counts once more (_finish)
+    usage.note_event(root, task, "landing", "land")
+    usage.freeze(root, task, usage.LANDING)
     # The pull request names the folder of the records. When GitHub did not take the update, the landing writes it
     # again before anything merges: follow does it
     task.checks["unwritten"] = True
@@ -274,6 +279,7 @@ def _failed(root: Path, task: Task, view: dict, failed: list[str], cancelled: bo
         counts[name] = counts.get(name, 0) + 1
     task.status = "approved"
     save(root, task)
+    usage.note_event(root, task, "back", "build")
     if cancelled:
         return FAILED_CHECK, [f"the check {', '.join(failed)} was cancelled on GitHub again: {view.get('url')}/checks. "
                               f"Ask an administrator: `akasha help {task.id} \"<the check was cancelled>\"`"]
@@ -332,6 +338,7 @@ def _follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: 
         if _moved(task):                              # for example an edit while the landing waits in the background
             task.status = "approved"
             save(root, task)
+            usage.note_event(root, task, "back", "build")
             return BLOCKED, [f"the work copy changed after the checks. Run `akasha check {task.id}`, then land again"]
         if view.get("isDraft"):
             done = repo.gh(root, "pr", "ready", str(task.number))
@@ -341,6 +348,7 @@ def _follow(root: Path, team: Team, task: Task, deadline: float, akasha_merges: 
         if view.get("mergeStateStatus") == "DIRTY":
             task.status = "approved"
             save(root, task)
+            usage.note_event(root, task, "back", "build")
             return CONFLICT, [f"the pull request conflicts with the latest {view.get('baseRefName')}. Run `akasha land "
                               f"{task.id}` again: it brings the latest {view.get('baseRefName')} into the work copy "
                               "and names the files"]
@@ -429,11 +437,15 @@ def _late(task: Task, view: dict, states: dict[str, str], waits: str = "") -> tu
 def _finish(root: Path, team: Team, task: Task, state: str, view: dict, deadline: float) -> tuple[str, list[str]]:
     task.status, task.checks["head"] = state.lower(), str(view.get("headRefOid") or "?")
     save(root, task)
+    usage.note_event(root, task, state.lower(), "")
+    if state == MERGED:
+        _count_again(root, task)
     # The branch of a merged task leaves the server, so that a new task can take the name. An auto-merge of gh
     # deletes no branch later, and not each repository deletes branches on a merge
     kept = work.delete_remote(root, task.branch, task.checks["head"]) if state == MERGED else ""
     problem = drop(root, task, server=task.checks["head"])
-    lines = [f"task {task.id} {state.lower()}: {task.pr}"] + [line for line in (problem, kept) if line]
+    used = usage.line(task) if state == MERGED else ""     # from the stats: what the pull request carries
+    lines = [f"task {task.id} {state.lower()}: {task.pr}"] + [line for line in (problem, kept, used) if line]
     if state != MERGED or not team.deploy_workflow:
         return state, lines
     if not view.get("mergeCommit"):                   # Akasha merged it a moment ago
@@ -445,6 +457,23 @@ def _finish(root: Path, team: Team, task: Task, state: str, view: dict, deadline
     save(root, task)
     deployed, more = _deploy(root, team, task, deadline)
     return deployed, lines + more
+
+
+def _count_again(root: Path, task: Task) -> None:
+    """The usage up to the merge: the wait for the checks and an answer of the person came after the count of the
+    start of the landing. Only the usage in the block of the pull request changes: a person can have changed its
+    title or its text since the landing. When GitHub does not take the new sums, the task keeps the earlier count,
+    which is what the pull request carries."""
+    before = task.stats.get("usage")
+    usage.freeze(root, task, usage.MERGE)             # it puts a new count in place, and changes no earlier one
+    if task.stats.get("usage") == before:
+        return
+    if not pr.put_stat(root, task, "usage"):
+        if before is None:
+            task.stats.pop("usage", None)
+        else:
+            task.stats["usage"] = before
+    save(root, task)
 
 
 def _runs(root: Path, team: Team, *where: str) -> tuple[list | None, str]:

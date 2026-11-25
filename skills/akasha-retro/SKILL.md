@@ -10,7 +10,11 @@ with the administrator in their language.
 
 1. Run `akasha retro`. It shows the checks that failed most, the checks that passed on a computer and failed on
    GitHub, and the review rounds of the plans, for the whole team (from the merged pull requests). The actions that
-   Akasha stopped come only from the computer that runs the retro.
+   Akasha stopped come only from the computer that runs the retro. It also shows what the merged tasks used, as
+   an estimate at the list prices of the API: each phase on average, the tasks that used most, the part of the
+   main session, and what one repair of each kind costs (of the preview, the plan, the checks, the result, the
+   landing). `akasha usage <task>` shows one task of this computer by phase, with each repair. A phase that costs
+   much, or a repair that comes often, is a problem to find the cause of, like a check that fails often.
 2. For each repeated problem, find the cause in the records of the tasks (the records folder, by default
    `.docs/tasks/<task>/`) and in the code.
 3. Tell the administrator, in simple words, which problem repeats and what one check would stop it before the merge.

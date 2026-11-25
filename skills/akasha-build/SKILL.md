@@ -129,7 +129,7 @@ or DEPLOYING.
 | CONFLICT | Merge the default branch in the work copy as it tells, keep the changes of both sides when they add different things, check, and land again |
 | BLOCKED | Do what the message says. When an administrator approves a change of the structure first, Akasha already asked: tell the person in one sentence, and land again later |
 | ASK | Only an agent task: `akasha result <task>` |
-| MERGED, DEPLOYED | Tell the person. The next task starts best in a new session (/clear): the records keep what this one decided |
+| MERGED, DEPLOYED | Tell the person. The line `usage of task …` tells what the task used: give it to the person only when they ask what a task costs, and `akasha usage <task>` shows each phase and each repair. The next task starts best in a new session (/clear): the records keep what this one decided |
 | DEPLOY_FAILED, VERIFY_FAILED | Tell the person in simple words, run `akasha help <task> "<what failed>"`, and offer to undo the change with a new task |
 
 When the plan or the summary names steps that only an administrator can do (a secret value on the server, a first

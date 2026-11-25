@@ -58,7 +58,9 @@ class Task:
     result: dict = field(default_factory=dict)              # the review of the result: verdict, sha, at, source
     checks: dict = field(default_factory=dict)              # status, tree, at
     failures: int = 0               # failed checks in a row
-    stats: dict = field(default_factory=dict)               # for the retro: failed checks by name, review rounds
+    # For the retro: failed checks by name, review rounds, and the usage of the task. Also `uid`, a name of the
+    # task that no later task has (usage.py)
+    stats: dict = field(default_factory=dict)
     records_dir: str = RECORDS_DIR  # the folder that holds the records of the task: [work] records, and [work]
     #                                 archive after the landing moved them
     records_name: str = ""          # the folder of this task in it: the task id, and YYYY/MM/YYYY-MM-DD-<task>
@@ -252,6 +254,22 @@ def block(task: Task) -> str:
     data["approval"] = {key: value for key, value in data["approval"].items() if key not in APPROVAL_LOCAL}
     text = json.dumps(data, ensure_ascii=False).replace("-->", "--\\u003e")     # the comment must not end early
     return f"<!-- akasha:task {text} -->"
+
+
+def with_stat(text: str, name: str, value: object) -> str:
+    """The body of a pull request with one entry of the stats of its block set to `value`, and each other
+    character as it was: the text of the person, and the other fields of the block. "" without a block."""
+    found = BLOCK.search(text or "")
+    try:
+        data = json.loads(found.group(1)) if found else None
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        return ""
+    stats = data.get("stats") if isinstance(data.get("stats"), dict) else {}
+    data["stats"] = {**stats, name: value}
+    new = json.dumps(data, ensure_ascii=False).replace("-->", "--\\u003e")
+    return text[:found.start(1)] + new + text[found.end(1):]
 
 
 def parse_block(text: str) -> Task | None:

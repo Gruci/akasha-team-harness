@@ -139,7 +139,7 @@ rules, or update Akasha"). The committed `.claude/settings.json` turns the plugi
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.3"`, elsewhere `python3 -m pip install …`.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.4"`, elsewhere `python3 -m pip install …`.
 Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
 
 ## Agent accounts
@@ -164,7 +164,10 @@ merge (see "An agent task" in [how it works](how-it-works.md)).
 
 `akasha retro` shows the checks that failed most, the checks that passed on a computer and failed on GitHub, and the
 review rounds of the plans of the last merged tasks of the team, and the actions that Akasha stopped on the computer
-that runs it. The akasha-retro skill turns a
+that runs it. It also shows what those tasks used, as an estimate at the list prices of the API: each phase on
+average, the three tasks that used most, the part of the main session, what one repair of each kind costs, and the
+rounds of the reviews of the result (see "The usage of a task" in [how it works](how-it-works.md)).
+The akasha-retro skill turns a
 repeated problem into a new check of the team, as an Akasha task. When a new check finds problems in the existing
 code, keep a list of the existing problems that it accepts, and let the list only get shorter.
 
@@ -187,7 +190,7 @@ No computer takes a new Akasha by itself. `akasha setup` writes the version into
 | File | What it names | Who reads it |
 |:--|:--|:--|
 | `.github/akasha/.claude-plugin/marketplace.json` | The release tag of the version, as the source of the plugin | Claude Code, on each computer |
-| `AGENTS.md` | The pip line with the tag (`@v2.0.3`) | Codex |
+| `AGENTS.md` | The pip line with the tag (`@v2.0.4`) | Codex |
 
 The workflows name no version: their install step reads `[team] version` of the checkout when it runs. The shared
 settings and `CLAUDE.md` name none either.

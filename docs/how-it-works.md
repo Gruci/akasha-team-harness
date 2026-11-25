@@ -290,6 +290,68 @@ in the records of the task.
 - A quick task has no steps and keeps no notes. A task that an Akasha before 2.0.1 started keeps none either, and
   nothing stops it. The notes are no evidence: the server does not read them.
 
+## The usage of a task
+
+Akasha records how many tokens each phase of a task used, and who used them: the main session, the worker, the
+reviewer, or another agent. It stops nothing: the record tells where a task is expensive, so that the team changes a
+step after it measured it.
+
+- Each call counts in one phase only, so the phases add up to the task. A phase that ends in `-fix` is a repair,
+  and each time that it starts has its own number and its own price:
+
+  | Phase | From | Until |
+  |:--|:--|:--|
+  | `preview` | The start | The person sees the preview for the first time |
+  | `preview-fix` | The person sees a new version of the preview (a task without a screen: of the plan) | The next version, or the approval |
+  | `plan` | The approval of the preview (a task without a screen: its start) | The verdict of the review of the plan |
+  | `review` | The rounds of the reviewer of the plan | Its verdict |
+  | `plan-fix` | A CHANGES of the review of the plan | The next verdict of that review |
+  | `build` | The plan passed its review (a task without a screen: the approval of the plan) | The first failed check, or the review of the result |
+  | `check-fix` | A failed check in the build | The checks pass |
+  | `result` | The rounds of the reviewer of the result | Its verdict |
+  | `result-fix` | A CHANGES of the review of the result | The next verdict of that review. A failed check in it stays in it |
+  | `land` | The review of the result passed, or the landing started | The merge |
+  | `land-fix` | The landing went back | The next landing |
+
+- Claude Code writes each call of a model with its tokens into a transcript file: one for a session, and one for
+  each subagent. Akasha adds what tells the tasks and the phases apart, in `.docs/state/usage.jsonl` on each
+  computer. A command writes an event after it moved a task: the start, a preview that the person sees (with its
+  digest: the same version again starts no repair), the approval, a verdict of a review, the checks of the build
+  (each run of all checks; one check alone writes none), the start of the landing, a landing that went back, the
+  merge, a cancel, a handoff, and a session that takes the task. The hook at the stop of a subagent writes the
+  tokens of that agent so far, and the step of its round.
+- An agent that is asked again keeps its transcript, so each stop ends one round, and the calls after its last stop
+  are one more round. The step of a round of a worker comes from what it ran in that round, because one worker can
+  get the preview, the plan, and the build. A stop that the agent engine gives twice counts once, also its review.
+- The events of the task tell the phase at each moment, each call by its own time. A reviewer always counts in
+  its review (`review` or `result`), also while a repair runs. A worker counts in the phase of the task when that
+  phase is a part of the step that the worker ran (a build round in a `result-fix` is that repair); else it counts
+  in its own step, for example a repair of the preview after the approval. The main session and another agent
+  count in the phase of the task.
+- A main session works for no single task. Each of its calls belongs to the task that the last mark of that
+  session before it named: an event, or the start of a round of an agent. A session that works on two tasks gives
+  each call to the task of the last mark, and the table says so.
+- One answer can be in several files: a session that continues another one copies its answers, and an agent that
+  starts with the talk of its session holds them too. It counts once, for the main session first.
+- `akasha usage <task>` shows the table: each phase, who, and model with its rounds, its calls, its tokens, and
+  an estimate in dollars at the list prices of the API, then the price of each time of each repair. The record
+  itself holds tokens and the name of the model, never money. The prices are in one table of Akasha with their day,
+  a cache read costs another part of the input for each model, and a model that the table does not have is shown
+  with its tokens and without a price. A plan with a fixed price does not pay these dollars: they tell the size of
+  each part.
+- The landing writes the sums into the stats of the task when it starts, and again when it sees the merge; a
+  handoff writes them too, with the phase of the task and the number of each repair so far, so that the next
+  computer counts in the same phase and goes on with the next numbers. The pull request carries the sums, one part
+  for each session, so that a second computer adds its own and removes nothing. The write after the merge changes
+  only the usage in the block of the pull request: its title and its text stay as a person left them. `akasha retro` reads the sums from the merged pull requests. A merge that only a later session start sees leaves the sums of the
+  start of the landing, and the retro tells how many tasks are so. A handoff whose pull request does not take the
+  update stops, and the task stays on the computer: the next computer cannot read the record of this one.
+- Claude Code removes old transcripts (after 30 days by default). Each count keeps what each source gave: the main
+  session, and each agent. A source whose transcript is gone keeps what an earlier count read, and the table says
+  so. Without an earlier count, the sums of the stop lines of an agent stand in, as an estimate that the table
+  names: they cannot tell a copy of an answer, nor the time of each call. What Akasha cannot read at all is "not
+  read" in the table, never 0. Codex is not counted: its transcripts have another form.
+
 ## The hooks of git
 
 The hooks of an agent engine stop a wrong command before it runs, where the engine has hooks. Git itself runs two
@@ -514,3 +576,4 @@ screen. The person approves one preview and the reviewer passes one plan for the
 | The board | Open pull requests with the label `akasha` | GitHub |
 | Task state | `.docs/state/` on each computer, and the block in the pull request | No |
 | Problems for the retro | `.docs/state/trace.jsonl`, and the stats in the merged pull requests | No |
+| The usage of each task | `.docs/state/usage.jsonl`, and its sums in the stats of the pull request | No |

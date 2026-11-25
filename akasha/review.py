@@ -37,7 +37,7 @@ import re
 import time
 from pathlib import Path
 
-from akasha import forms, quick
+from akasha import forms, quick, usage
 from collections.abc import Callable, Iterable
 
 from akasha.task import PLAN, PREVIEW, Task, digest, digest_of, load, own_records, record, save
@@ -265,6 +265,8 @@ def note_result(root: Path, task: Task, verdict: str, sha: str, source: str, row
                    "rounds": rounds, **({"problem": why} if why else {}), **({"rows": rows} if rows else {})}
     task.stats["result_rounds"] = rounds
     save(root, task)
+    usage.note_event(root, task, "verdict", subject="result", verdict=task.result["verdict"], round=rounds,
+                     digest=sha, source=source)
 
 
 def keep_result(task: Task, text: str) -> None:
@@ -317,6 +319,12 @@ def passed(task: Task) -> bool:
     return bool(current) and task.review.get("verdict") == "PASS" and task.review.get("plan_sha") == current
 
 
+def _subject(task: Task) -> str:
+    """What the first review of a task judges, for the record of the usage: the plan, or the change of a quick
+    task, which counts with the reviews of a result."""
+    return "result" if quick.is_quick(task) else "plan"
+
+
 def note(root: Path, task: Task, verdict: str, sha: str, source: str, found: dict[str, str] | None = None,
          why: str = "", rows: dict[str, dict] | None = None, plan: str | None = None,
          read: dict[str, str] | None = None) -> None:
@@ -329,6 +337,8 @@ def note(root: Path, task: Task, verdict: str, sha: str, source: str, found: dic
                    **({"plan": plan} if plan is not None else {}), **({"inputs": read} if read else {})}
     task.stats["review_rounds"] = rounds
     save(root, task)
+    usage.note_event(root, task, "verdict", subject=_subject(task), verdict=task.review["verdict"], round=rounds,
+                     digest=sha, source=source)
 
 
 def keep(task: Task, verdict: str, sha: str, text: str) -> None:
@@ -391,7 +401,8 @@ def _answers(path: str) -> tuple[str, str]:
     return "\n".join(text for text in texts if text), handback
 
 
-def on_subagent_stop(root: Path, payload: dict, agent: str = "claude") -> str:
+def on_subagent_stop(root: Path, payload: dict, agent: str = "claude",
+                     recorded: list[tuple[str, str]] | None = None) -> str:
     """Record each review mark of the reviewer agent. The mark counts only for the plan as it is now. In Claude Code
     only the akasha-reviewer agent reviews: a mark of another subagent does not count. Codex has no such agent, and
     its rules ask for a separate reviewer. A PASS mark without a passed row for each item counts as CHANGES. A KEPT row
@@ -405,6 +416,7 @@ counts as the row of the last review only when that row passed."""
     text = "\n".join(part for part in (said, handback, last if last not in said else "") if part)
     answered = answer_rows(text)
     lines = []
+    told = recorded if recorded is not None else []     # for the record of the usage: what this stop judged
     marks = dict.fromkeys((name.lower(), sha.lower(), verdict.upper()) for name, sha, verdict in MARK.findall(text))
     for task_id, sha, verdict in marks:
         try:
@@ -414,6 +426,7 @@ counts as the row of the last review only when that row passed."""
         what = "change" if quick.is_quick(task) else "plan"
         if sha != subject_digest(task) and sha == result_digest(task):
             lines.append(take_result(root, task, verdict, sha, "reviewer", text))
+            told.append((usage.key(task), "result"))
             continue
         if sha != subject_digest(task):
             lines.append(f"the review mark of {task_id} is for another version of the {what}")
@@ -424,6 +437,7 @@ counts as the row of the last review only when that row passed."""
         note(root, task, "CHANGES" if why else verdict, sha, "reviewer", found, why, rows,
              None if quick.is_quick(task) else _plan_text(task), None if quick.is_quick(task) else inputs(task))
         keep(task, task.review["verdict"], sha, text)
+        told.append((usage.key(task), _subject(task)))
         lines.append(f"the reviewer gave {task.review['verdict']} to the {what} of {task_id}"
                      + (f" (the PASS mark did not count: {why})" if why else ""))
     return "; ".join(lines)

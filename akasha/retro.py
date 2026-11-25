@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from akasha import repo, trace
+from akasha import repo, trace, usage
 from akasha.config import LABEL
 from akasha.task import parse_block
 
@@ -46,4 +46,5 @@ def report(root: Path) -> list[str]:
                 f"{name} {count}×" for name, count in on_server.most_common(5)))
         if rounds:
             lines.append(f"Plan reviews: {sum(rounds) / len(rounds):.1f} rounds on average")
+        lines += usage.retro(tasks)                   # which step costs most, and what a CHANGES of a review costs
     return lines or ["Nothing repeats yet."]

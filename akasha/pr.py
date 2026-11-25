@@ -7,7 +7,7 @@ from pathlib import Path
 
 from akasha.config import LABEL
 from akasha.repo import gh, gh_json
-from akasha.task import SUMMARY, Task, block, record, records
+from akasha.task import SUMMARY, Task, block, record, records, with_stat
 
 DRAFT_TEXT = ("This task is in progress with Akasha. The person who holds it approves its preview first; the AI then "
               "plans, builds, checks, and lands it.")
@@ -136,6 +136,17 @@ def update(root: Path, task: Task) -> bool:
     if not task.number:
         return False
     return gh(root, "pr", "edit", str(task.number), "--title", task.title, "--body", body(task)).returncode == 0
+
+
+def put_stat(root: Path, task: Task, name: str) -> bool:
+    """Write one entry of the stats of the task into the block of its pull request, and nothing else: the title
+    and the text stay as GitHub has them now, also what a person changed there. False when GitHub did not give
+    the pull request, it has no block, or the write failed."""
+    if not task.number:
+        return False
+    found = gh_json(root, "pr", "view", str(task.number), "--json", "body")
+    body = with_stat(str(found.get("body") or ""), name, task.stats.get(name)) if isinstance(found, dict) else ""
+    return bool(body) and gh(root, "pr", "edit", str(task.number), "--body", body).returncode == 0
 
 
 def view(root: Path, task: Task) -> dict | None:

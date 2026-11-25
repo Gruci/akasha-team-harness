@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from akasha import agent, approval, board, checks, config, flow, repo, review, secrets, trace, version
+from akasha import agent, approval, board, checks, config, flow, repo, review, secrets, trace, usage, version
 from akasha.checks import matches
 from akasha.guard import check_command, check_edit, folders, harmless
 from akasha.task import Task, all_local, records
@@ -41,7 +41,7 @@ SAFE_COMMANDS: dict[str, tuple[str, ...]] = {
     "status": ("--review", "--resume", "--brief"),
     "upgrade": (), "split": ("--scope",), "join": ("--keep",),
     "check": ("--only",), "land": ("--wait",), "result": (), "board": ("--scope",), "help": (),
-    "handoff": (), "resume": (), "tidy": (), "doctor": (), "version": (), "retro": (),
+    "handoff": (), "resume": (), "tidy": (), "doctor": (), "version": (), "retro": (), "usage": (),
     # They only read the code
     "map": ("--parts", "--addresses", "--definitions", "--report", "--json"), "find": (), "names": ()}
 
@@ -461,5 +461,9 @@ def _run(agent: str, event: str, payload: dict, cwd: Path, tool: str, tool_input
     if event == "PostToolUse":
         return after_tool(root, cwd, tool, tool_input)
     if event == "SubagentStop":
-        review.on_subagent_stop(root, payload, agent)
+        if usage.repeated(root, payload, agent):      # the same stop a second time: its review is recorded
+            return 0
+        judged: list[tuple[str, str]] = []            # the task and the review of each verdict of this stop
+        review.on_subagent_stop(root, payload, agent, judged)
+        usage.on_subagent_stop(root, payload, agent, judged)
     return 0

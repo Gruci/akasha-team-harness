@@ -125,6 +125,8 @@ def _parser() -> argparse.ArgumentParser:
     naming.add_argument("language", nargs="?", default="")
     commands.add_parser("tidy", help="remove the work copies of the merged tasks")
     commands.add_parser("retro", help="what stops the work again and again")
+    used = commands.add_parser("usage", help="the tokens that a task used, by step and by who used them")
+    used.add_argument("task")
     commands.add_parser("version")
     hook = commands.add_parser("hook", help="the entry point of the hooks")
     hook.add_argument("--agent", choices=("claude", "codex"), default="claude")
@@ -389,6 +391,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "retro":
         print("\n".join(retro.report(root)))
+        return 0
+    if args.command == "usage":
+        from akasha import usage
+        print("\n".join(usage.table(root, args.task)))
         return 0
     return 2
 
