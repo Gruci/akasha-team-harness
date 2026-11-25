@@ -103,8 +103,16 @@ def summary(task: Task) -> str:
 
 
 def body(task: Task) -> str:
-    return (f"{summary(task)}\n\n---\n<details><summary>Akasha</summary>\n\n" + "\n".join(meta(task))
-            + f"\n\n</details>\n\n{block(task)}\n")
+    from akasha import progress
+    shown = progress.markdown(task.stats)
+    return ((f"{shown}\n\n" if shown else "") + f"{summary(task)}\n\n---\n<details><summary>Akasha</summary>\n\n"
+            + "\n".join(meta(task)) + f"\n\n</details>\n\n{block(task)}\n")
+
+
+def _progress(root: Path, task: Task) -> None:
+    """Put how far the task is into its stats, for the top of the pull request and the board of the team."""
+    from akasha import flow                           # flow writes the pull request through this module
+    flow.progress_lines(root, task)
 
 
 def commit_body(task: Task) -> str:
@@ -124,6 +132,7 @@ def ensure_label(root: Path) -> None:
 
 def create(root: Path, task: Task, base: str) -> str:
     ensure_label(root)
+    _progress(root, task)
     done = gh(root, "pr", "create", "--draft", "--base", base, "--head", task.branch, "--title", task.title,
               "--body", body(task), "--label", LABEL, "--assignee", "@me")
     if done.returncode:
@@ -135,6 +144,7 @@ def update(root: Path, task: Task) -> bool:
     """Write the state of the task into its pull request. False when gh fails: the next step writes it again."""
     if not task.number:
         return False
+    _progress(root, task)
     return gh(root, "pr", "edit", str(task.number), "--title", task.title, "--body", body(task)).returncode == 0
 
 

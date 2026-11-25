@@ -89,7 +89,11 @@ step from `akasha status <task> --brief`, never from what an agent says about it
    you cannot tell whether a message approves, ask again. Never run it without a message of the person.
 5. After the approval, do the rest without asking, unless the result must differ from what the person approved: then
    change the preview and get a new approval.
-6. At the end tell the person in simple words what changed and where to see it. Never ask the person to merge, to
+6. Keep the person informed. `akasha status <task> --brief` has four lines `progress:`: the stage, the part
+   done, the time left, and where the task works. Give them to the person in their language each time the stage
+   changes, after each step of an agent, and when the person asks how far the task is: as they are, four short
+   lines, not every turn. The pull request and the board show the same.
+7. At the end tell the person in simple words what changed and where to see it. Never ask the person to merge, to
    approve, or to mark the pull request ready on GitHub.
 
 ## Developer mode: when the session start notice says that this account is an administrator

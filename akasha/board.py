@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from akasha import progress
 from akasha.checks import matches
 from akasha.config import LABEL, STATE_DIR
 from akasha.repo import gh, origin, write_whole
@@ -143,5 +144,7 @@ def lines(entries: list[Entry], me: str) -> list[str]:
         step = "draft" if entry.draft else "landing"
         who = f"@{entry.holder}" + (" (you)" if entry.holder == me else "") if entry.holder else "free"
         scope = f" — {', '.join(entry.task.scope[:4])}" if entry.task.scope else ""
-        found.append(f"#{entry.number} {entry.task.id}: {entry.task.title} · {who} · {step}{scope}")
+        cell = progress.board_cell(entry.task.stats)
+        found.append(f"#{entry.number} {entry.task.id}: {entry.task.title} · {who} · {step}"
+                     + (f" · {cell}" if cell else "") + scope)
     return found

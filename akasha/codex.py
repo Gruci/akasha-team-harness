@@ -74,6 +74,10 @@ you found, each fact with its file and line, for the step after it. `akasha note
 Akasha does not go on to the next step without it. `akasha preview <task>` opens a preview once for each version:
 never open it a second time yourself, and examine a preview after a repair with `akasha preview <task> --check`.
 
+`akasha status <task> --brief` has four lines `progress:`: the stage, the part done, the time left, and
+where the task works. Give them to the person in their language each time the stage changes, and when the person
+asks how far the task is.
+
 A long task fills the conversation. `akasha status <task> --brief` shows the task on one screen, and names a safe
 point where a new session loses nothing: that session runs `akasha status <task> --resume` first, and starts from
 notes.md, not from the code again. Without a hook for the words of the person, the person approves in their own

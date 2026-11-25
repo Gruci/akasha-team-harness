@@ -689,6 +689,11 @@ def _usage(task: Task | None) -> dict:
     return found if isinstance(found, dict) else {}
 
 
+def carried(task: Task | None) -> dict:
+    """The usage that the task carries in its stats: the sums of each session, and the phase at a handoff."""
+    return _usage(task)
+
+
 def _kept(root: Path, task_key: str, task: Task | None) -> dict[str, dict]:
     """The sums of each session that the task already carries: from the total lines of this computer, and from
     the stats of the task, which another computer can have written into the pull request."""
@@ -910,6 +915,16 @@ def _dollars(rows: Iterable[list]) -> tuple[float, set[str]]:
         else:
             total += found
     return total, unknown
+
+
+def rows_of(stats: dict | None) -> list[list]:
+    """Each row of the sums of a task (as `totals` gives them), over its sessions."""
+    return _rows(stats)
+
+
+def dollars(rows: Iterable[list]) -> tuple[float, set[str]]:
+    """The list price of rows of the stats, and the models among them that have no rate."""
+    return _dollars(rows)
 
 
 def _money(value: float) -> str:

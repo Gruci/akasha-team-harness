@@ -290,6 +290,32 @@ in the records of the task.
 - A quick task has no steps and keeps no notes. A task that an Akasha before 2.0.1 started keeps none either, and
   nothing stops it. The notes are no evidence: the server does not read them.
 
+## The progress of a task
+
+The person who asked for a change sees four facts of it, in four lines: the stage, the part done, the time left,
+and where the task works. `akasha status <task> --brief` gives them, and the main session tells them to the person
+when the stage changes, after each step of an agent, and when the person asks. The pull request shows the same at
+its top, and the board one line for each task.
+
+| Line | What it tells | How Akasha knows it |
+|:--|:--|:--|
+| The stage | Its number and name: `stage 5/8 build`. "The person's turn" when the task waits for an answer of the person, "repair N" while a repair runs | The state of the task, and the phase of the record of the usage for a repair |
+| The part done | A percent and a bar, with a mark for each stage | Each stage has a fixed part. The build grows with each step of the plan that is done (it touches the files of the step, and its tests are there), and the last 5 when the checks pass. A repair moves nothing; a preview that changed after its approval moves the task back |
+| The time left | About how many minutes the stages still to do take | The defaults of Akasha, or the medians of the merged tasks of the same kind on this computer once it has five of them. The wait for the person counts no minutes |
+| Where it works | The areas of the files of the plan, and the step of the plan that the build does now | The steps of `plan.md` and the areas of the team (`akasha map`). Changed files of code that no step names are counted apart |
+
+The parts of each kind of task:
+
+| Kind | Stages and their parts |
+|:--|:--|
+| With a screen | preview 15 · approval 5 · plan 10 · review 10 · build 40 · result 10 · merge 5 · deploy 5 |
+| Without a screen | plan 25 · review 15 · approval 5 · build 40 · result 5 · merge 5 · deploy 5 |
+| Quick | build 50 · review 20 · approval 10 · merge 10 · deploy 10 |
+| Agent | plan 15 · review 10 · build 40 · result 15 · approval 10 · merge 5 · deploy 5 |
+
+The pull request and the board of another person cannot read this work copy: each write of the pull request puts
+a snapshot of the progress into the stats of the task, and they show that one.
+
 ## The usage of a task
 
 Akasha records how many tokens each phase of a task used, and who used them: the main session, the worker, the

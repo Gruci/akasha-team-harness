@@ -35,7 +35,7 @@ jobs:
             version=$(python -c "import pathlib, tomllib; found = [place for place in ('akasha.toml', '.github/akasha.toml') if pathlib.Path(place).is_file()]; print(tomllib.loads(pathlib.Path(found[0]).read_text(encoding='utf-8-sig')).get('team', {}).get('version', '') if found else '', end='')")
             version="${version#v}"
             if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::akasha.toml has no [team] version such as 2.0.4, so the server cannot install Akasha: an administrator runs akasha setup in a task"
+              echo "::error::akasha.toml has no [team] version such as 2.0.5, so the server cannot install Akasha: an administrator runs akasha setup in a task"
               exit 1
             fi
             AKASHA_SOURCE="@@AKASHA_SOURCE@@$version"

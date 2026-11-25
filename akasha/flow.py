@@ -177,6 +177,84 @@ def _steps_line(task: Task) -> str:
     return f" {said[0].upper()}{said[1:]}." if said else ""
 
 
+def kind_of(task: Task) -> str:
+    """The kind of a task for its stages (progress.py): full, no-screen, quick, or agent."""
+    return "quick" if quick.is_quick(task) else "no-screen" if screen.is_no_screen(task) else \
+        "agent" if agent.is_agent(task) else "full"
+
+
+def progress_of(root: Path, task: Task, cost: bool = False):
+    """How far the task is (progress.py): its facts from the task, the work copy, and the record of the usage. With
+    `cost`, also the price of what it used so far, which reads the transcripts. Nothing of it stops a command."""
+    from akasha import progress, steps
+    kind, tree = kind_of(task), Path(task.workcopy)
+    if kind == "no-screen":
+        current = review.plan_digest(task)
+        approved = bool(task.approval) and task.approval.get("plan_sha") == current
+    elif kind == "full":
+        page = record(task, PREVIEW)
+        current = digest(page) if page.is_file() else ""
+        approved = bool(task.approval) and task.approval.get("preview_sha") == current
+    else:
+        current, approved = task.preview_sha, bool(task.approval)
+    lines = usage.lines(root)
+    phase, number = usage.timeline([line for line in lines if line.get("key") == usage.key(task)],
+                                   usage.carried(task)).last()
+    found, areas, now, outside, changed = [], [], "", 0, []
+    if task.status not in ("merged", "closed") and tree.is_dir():
+        try:
+            changed = checks.changed_files(tree, quick.base(tree))
+            found = steps.parse(_text(record(task, PLAN))) if kind != "quick" else []
+        except (RuntimeError, OSError):
+            pass
+    done = steps.progress(found, tree, changed) if found else []
+    following = next((step for step, ended in done if not ended), None)
+    if following is not None:
+        named = [path for path in following.files[:2] if path.rsplit("/", 1)[-1] not in following.title]
+        now = f"{following.id} {following.title}" + (f" ({', '.join(named)})" if named else "")
+    try:
+        team = rules(root)
+        planned = [item for step in found for item in step.files] or list(task.scope) or changed
+        areas = sheets.areas_of(team, planned) or sorted({path.split("/")[0] for path in planned if "/" in path})
+        outside = sum(1 for path in changed if found and not steps._planned(path, found)
+                      and not steps._free(path, own_records(task)))
+    except (config.ConfigError, OSError, RuntimeError):
+        pass
+    try:
+        passed_now = bool(task.checks.get("commit")) and checks.passed(task.checks.get("status") or {}) and \
+            tree.is_dir() and not work.dirty(tree) and task.checks.get("commit") == work.head(tree)
+    except (RuntimeError, OSError):
+        passed_now = False
+    facts = progress.Facts(
+        kind=kind, status=task.status, approved=approved,
+        shown=bool(task.shown_at) and bool(current) and task.preview_sha == current and not approved,
+        plan_ready=forms.written(record(task, PLAN)) and not step_notes.missing(task, "plan"),
+        plan_passed=review.passed(task), checks_passed=passed_now, result_needed=review.result_needed(task),
+        result_passed=review.result_passed(task), deploying=task.status == "merged" and bool(task.checks.get("merge")),
+        steps=(sum(1 for _step, ended in done if ended), len(done)),
+        repair=(phase, number) if phase in progress.REPAIRS else ("", 0))
+    price = None
+    if cost:
+        try:
+            rows = usage.rows_of(usage.totals(root, task))
+            price = usage.dollars(rows)[0] if rows else None
+        except Exception:     # noqa: BLE001 — the price is only a part of the progress
+            price = None
+    return progress.build(task, facts, lines, areas, now, outside, price)
+
+
+def progress_lines(root: Path, task: Task, cost: bool = False) -> list[str]:
+    """The four lines of the progress for the person, and the snapshot in the stats of the task. [] when Akasha
+    cannot tell it."""
+    from akasha import progress
+    try:
+        found = progress_of(root, task, cost)
+    except Exception:     # noqa: BLE001 — the progress never stops a command
+        return []
+    task.stats["progress"] = progress.snapshot(found)
+    return progress.card(found)
+
+
 def _agent_landing(task: Task) -> str:
     """The next step of an agent task in its landing: the merge waits for the approval of the result."""
     now = agent.digest(task)
@@ -326,7 +404,7 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
         save(root, task)
         pr.update(root, task)
         board.forget(root)
-    usage.note_event(root, task, "start", stage(task))
+    usage.note_event(root, task, "start", stage(task), task_kind=kind_of(task))
     return task, notes + _prepare(team, path)        # after the pull request: a slow setup does not lose the task
 
 
@@ -491,6 +569,7 @@ def brief(root: Path, task_id: str) -> str:
     lines = [f"{task.id} · {task.title} · {task.kind} · {task.status}" + (f" · {task.pr}" if task.pr else ""),
              f"work copy: {task.workcopy}", f"records: {Path(task.workcopy) / records(task)}",
              f"next: {next_step(task)}"]
+    lines += progress_lines(root, task, cost=True)
     if sha:
         said = task.review.get("verdict") if task.review.get("plan_sha") == sha else "no review of this version"
         lines.append(f"review: {said} · digest {sha}"
@@ -1099,7 +1178,7 @@ def upgrade(root: Path, task_id: str) -> Task:
     evidence.forget(task)
     save(root, task)
     trace.note(root, "upgraded", task=task.id)
-    usage.note_event(root, task, "upgraded", stage(task))
+    usage.note_event(root, task, "upgraded", stage(task), task_kind=kind_of(task))
     if board.available(root) and task.number:
         pr.update(root, task)
     return task

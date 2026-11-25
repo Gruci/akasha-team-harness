@@ -105,7 +105,9 @@ def _uses_akasha(root: Path, branch: str) -> bool:
     return config.place(root).is_file() or config.on_server(root, branch)
 
 
-def _team_lines(root: Path) -> list[str]:
+def _team_lines(root: Path, folder: Path | None = None, agent: str = "claude") -> list[str]:
+    """The guides of the team, and the version of Akasha that it fixes. In Claude Code a computer that runs
+    another version updates its plugin by itself (version.start_update): the person only restarts the session."""
     try:
         team = flow.rules(root)
     except config.ConfigError as error:
@@ -116,7 +118,8 @@ def _team_lines(root: Path) -> list[str]:
     # No map at the start of a session: the first one takes seconds. `akasha start` shows the map of its scope
     lines.append("[AKASHA] Before new code: `akasha find <words>` searches the names and the descriptions of the "
                  "code that the repository has, and `akasha map <folder>` shows each public name of a folder.")
-    differs = version.mismatch(team.version, root=root) or version.other_patch(team.version, root=root)
+    started = version.start_update(root, folder or root, team.version) if agent == "claude" else ""
+    differs = started or version.mismatch(team.version, root=root) or version.other_patch(team.version, root=root)
     if differs:
         lines.append(f"[AKASHA] {differs} Tell the person.")
     elif team.unknown and team.version:
@@ -222,6 +225,15 @@ def allowed(line: str) -> bool:
 IDLE_MINUTES = 30              # a task without activity for so long: a new session asks the person about it
 
 
+def _progress_lines(root: Path, task: Task) -> list[str]:
+    """How far a task of this session is, to tell the person in their language when the session starts."""
+    found = flow.progress_lines(root, task)
+    if not found:
+        return []
+    return [f"[AKASHA]   {line.strip()}" for line in found] + [
+        "[AKASHA]   Tell the person these lines of the progress in their language."]
+
+
 def _step(task: Task, session: str) -> str:
     """The next step of a task of this person, for this session: a preview that another session showed (for example
     before /clear) is shown again here, because only the session that showed it takes the approval."""
@@ -231,7 +243,7 @@ def _step(task: Task, session: str) -> str:
     return flow.next_step(task)
 
 
-def session_start(root: Path, session: str = "") -> int:
+def session_start(root: Path, session: str = "", agent: str = "claude", folder: Path | None = None) -> int:
     branch = repo.default_branch(root)
     notice = f"[AKASHA] Akasha command: {command()} <command>"
     if not _uses_akasha(root, branch):
@@ -243,7 +255,7 @@ def session_start(root: Path, session: str = "") -> int:
     if not config.place(root).is_file():
         lines.append(f"[AKASHA] This checkout is older than {branch} on the server. Pull it first: git pull origin "
                      f"{branch}")
-    lines += _team_lines(root)
+    lines += _team_lines(root, folder, agent)
     from akasha import githooks
     # The hooks of git hold for each engine and for a person in a terminal: each computer has them
     lines += [f"[AKASHA] {note}" for note in githooks.install(root, command())]
@@ -254,10 +266,9 @@ def session_start(root: Path, session: str = "") -> int:
     for task in all_local(root):
         if task.status in ("merged", "closed") and not task.checks.get("merge"):
             continue
-        if session and task.session == session:
+        if (session and task.session == session) or not session:     # no session named: an engine as before
             lines.append(f"[AKASHA] Your task {task.id} ({task.title}): {_step(task, session)}")
-        elif not session:                             # an engine that names no session: as before
-            lines.append(f"[AKASHA] Your task {task.id} ({task.title}): {_step(task, session)}")
+            lines += _progress_lines(root, task)
         else:
             # A task of another session, or of no session: this session does not take it by starting. It gets no
             # next step and no `show it again`: two sessions would work on one task
@@ -451,7 +462,7 @@ def _run(agent: str, event: str, payload: dict, cwd: Path, tool: str, tool_input
     if root is None:
         return 0
     if event == "SessionStart":
-        return session_start(root, str(payload.get("session_id") or ""))
+        return session_start(root, str(payload.get("session_id") or ""), agent, cwd)
     if not _uses_akasha(root, repo.default_branch(root)):
         return 0
     if event == "UserPromptSubmit":
