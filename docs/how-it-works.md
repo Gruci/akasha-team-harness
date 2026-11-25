@@ -350,7 +350,13 @@ step after it measured it.
   session, and each agent. A source whose transcript is gone keeps what an earlier count read, and the table says
   so. Without an earlier count, the sums of the stop lines of an agent stand in, as an estimate that the table
   names: they cannot tell a copy of an answer, nor the time of each call. What Akasha cannot read at all is "not
-  read" in the table, never 0. Codex is not counted: its transcripts have another form.
+  read" in the table, never 0.
+- Codex counts too. It keeps a file for each thread of a session (`$CODEX_HOME/sessions/…/rollout-….jsonl`, by
+  default in `~/.codex`) with the tokens of each answer and the model of its turn. Akasha reads the file of the
+  session, and the file of each subagent whose session is that one. Each turn of a subagent is one round. A
+  subagent whose own answer holds the mark of a review of Akasha is the reviewer; else it is another agent, and the
+  phase of the task tells where it counts. A model that the table of prices does not have, as a model of OpenAI, is
+  shown with its tokens and without a price.
 
 ## The hooks of git
 

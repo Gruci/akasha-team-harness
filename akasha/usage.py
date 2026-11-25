@@ -18,8 +18,9 @@ the task, the pull request carries them to the team, and the retro reads them th
 While the transcripts are there, the count comes from them: one answer that is in several files counts once, for
 the main session first. Claude Code removes old transcripts; then the sums of the agent lines and of the total
 lines stay. The record holds tokens and the name of the model, never money: RATES turns them into list prices only
-where a command shows them. A file that Akasha cannot read gives "not read", never 0. Codex is not counted: its
-transcripts have another form."""
+where a command shows them. A file that Akasha cannot read gives "not read", never 0. Codex keeps a file for each
+thread of a session (a rollout) with the tokens of each answer: Akasha reads the main thread and each subagent of
+it in the same way. A model of another company has no rate: its tokens are in the table, without a price."""
 
 from __future__ import annotations
 
@@ -95,6 +96,15 @@ class Call:
     tokens: tuple[int, ...]    # as ZERO, for one call
     thinking: int              # the part of the output that was thinking
     size: int                  # the text that the call held: input, cache writes, and cache reads
+    turn: str = ""             # Codex: the turn of its thread, which is one round of an agent
+
+
+@dataclass
+class Thread:
+    """One file of a session of Codex: the main thread or the thread of a subagent."""
+    meta: dict                 # the payload of its line session_meta
+    calls: list[Call]
+    reviewed: bool             # an answer of its own holds the mark of a review of Akasha
 
 
 def new_uid() -> str:
@@ -177,6 +187,80 @@ def read(path: Path, commands: list[tuple[float, str]] | None = None) -> list[Ca
             seen.add(name)
             found.append(_call(message, used, at))
     return found
+
+
+def _codex_call(entry: dict, payload: dict, model: str, at: float) -> Call:
+    """A call of a model in a file of Codex. Its input holds the cache reads and the cache writes; its output holds
+    the reasoning."""
+    used = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+    held, written = int(used.get("cached_input_tokens") or 0), int(used.get("cache_write_input_tokens") or 0)
+    size = int(used.get("input_tokens") or 0)
+    name = str(payload.get("response_id") or f"{payload.get('thread_id')}:{entry.get('ordinal')}")
+    tokens = (1, max(size - held - written, 0), written, 0, held, int(used.get("output_tokens") or 0))
+    return Call(name, at, model, tokens, int(used.get("reasoning_output_tokens") or 0), size,
+                str(payload.get("turn_id") or ""))
+
+
+def read_codex(path: Path) -> Thread:
+    """Each call of a model in a file of Codex (a rollout), once, with the model of its turn. A thread of a subagent
+    starts with a copy of the talk of its parent: only its own lines after that tell whether it reviewed. OSError
+    when the file cannot be read."""
+    from akasha.review import MARK                    # review reads this module for its events
+    meta: dict = {}
+    found: list[Call] = []
+    seen: set[str] = set()
+    model, reviewed = "?", False
+    with path.open(encoding="utf-8", errors="replace") as file:
+        for line in file:
+            kind = next((name for name in ("session_meta", "turn_context", "token_usage_record", "AKASHA-REVIEW:")
+                         if name in line), "")
+            if not kind:                              # a file of a session has tens of megabytes
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            payload = entry.get("payload") if isinstance(entry, dict) else None
+            if not isinstance(payload, dict):
+                continue
+            if entry.get("type") == "session_meta" and not meta:
+                meta = payload
+            elif entry.get("type") == "turn_context":
+                model = str(payload.get("model") or model)
+            elif entry.get("type") == "token_usage_record":
+                call = _codex_call(entry, payload, model, _when(entry.get("timestamp")) or
+                                   (found[-1].at if found else 0.0))
+                if call.id not in seen:
+                    seen.add(call.id)
+                    found.append(call)
+            elif payload.get("type") == "message" and payload.get("role") == "assistant" and \
+                    int(entry.get("ordinal") or 0) >= int(meta.get("subagent_history_start_ordinal") or 0):
+                reviewed = reviewed or bool(MARK.search(json.dumps(payload.get("content"), ensure_ascii=False)))
+    return Thread(meta, found, reviewed)
+
+
+def codex_files(session: str) -> tuple[Path | None, list[Path]]:
+    """The file of a session of Codex, and the files of its subagents: each file from the same moment on whose
+    session is this one. (None, []) when this computer has no such session."""
+    top = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "sessions"
+    if not session or not top.is_dir():
+        return None, []
+    main = next(iter(sorted(top.rglob(f"rollout-*{session}.jsonl"))), None)
+    if main is None:
+        return None, []
+    agents = []
+    for path in sorted(top.rglob("rollout-*.jsonl")):
+        if path == main or path.name < main.name:     # the name starts with the moment of the start of the thread
+            continue
+        try:
+            with path.open(encoding="utf-8", errors="replace") as file:
+                first = json.loads(file.readline() or "{}")
+        except (OSError, ValueError):
+            continue
+        payload = first.get("payload") if isinstance(first, dict) else None
+        if isinstance(payload, dict) and payload.get("session_id") == session and payload.get("id") != session:
+            agents.append(path)
+    return main, agents
 
 
 def _by_model(calls: Iterable[Call]) -> dict[str, tuple[int, ...]]:
@@ -370,6 +454,19 @@ def _cut(name: str, who: str, calls: list[Call], stops: list[dict], commands: li
         last = stops[-1] if stops else {}
         told = _ran(commands, start, str(last.get("task"))) if last.get("key") and last.get("who") == WORKER else ""
         found.append(one(last, rest, told or str(last.get("stage") or ""), stopped=False))
+    return found
+
+
+def _turns(name: str, who: str, calls: list[Call]) -> list[Round]:
+    """The rounds of a subagent of Codex: each turn of its thread, from a request to its answer."""
+    found: list[Round] = []
+    for call in calls:
+        if found and found[-1].calls and found[-1].calls[-1].turn == call.turn:
+            last = found[-1]
+            last.calls.append(call)
+            last.models, last.largest = _by_model(last.calls), max(last.largest, call.size)
+        else:
+            found.append(Round(name, who, "", "", call.at, _by_model([call]), call.size, [call]))
     return found
 
 
@@ -653,11 +750,13 @@ def _session(all_lines: list[dict], session: str, task_key: str, here: list[tupl
     """The sums of one session for the task, by source: the main session, and each agent by its id. A transcript
     gives the calls. The main session comes first: an agent that starts with the talk of its session holds a copy
     of its answers, and an answer that `seen` holds does not count again. A source without a transcript keeps what
-    an earlier count read; else the sums of its stop lines stand in, as an estimate; else it is not read."""
+    an earlier count read; else the sums of its stop lines stand in, as an estimate; else it is not read. A session
+    of Codex has a file for its main thread and one for each subagent, each turn of a subagent one round."""
     main = _main(all_lines, session)
+    codex_main, codex_agents = (None, []) if main else codex_files(session)
     parts = {MAIN: Sums()}
     try:
-        calls = read(Path(main)) if main else None
+        calls = read(Path(main)) if main else read_codex(codex_main).calls if codex_main else None
     except OSError:
         calls = None
     if calls is None:
@@ -683,18 +782,31 @@ def _session(all_lines: list[dict], session: str, task_key: str, here: list[tupl
         if line.get("transcript"):
             places.setdefault(str(line.get("agent")), Path(str(line["transcript"])))
     loaded: dict[str, tuple[list[Call], list[tuple[float, str]]]] = {}
+    kinds: dict[str, str] = {}
     for name, path in places.items():
         commands: list[tuple[float, str]] = []
         try:
             loaded[name] = (read(path, commands), commands)
         except OSError:
             continue
+        kinds[name] = AGENTS.get(_kind(path).split(":")[-1], OTHER)
+    threads: set[str] = set()
+    for path in codex_agents:
+        try:
+            thread = read_codex(path)
+        except OSError:
+            continue
+        name = str(thread.meta.get("id") or path.stem)
+        loaded[name], threads = (thread.calls, []), threads | {name}
+        role = str(thread.meta.get("agent_role") or "").split(":")[-1]
+        kinds[name] = AGENTS.get(role) or (REVIEWER if thread.reviewed else OTHER)
     for name in sorted(loaded, key=lambda item: loaded[item][0][0].at if loaded[item][0] else 0.0):
         fresh = [call for call in loaded[name][0] if call.id not in seen]
         seen.update(call.id for call in fresh)
         parts[name] = Sums()
-        who = AGENTS.get(_kind(places[name]).split(":")[-1], OTHER)
-        for one in _cut(name, who, fresh, stops.get(name, []), loaded[name][1]):
+        rounds = _turns(name, kinds[name], fresh) if name in threads else \
+            _cut(name, kinds[name], fresh, stops.get(name, []), loaded[name][1])
+        for one in rounds:
             _take_round(parts[name], one, here, task_key, phases)
     unread = {str(line.get("agent")) for line in agent_lines if line.get("unread")}
     for name in sorted((set(stops) | set(old) | unread) - set(loaded) - {MAIN}):
