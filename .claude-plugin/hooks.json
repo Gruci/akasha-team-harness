@@ -2,7 +2,7 @@
   "description": "Akasha hooks. They act only in repositories that use Akasha (akasha.toml). hook.sh finds Python 3.11 or higher.",
   "hooks": {
     "SessionStart": [{"matcher": "startup|resume|clear|compact", "hooks": [
-      {"type": "command", "timeout": 30, "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hook.sh\" SessionStart"}]}],
+      {"type": "command", "timeout": 45, "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hook.sh\" SessionStart"}]}],
     "UserPromptSubmit": [{"hooks": [
       {"type": "command", "timeout": 20, "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hook.sh\" UserPromptSubmit"}]}],
     "PreToolUse": [
@@ -13,6 +13,8 @@
     "PostToolUse": [{"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [
       {"type": "command", "timeout": 20, "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hook.sh\" PostToolUse"}]}],
     "SubagentStop": [{"hooks": [
-      {"type": "command", "timeout": 20, "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hook.sh\" SubagentStop"}]}]
+      {"type": "command", "timeout": 20, "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hook.sh\" SubagentStop"}]}],
+    "Stop": [{"hooks": [
+      {"type": "command", "timeout": 20, "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hook.sh\" Stop"}]}]
   }
 }

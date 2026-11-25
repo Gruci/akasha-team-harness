@@ -1,8 +1,9 @@
-"""The hooks of Claude Code and Codex: session start, the prompt of the person, before a tool, after an edit, and the
-end of a subagent.
+"""The hooks of Claude Code and Codex: session start, the prompt of the person, before a tool, after an edit, the
+end of a subagent, and in Claude Code the end of a turn of the main session.
 
 Exit code 2 stops a tool (before it runs) or sends the message back to the agent engine (after it runs). A notice
-that does not stop the work goes to the agent engine as additional context with exit code 0."""
+that does not stop the work goes to the agent engine as additional context with exit code 0. The hook at the end of a
+turn answers with a decision: `block` sends its reason to the main session, which continues the turn."""
 
 from __future__ import annotations
 
@@ -16,7 +17,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from akasha import agent, approval, board, checks, config, flow, repo, review, secrets, trace, usage, version
+from akasha import (agent, approval, board, checks, config, flow, progress, repo, review, secrets, told, trace, usage,
+                    version)
 from akasha.checks import matches
 from akasha.guard import check_command, check_edit, folders, harmless
 from akasha.task import Task, all_local, records
@@ -29,6 +31,7 @@ UNREAD_PATCH = ("Akasha stopped this patch: it could not read the files of the p
                 "`*** Add File: <path>`, `*** Update File: <path>`, `*** Delete File: <path>`, or "
                 "`*** Move to: <path>`.")
 NETWORK_SECONDS = 5
+LOCAL_SECONDS = 5               # the part of tidy without GitHub: git removes the work copies of ended tasks
 TIDY_SECONDS = 8
 SESSION_SECONDS = 10
 OTHERS_SHOWN = 8
@@ -260,8 +263,12 @@ def session_start(root: Path, session: str = "", agent: str = "claude", folder: 
     # The hooks of git hold for each engine and for a person in a terminal: each computer has them
     lines += [f"[AKASHA] {note}" for note in githooks.install(root, command())]
     lines += _in_time(lambda: _role_lines(root), NETWORK_SECONDS + 1)
-    # First the tasks that merged, closed, or moved to another person, so that they are not named as yours
-    lines += _in_time(lambda: [f"[AKASHA] {line}" for line in flow.tidy(root, timeout=TIDY_SECONDS)], TIDY_SECONDS,
+    # First the tasks that merged, closed, or moved to another person, so that they are not named as yours. The
+    # tasks whose end this computer recorded need no answer of GitHub: a slow GitHub keeps none of their work copies
+    lines += _in_time(lambda: [f"[AKASHA] {line}" for line in flow.tidy_local(root)], LOCAL_SECONDS,
+                      "[AKASHA] The removal of the work copies of ended tasks takes long. `akasha tidy` ends it.")
+    lines += _in_time(lambda: [f"[AKASHA] {line}" for line in flow.tidy_server(root, timeout=TIDY_SECONDS)],
+                      TIDY_SECONDS,
                       "[AKASHA] GitHub was slow: Akasha did not look for merged tasks. `akasha tidy` does it.")
     for task in all_local(root):
         if task.status in ("merged", "closed") and not task.checks.get("merge"):
@@ -286,6 +293,44 @@ def session_start(root: Path, session: str = "", agent: str = "claude", folder: 
     lines += _in_time(lambda: _board_lines(root), SESSION_SECONDS,
                       "[AKASHA] GitHub was slow: the board of the team is not shown. `akasha board` shows it.")
     print("\n".join(lines))
+    return 0
+
+
+def on_stop(root: Path, payload: dict) -> int:
+    """The end of a turn of the main session: when a task of this session is at another stage than the session told
+    the person last (told.py), send the lines of its progress back, so that the session gives them before the turn
+    ends. Each new stage stops one turn, once. The record of the task stays as it is: a command of the task can run
+    at the same time.
+
+    Nothing stops a turn that this hook continued, a task of another session, and an agent task: the relay of an
+    agent account sends the last answer of the turn to the person, and that answer is the text of `akasha result`."""
+    session = str(payload.get("session_id") or "")
+    if not session or payload.get("stop_hook_active"):
+        return 0
+    last = str(payload.get("last_assistant_message") or "")
+    cards = []
+    for task in all_local(root):
+        ended = task.status in ("merged", "closed") and not task.checks.get("merge")
+        if task.session != session or ended or agent.is_agent(task):
+            continue
+        try:
+            found = flow.progress_of(root, task)
+        except Exception:     # noqa: BLE001 — the progress never stops a turn
+            continue
+        now, before = told.key(found), told.read(root, task.id)
+        if now == before:
+            continue
+        told.write(root, task.id, now)                # before the answer: a stage stops a turn only once
+        # The percent and the bar are the same in each language: an answer that holds them gave the lines
+        given = f"{found.percent}%" in last and progress._bar(found.percent) in last
+        if before is not None and not given:
+            cards += [line.strip() for line in progress.card(found)]
+    if cards:
+        reason = "\n".join([
+            "[AKASHA] A task is at a new stage, and the person does not know it yet. Tell the person these lines of "
+            "the progress in their language, as they are, then end the turn. When this turn asked the person a "
+            "question, ask it again as the last line.", *cards])
+        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
     return 0
 
 
@@ -477,4 +522,6 @@ def _run(agent: str, event: str, payload: dict, cwd: Path, tool: str, tool_input
         judged: list[tuple[str, str]] = []            # the task and the review of each verdict of this stop
         review.on_subagent_stop(root, payload, agent, judged)
         usage.on_subagent_stop(root, payload, agent, judged)
+    if event == "Stop":
+        return on_stop(root, payload)
     return 0

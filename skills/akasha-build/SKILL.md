@@ -92,7 +92,9 @@ step from `akasha status <task> --brief`, never from what an agent says about it
 6. Keep the person informed. `akasha status <task> --brief` has four lines `progress:`: the stage, the part
    done, the time left, and where the task works. Give them to the person in their language each time the stage
    changes, after each step of an agent, and when the person asks how far the task is: as they are, four short
-   lines, not every turn. The pull request and the board show the same.
+   lines, not every turn. The pull request and the board show the same. When a turn ends at a new stage that you
+   did not tell, Akasha stops the turn once and gives the lines: tell them as they are. When that turn asked the
+   person a question, ask it again as the last line.
 7. At the end tell the person in simple words what changed and where to see it. Never ask the person to merge, to
    approve, or to mark the pull request ready on GitHub.
 

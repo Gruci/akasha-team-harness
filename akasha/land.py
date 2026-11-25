@@ -23,7 +23,7 @@ from pathlib import Path
 from akasha import (agent, archive, board, checks, core, github, pr, quick, repo, review, trace, turn, usage, version,
                     work)
 from akasha.config import Team
-from akasha.flow import ask_help, drop, gate, pending, rules, taken
+from akasha.flow import BRANCH_GONE, ask_help, drop, gate, pending, rules, taken
 from akasha.task import SUMMARY, Task, load, record, records, save
 
 POLL_SECONDS = 15
@@ -443,6 +443,12 @@ def _finish(root: Path, team: Team, task: Task, state: str, view: dict, deadline
     # The branch of a merged task leaves the server, so that a new task can take the name. An auto-merge of gh
     # deletes no branch later, and not each repository deletes branches on a merge
     kept = work.delete_remote(root, task.branch, task.checks["head"]) if state == MERGED else ""
+    if state == MERGED and not kept:
+        # GitHub has nothing more to tell of the task: when the work copy stays now, because the session works in
+        # it, `akasha tidy` removes it later without a question to GitHub. The branch of a closed pull request
+        # stays on the server until tidy asks GitHub about it
+        task.checks["branch"] = BRANCH_GONE
+        save(root, task)
     problem = drop(root, task, server=task.checks["head"])
     used = usage.line(task) if state == MERGED else ""     # from the stats: what the pull request carries
     lines = [f"task {task.id} {state.lower()}: {task.pr}"] + [line for line in (problem, kept, used) if line]

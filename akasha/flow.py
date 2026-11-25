@@ -14,8 +14,8 @@ from pathlib import Path
 from collections.abc import Iterable
 
 from akasha import (agent, approval, archive, board, checks, codemap, config, consistency, core, definitions, evidence,
-                    forms, guard, pr, product, quick, repo, review, screen, sheets, spec, trace, usage, version,
-                    work)
+                    forms, guard, pr, product, quick, repo, review, screen, sheets, spec, told, trace, usage,
+                    version, work)
 from akasha import notes as step_notes     # `notes` names the lines that a command gives
 from akasha.config import Team
 from akasha.task import (PLAN, PREVIEW, SUMMARY, TASK_ID, Task, all_local, digest, forget, load, new_id,
@@ -405,6 +405,7 @@ def start(root: Path, title: str, name: str = "", scope: tuple[str, ...] = (),
         pr.update(root, task)
         board.forget(root)
     usage.note_event(root, task, "start", stage(task), task_kind=kind_of(task))
+    told.start(root, task, lambda: progress_of(root, task))
     return task, notes + _prepare(team, path)        # after the pull request: a slow setup does not lose the task
 
 
@@ -1092,14 +1093,32 @@ def drop(root: Path, task: Task, force: bool = False, server: str = "") -> str:
     if task.workcopy and tree.is_dir():
         if repo.inside(Path.cwd(), tree):
             return f"the session works in {tree}: leave that folder, then run `akasha tidy`"
-        if server and (work.unsaved(tree) or not work.contains(tree, server, task.number)):
+        only_here = _only_here(root, tree, server, task.number) if server else ""
+        if only_here:
             return (f"the work copy {tree} has changes that are not on GitHub. They stay there: start a new task for "
-                    f"them, or drop them with `akasha cancel {task.id} --force`")
+                    f"them, or drop them with `akasha cancel {task.id} --force`. What GitHub lacks: {only_here}")
     problem = work.remove(root, tree, task.branch, force=force or bool(server)) if task.workcopy else ""
     if not problem:
         forget(root, task.id, task.number)
+        told.forget(root, task.id)
     board.forget(root)
     return problem
+
+
+def _only_here(root: Path, tree: Path, server: str, number: int) -> str:
+    """What the work copy holds that GitHub lacks, for the person who decides about it, or "" when GitHub has each
+    part of it. `server` is the head of the pull request. A commit that the default branch holds is on GitHub too:
+    a work copy can be at such a commit after the merge, and the head of the pull request does not hold it."""
+    files = work.unsaved(tree)
+    if files:
+        more = f" and {len(files) - 3} more" if len(files) > 3 else ""
+        return f"files without a commit ({', '.join(files[:3])}{more})"
+    if work.contains(tree, server, number) or work.in_default(tree, repo.default_branch(root)):
+        return ""
+    at = f"the commit {work.head(tree)[:7]} of the work copy ({work.branch_of(tree)})"
+    if not work.known(tree, server):
+        return f"git could not get the head {server[:7]} of the pull request, so nothing tells that it holds {at}"
+    return f"{at}, which the head {server[:7]} of the pull request does not hold"
 
 
 def resume(root: Path, ref: str, force: bool = False) -> tuple[Task, list[str]]:
@@ -1384,31 +1403,65 @@ def ask_help(root: Path, task_id: str, text: str) -> str:
     return f"asked {people or 'the team'} on {task.pr}"
 
 
+BRANCH_GONE = "gone"            # checks["branch"] of an ended task: its branch is not on the server
+
+
+def _deploying(task: Task) -> bool:
+    return task.status == "merged" and bool(task.checks.get("merge"))     # the landing still follows its deployment
+
+
+def _ended(root: Path, task: Task) -> bool:
+    """True when GitHub has nothing more to tell of the task: this computer recorded that its pull request merged
+    or closed, with the head of the pull request, and that its branch left the server. Only the work copy is left,
+    because the session worked in it at that time. This computer must have the head: getting it is a fetch."""
+    return (task.status in ("merged", "closed") and not _deploying(task) and not task.checks.get("handoff")
+            and task.checks.get("branch") == BRANCH_GONE and work.known(root, str(task.checks.get("head") or "")))
+
+
 def tidy(root: Path, timeout: float = 20) -> list[str]:
     """Remove the work copies of the tasks of this computer whose pull request merged or closed, or that another
     person holds now."""
+    return tidy_local(root) + tidy_server(root, timeout)
+
+
+def tidy_local(root: Path) -> list[str]:
+    """The part of tidy that asks GitHub nothing: the tasks that this computer handed off, and the tasks whose end
+    it recorded (`_ended`). A session start does it first, so that a slow GitHub keeps no work copy of an ended
+    task."""
     lines = []
     for task in all_local(root):
-        if task.status == "merged" and task.checks.get("merge"):
-            continue                                  # the landing still follows its deployment
+        if _deploying(task):
+            continue
         if task.checks.get("handoff"):                # handed off: the work is on the server
             lines += [problem] if (problem := drop(root, task, server=task.checks["handoff"])) else []
-            continue
-        if not task.number:
+        elif _ended(root, task):
+            problem = drop(root, task, server=str(task.checks["head"]))
+            lines.append(problem or f"task {task.id} {task.status}: its work copy is removed")
+    return lines
+
+
+def tidy_server(root: Path, timeout: float = 20) -> list[str]:
+    """The part of tidy that asks GitHub about each other task with a pull request."""
+    lines = []
+    for task in all_local(root):
+        if _deploying(task) or task.checks.get("handoff") or not task.number or _ended(root, task):
             continue
         found = repo.gh_json(root, "pr", "view", str(task.number), "--json", "state,assignees,headRefOid",
                              timeout=timeout)
         found = found if isinstance(found, dict) else {}
         state, head = found.get("state"), str(found.get("headRefOid") or "?")
         if state in ("MERGED", "CLOSED"):
-            task.status = state.lower()
-            save(root, task)
-            usage.note_event(root, task, state.lower(), "")
             # The branch of a merged or closed task leaves the server, so that a new task can take the name and
             # no branch piles up. GitHub does it where the repository deletes branches on a merge; an auto-merge
             # of gh does not, and a closed pull request never. GitHub keeps the commits of a closed pull request
             # with the pull request, and can restore its branch
             kept = work.delete_remote(root, task.branch, head)
+            # The record of the end: when the work copy stays now, the next tidy ends the task without GitHub
+            task.status, task.checks["head"] = state.lower(), head
+            if not kept:
+                task.checks["branch"] = BRANCH_GONE
+            save(root, task)
+            usage.note_event(root, task, state.lower(), "")
             problem = drop(root, task, server=head)
             lines.append(problem or f"task {task.id} {state.lower()}: its work copy is removed")
             lines += [kept] if kept else []

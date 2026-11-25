@@ -275,9 +275,25 @@ def contains(tree: Path, commit: str, number: int = 0) -> bool:
     local = head(tree)
     if local == commit:
         return True
-    if number and git(tree, "cat-file", "-e", f"{commit}^{{commit}}").returncode:
+    if number and not known(tree, commit):
         git(tree, "fetch", "-q", "origin", f"refs/pull/{number}/head", timeout=PUSH_SECONDS)
     return git(tree, "merge-base", "--is-ancestor", local, commit).returncode == 0
+
+
+def known(tree: Path, commit: str) -> bool:
+    """True when this computer has the commit: git asks no server for it."""
+    return git(tree, "cat-file", "-e", f"{commit}^{{commit}}").returncode == 0
+
+
+def in_default(tree: Path, branch: str) -> bool:
+    """True when the default branch of the server, as this computer has it, holds each commit of the work copy. A
+    default branch only grows, so an old copy of it never tells this of a commit that the server lacks."""
+    return git(tree, "merge-base", "--is-ancestor", "HEAD", f"origin/{branch}").returncode == 0
+
+
+def branch_of(tree: Path) -> str:
+    """The branch that the work copy is on, or "no branch" when it is at a commit without one."""
+    return git(tree, "branch", "--show-current").stdout.strip() or "no branch"
 
 
 def _registered(root: Path, path: Path) -> bool:

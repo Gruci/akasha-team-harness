@@ -297,6 +297,11 @@ and where the task works. `akasha status <task> --brief` gives them, and the mai
 when the stage changes, after each step of an agent, and when the person asks. The pull request shows the same at
 its top, and the board one line for each task.
 
+In Claude Code a hook holds the session to it. When a turn of the main session ends while a task of the session is
+at another stage, or in another state of its stage, than the session told last, the hook sends the four lines back,
+and the session gives them before the turn ends: once for each new stage. It does not do so for an agent task: the
+relay sends the last answer of such a turn to the person. Codex has no such hook yet.
+
 | Line | What it tells | How Akasha knows it |
 |:--|:--|:--|
 | The stage | Its number and name: `stage 5/8 build`. "The person's turn" when the task waits for an answer of the person, "repair N" while a repair runs | The state of the task, and the phase of the record of the usage for a repair |
@@ -565,9 +570,12 @@ merges when the AI of the person who holds it lands it again, in the same sessio
 continue in a later one.
 
 Akasha never removes work that did not reach GitHub: when a pull request merged or closed, or another person took the
-task, while the work copy has an edit or a commit that GitHub lacks, Akasha keeps the work copy and says so. A work
-copy that the session works in stays until `akasha tidy`. A task that waits for its deployment stays until the landing
-sees the end of the deployment, also across a new session.
+task, while the work copy has an edit or a commit that GitHub lacks, Akasha keeps the work copy and says so, with
+what GitHub lacks: the files without a commit, or the commit of the work copy and the head of the pull request. A
+commit that the default branch holds is on GitHub. A work copy that the session works in stays until `akasha tidy`:
+the landing recorded the merge, so the next session start removes it and asks GitHub nothing, also when GitHub is
+slow. A task that waits for its deployment stays until the landing sees the end of the deployment, also across a new
+session.
 
 ## Many people at the same time
 
