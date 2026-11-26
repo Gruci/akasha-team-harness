@@ -3,7 +3,9 @@ after the build.
 
 The plan: the agent engine writes plan.md, then asks the akasha-reviewer agent to review it. The reviewer ends its
 answer with a mark: `AKASHA-REVIEW: <task> <digest> PASS` or `... CHANGES`. When the reviewer stops, the hook
-(SubagentStop) reads the mark and records the verdict for that version of the plan. A change of the plan after a
+(SubagentStop) reads the mark and records the verdict for that version of the plan. An answer that records nothing
+(no mark, or a mark for another version) while a task waits for its review does not end the reviewer: the hook asks
+it once for the whole answer with its mark (unrecorded). A change of the plan after a
 pass needs a new review. The review of the plan asks what is cheap to repair before any code is there: is what the
 plan names real, what else does the change reach, does it use the code that exists, and can it be undone.
 
@@ -319,6 +321,123 @@ def passed(task: Task) -> bool:
     return bool(current) and task.review.get("verdict") == "PASS" and task.review.get("plan_sha") == current
 
 
+def awaits(task: Task) -> str:
+    """The review that the task waits for now, or "": "plan" when no review judged this version of its input (for a
+    quick task, of its change), "result" when the plan passed, the checks ran on the build, and no review judged the
+    result as it is now."""
+    if task.status in ("merged", "closed", "landing") or not task.workcopy:
+        return ""
+    if not quick.is_quick(task) and not forms.written(record(task, PLAN)):
+        return ""
+    current = subject_digest(task)
+    if current and task.review.get("plan_sha") != current:
+        return "plan"
+    if result_needed(task) and passed(task) and task.checks.get("commit"):
+        now = result_digest(task)
+        if now and task.result.get("sha") != now:
+            return "result"
+    return ""
+
+
+def _missed(root: Path, task_id: str) -> Path:
+    from akasha.config import STATE_DIR
+    return root / STATE_DIR / "missed" / f"{task_id}.json"
+
+
+def miss(root: Path, task: Task, why: str, others: list[str] | None = None) -> None:
+    """Keep that an answer of the reviewer recorded nothing for the review that the task waits for now, with the
+    digest of that version. `why`: "none" (no mark) or "stale" (a mark for another version). `others`: the other
+    tasks of the session that waited for a review then, when the answer named no task. On this computer only, in a
+    file of its own: the hook writes no record of a task for it. A failure stops nothing."""
+    which = awaits(task)
+    sha = result_digest(task) if which == "result" else subject_digest(task)
+    try:
+        place = _missed(root, task.id)
+        place.parent.mkdir(parents=True, exist_ok=True)
+        place.write_text(json.dumps({"subject": which, "sha": sha, "why": why, "others": others or []}),
+                         encoding="utf-8")
+    except OSError:
+        pass
+
+
+def missed(root: Path, task: Task) -> str:
+    """One line for `akasha status <task> --brief` when the last answer of the reviewer recorded nothing for the
+    version that still waits for its review, or "". A verdict of that version, or a new version, ends it: the main
+    session then reads here why no review is recorded, and does not search for it. The line names no digest: the
+    reviewer marks the version that it read, and after a mark for another version it reads what changed first.
+    An answer without a mark while several tasks waited names no task either: the line says so."""
+    try:
+        kept = json.loads(_missed(root, task.id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    which = awaits(task)
+    now = (result_digest(task) if which == "result" else subject_digest(task)) if which else ""
+    if not isinstance(kept, dict) or not which or kept.get("subject") != which or kept.get("sha") != now:
+        return ""
+    what = "result" if which == "result" else "plan or change"
+    whole = ("its whole answer: the table with one row for each item, and as the last line the mark with the task "
+             "and the digest of the version that it read")
+    if kept.get("why") == "stale":
+        return (f"reviewer: the last answer of the akasha-reviewer agent recorded no verdict for this version of the "
+                f"{what}: its mark named another version. Ask the same agent again (SendMessage) to run `akasha "
+                f"status {task.id}` (the digest of the plan or of the change now) and `akasha status {task.id} "
+                "--review` (which review the task needs, what changed, and the digest of a result), to read and "
+                f"judge what changed since the version that it read, and then to give {whole}")
+    others = [str(name) for name in kept.get("others") or []]
+    if others:
+        return (f"reviewer: an answer of the akasha-reviewer agent had no review mark while this task and "
+                f"{', '.join(others)} waited for a review, so Akasha recorded no verdict and does not know which "
+                f"task it read. When it read this task, ask the same agent again (SendMessage) for {whole}")
+    return (f"reviewer: the last answer of the akasha-reviewer agent recorded no verdict for this version of the "
+            f"{what}: it had no review mark. Ask the same agent again (SendMessage) for {whole}")
+
+
+def forget(root: Path, task_id: str) -> None:
+    _missed(root, task_id).unlink(missing_ok=True)
+
+
+def unrecorded(root: Path, payload: dict, recorded: list[tuple[str, str]], stale: list[str]) -> str:
+    """What to tell the akasha-reviewer agent of Claude Code whose answer recorded no verdict, or "". The hook then
+    keeps the agent running with this text (SubagentStop, `decision: block`), and the agent adds what is missing in
+    its own context: nothing reaches the main session from this hook, which would else search why no review is
+    recorded.
+
+    It asks once: a stop that this hook continued ends (`stop_hook_active`). Each time, also that second time, it
+    keeps for the task that no verdict came (miss), and `akasha status <task> --brief` tells it until a verdict of
+    that version comes: the main session has a place to read it when the reviewer does not repair it, or never
+    stops again. It asks only while a task of the session waits for a review: an answer to a question, after the verdict of this version, is no review. It names
+    no digest: the reviewer has the digest of the version that it read, and a digest from here would let it mark a
+    version that it did not read. It asks for the whole answer again, not for the mark alone: the hook reads the
+    last round of the transcript, and the table of the round before may not be in it."""
+    reviewer = str(payload.get("agent_type") or "").split(":")[-1] == REVIEWER
+    if recorded or not reviewer:
+        return ""
+    again = not payload.get("stop_hook_active")
+    from akasha.task import all_local
+    session = str(payload.get("session_id") or "")
+    waiting = [task for task in all_local(root)
+               if (not session or not task.session or task.session == session) and awaits(task)]
+    moved = [task.id for task in waiting if task.id in stale]
+    whole = ("the table with one row for each item, and as the last line the mark `AKASHA-REVIEW: <task> <digest> "
+             "PASS` or `CHANGES`")
+    for task in waiting if not stale else [task for task in waiting if task.id in stale]:
+        miss(root, task, "stale" if stale else "none",
+             [] if stale else [other.id for other in waiting if other.id != task.id])
+    if not again:
+        return ""
+    if moved:
+        return (f"[AKASHA] The review mark of {', '.join(moved)} names another version than the task has now, so "
+                f"Akasha recorded no verdict. Run `akasha status {moved[0]}` again: it shows the digest of the plan "
+                f"or of the change as it is now. Run `akasha status {moved[0]} --review` again: it tells which "
+                "review the task needs, what changed since the last one, and the digest of a result. Read what "
+                f"changed and judge it, then give your whole answer once more: {whole}.")
+    if waiting and not stale:
+        return ("[AKASHA] Akasha found no review mark of a task in your answer, so it recorded no verdict. Give your "
+                f"whole answer once more: {whole}, with the task and the digest of the version that you read. Judge "
+                "nothing again for this. When this answer was no review, say that in one line.")
+    return ""
+
+
 def _subject(task: Task) -> str:
     """What the first review of a task judges, for the record of the usage: the plan, or the change of a quick
     task, which counts with the reviews of a result."""
@@ -402,11 +521,12 @@ def _answers(path: str) -> tuple[str, str]:
 
 
 def on_subagent_stop(root: Path, payload: dict, agent: str = "claude",
-                     recorded: list[tuple[str, str]] | None = None) -> str:
+                     recorded: list[tuple[str, str]] | None = None, stale: list[str] | None = None) -> str:
     """Record each review mark of the reviewer agent. The mark counts only for the plan as it is now. In Claude Code
     only the akasha-reviewer agent reviews: a mark of another subagent does not count. Codex has no such agent, and
     its rules ask for a separate reviewer. A PASS mark without a passed row for each item counts as CHANGES. A KEPT row
-counts as the row of the last review only when that row passed."""
+counts as the row of the last review only when that row passed. `stale` takes each task whose mark named another
+    version, and so recorded nothing (unrecorded)."""
     if agent == "claude" and str(payload.get("agent_type") or "").split(":")[-1] != REVIEWER:
         return ""
     said, handback = _answers(str(payload.get("agent_transcript_path") or ""))
@@ -430,6 +550,8 @@ counts as the row of the last review only when that row passed."""
             continue
         if sha != subject_digest(task):
             lines.append(f"the review mark of {task_id} is for another version of the {what}")
+            if stale is not None:
+                stale.append(task.id)
             continue
         rows = carry(task, answered)
         found = {item: row["verdict"] for item, row in rows.items()}

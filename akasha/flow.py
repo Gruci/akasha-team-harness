@@ -62,10 +62,17 @@ def gate(task: Task) -> str:
 def _unreviewed(task: Task) -> str:
     """What the plan of the task still needs before the build, or "": the pass of the akasha-reviewer agent, and the
     notes of the step for the build (notes.py). The notes come first: the agent that wrote the plan writes them
-    before it returns, and the reviewer does not read them."""
+    before it returns, and the reviewer does not read them. Before both, the plan names its steps, their files, and
+    each rule of the preview (steps.unready): the reviewer reads no plan that the check `scope` stops for that."""
     lacks = step_notes.missing(task, "plan")
     if review.passed(task):
         return lacks
+    from akasha import steps
+    stops = steps.unready(task)
+    if stops:                                         # before the review: a repair after it asks for the review again
+        return (f"The plan did not pass the review, and is not ready for it: {stops.replace(chr(10), '; ')}. Repair "
+                f"{records(task)}/{PLAN} first, then ask the akasha-reviewer agent to review the plan of task "
+                f"{task.id}.")
     if lacks and forms.written(record(task, PLAN)):
         return f"{lacks} Then ask the akasha-reviewer agent to review the plan of task {task.id}."
     return (f"The plan did not pass the review. Write {records(task)}/{PLAN} (the approach, and the work as steps), "
@@ -575,6 +582,9 @@ def brief(root: Path, task_id: str) -> str:
         said = task.review.get("verdict") if task.review.get("plan_sha") == sha else "no review of this version"
         lines.append(f"review: {said} · digest {sha}"
                      + (f" · the answer is in {record(task, review.REVIEW)}" if task.review else ""))
+    unmarked = review.missed(root, task)
+    if unmarked:
+        lines.append(unmarked)
     stops = "" if task.status in ("merged", "closed", "landing") else gate(task)
     if stops:
         lines.append(f"stops: {stops}")
@@ -1101,6 +1111,7 @@ def drop(root: Path, task: Task, force: bool = False, server: str = "") -> str:
     if not problem:
         forget(root, task.id, task.number)
         told.forget(root, task.id)
+        review.forget(root, task.id)
     board.forget(root)
     return problem
 

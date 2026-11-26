@@ -28,6 +28,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import time
 from bisect import bisect_right
 from collections.abc import Iterable
@@ -47,7 +48,7 @@ FIXES = {"preview-fix": "after the person saw the preview, until the approval",
          "plan-fix": "after a CHANGES of the review of the plan, until the next verdict",
          "check-fix": "after the checks failed in the build, until they pass",
          "result-fix": "after a CHANGES of the review of the result, until the next verdict",
-         "land-fix": "after the landing went back, until the next landing"}
+         "land-fix": "after the landing went back or a local check ran again, until the next landing"}
 # The step of the work that each phase is a part of: the worker tells its step by what it ran in its round
 STEP = {"preview-fix": "preview", "plan-fix": "plan", "check-fix": "build", "result-fix": "build", "land-fix": "build"}
 MAIN, WORKER, REVIEWER, OTHER = "main", "worker", "reviewer", "other"
@@ -85,6 +86,7 @@ NAMED = re.compile(_AKASHA + r"status\s+" + _NAME)
 # reviewed by the reviewer command of the team
 ROUND = re.compile(_AKASHA + r"(check|preview|review)\s+" + _NAME)
 STEP_OF = {"check": "build", "preview": "preview", "review": "plan"}
+TASK_COMMANDS = {"status", "notes", "preview", "approve", "check", "review", "land", "result"}
 
 
 @dataclass(frozen=True)
@@ -157,10 +159,40 @@ def _call(message: dict, used: dict, at: float) -> Call:
                 int(details.get("thinking_tokens") or 0), size)
 
 
-def read(path: Path, commands: list[tuple[float, str]] | None = None) -> list[Call]:
+def _main_task(command: str) -> str:
+    """The task explicitly named by one direct shell invocation of Akasha."""
+    command = command.strip().removeprefix("& ").strip()
+    if "akasha" not in command or any(char in command for char in "\n;&|`$<>"):
+        return ""
+    try:
+        words = shlex.split(command.replace("\\", "/"))
+    except ValueError:
+        return ""
+    if len(words) < 3:
+        return ""
+    exe = words[0].rsplit("/", 1)[-1].lower().removesuffix(".exe")
+    args = words[1:]
+    if re.fullmatch(r"py|python[\d.]*", exe):
+        while args and args[0] in ("-3", "-B", "-X"):
+            if args[0] == "-X" and args[:2] != ["-X", "utf8"]:
+                return ""
+            args = args[2:] if args[0] == "-X" else args[1:]
+        if args[:2] == ["-m", "akasha"]:
+            args = args[2:]
+        elif args and args[0].rsplit("/", 1)[-1] == "akasha_run.py":
+            args = args[1:]
+        else:
+            return ""
+    elif exe != "akasha":
+        return ""
+    return args[1] if len(args) >= 2 and args[0] in TASK_COMMANDS else ""
+
+
+def read(path: Path, commands: list[tuple[float, str]] | None = None,
+         named_calls: dict[str, set[str]] | None = None) -> list[Call]:
     """Each call of a model in a transcript file, once. Claude Code writes one line for each block of an answer,
     each with the same id and the same tokens: the first one counts. OSError when the file cannot be read.
-    `commands` takes each shell line that the agent ran, with its time."""
+    `commands` takes the shell lines with their times. `named_calls` collects explicit task names by answer id."""
     found: list[Call] = []
     seen: set[str] = set()
     with path.open(encoding="utf-8", errors="replace") as file:
@@ -175,12 +207,20 @@ def read(path: Path, commands: list[tuple[float, str]] | None = None) -> list[Ca
             if not isinstance(message, dict) or message.get("role") != "assistant":
                 continue
             at = _when(entry.get("timestamp")) or (found[-1].at if found else 0.0)
-            if commands is not None:
-                commands += [(at, str((block.get("input") or {}).get("command") or ""))
-                             for block in message.get("content") or []
-                             if isinstance(block, dict) and block.get("type") == "tool_use"
-                             and isinstance(block.get("input"), dict)]
             used, name = message.get("usage"), message.get("id")
+            if commands is not None or named_calls is not None:
+                for block in message.get("content") or []:
+                    if not isinstance(block, dict) or block.get("type") != "tool_use":
+                        continue
+                    inputs = block.get("input")
+                    if not isinstance(inputs, dict):
+                        continue
+                    command = str(inputs.get("command") or "")
+                    if commands is not None:
+                        commands.append((at, command))
+                    if named_calls is not None and name and block.get("name") in ("Bash", "PowerShell"):
+                        if task := _main_task(command):
+                            named_calls.setdefault(str(name), set()).add(task)
             # Claude Code writes an error of the API as an answer of the model "<synthetic>", without tokens
             if not isinstance(used, dict) or not name or name in seen or message.get("model") == "<synthetic>":
                 continue
@@ -383,6 +423,11 @@ def on_subagent_stop(root: Path, payload: dict, agent: str = "claude", verdicts:
     try:
         calls = read(path, commands)
     except OSError:
+        keys = {key for key, _subject in verdicts or []}
+        if len(keys) == 1:
+            line["key"] = keys.pop()
+        elif not keys and before and before[-1].get("key"):
+            line["key"] = before[-1]["key"]
         _append(root, {**line, "unread": True})
         return
     if not calls or (before and before[-1].get("calls") == len(calls)):
@@ -488,13 +533,24 @@ def _marks(all_lines: list[dict]) -> dict[str, list[tuple[float, str, str]]]:
         if line.get("kind") == "event":
             if session and "stage" in line:
                 stage = str(line["stage"])
-                marks.setdefault(session, []).append((at, str(line.get("key")) if stage else "", stage))
+                marks.setdefault(session, []).append((at, str(line.get("key") or ""), stage))
             if line.get("was"):                       # another session took the task from this one
-                marks.setdefault(str(line["was"]), []).append((at, "", ""))
+                marks.setdefault(str(line["was"]), []).append((at, str(line.get("key") or ""), ""))
         elif line.get("kind") == "agent" and session and line.get("key") and line.get("stage"):
             marks.setdefault(session, []).append((float(line.get("round_first") or line.get("first") or at),
                                                   str(line["key"]), str(line["stage"])))
-    return {session: sorted(found) for session, found in marks.items()}
+    for session, changes in marks.items():
+        active: dict[str, str] = {}
+        history = []
+        for at, name, stage in sorted(changes, key=lambda change: change[0]):
+            active.pop(name, None)
+            if stage and name:
+                active[name] = stage
+            # Ending or handing off one task leaves the other active tasks in this session.
+            latest = next(reversed(active), "")
+            history.append((at, latest, active.get(latest, "")))
+        marks[session] = history
+    return marks
 
 
 def _at(marks: list[tuple[float, str, str]], when: float) -> tuple[str, str]:
@@ -555,16 +611,21 @@ def timeline(mine: list[dict], carried: dict | None = None) -> Timeline:
             subject = "result" if line.get("subject") == "result" else "plan"
             if line.get("verdict") == "CHANGES":
                 fix(at, f"{subject}-fix")
-            else:
-                go(at, "land" if subject == "result" else "plan" if waits else "build")
+            elif now not in ("land", "land-fix"):
+                # A quick task still has its preview and approval after its code review.
+                # Only the landing event begins a landing, for every kind of task.
+                go(at, "plan" if subject == "plan" and waits else "build")
         elif what == "check":
-            if line.get("verdict") == "FAIL" and now in ("build", "check-fix"):
+            if now == "land":
+                # A local full check ran again on the work. CI polling emits no check event.
+                fix(at, "land-fix")
+            elif line.get("verdict") == "FAIL" and now in ("build", "check-fix"):
                 fix(at, "check-fix")
             elif line.get("verdict") == "PASS" and now == "check-fix":
                 go(at, "build")
         elif what == "landing":
             go(at, "land")
-        elif what == "back":
+        elif what == "back" and now != "land-fix":
             fix(at, "land-fix")
         elif what in ("taken", "resumed"):
             if not now and seed:                      # this computer continues the task of another one
@@ -601,6 +662,19 @@ def _main(all_lines: list[dict], session: str) -> str:
     return next((str(path) for path in top.glob(f"*/{session}.jsonl")), "") if session else ""
 
 
+def _shared_tasks(all_lines: list[dict], session: str, here: list[tuple[float, str, str]]) \
+        -> dict[str, list[tuple[float, str, str]]]:
+    """For a shared session, when each named task was active there. Names can be reused after a merge."""
+    keys = {key for _at_, key, _stage in here if key}
+    if len(keys) < 2:
+        return {}
+    grouped: dict[str, list[dict]] = {}
+    for line in all_lines:
+        if line.get("key") in keys and line.get("task"):
+            grouped.setdefault(str(line["task"]), []).append(line)
+    return {name: _marks(group).get(session, []) for name, group in grouped.items()}
+
+
 def _fixes(sums: dict) -> list[list]:
     """The rows of each time of a phase that repairs, in the stats of a session."""
     return [row for row in sums.get("fixes") or [] if isinstance(row, list) and len(row) == 9]
@@ -621,6 +695,7 @@ class Sums:
         self.kept: list[str] = []
         self.stops: list[str] = []
         self.unread: list[str] = []
+        self.estimated_main = 0                       # main calls assigned by time in a shared session
         self.notes: list[str] = []
 
     def add(self, phase: str, number: int, who: str, model: str, total: tuple[int, ...], size: int) -> None:
@@ -645,6 +720,7 @@ class Sums:
             self.fixes[where] = plus(self.fixes.get(where, ZERO), total)
         for phase, who, count in old.get("rounds") or []:
             self.counts[phase, who] = self.counts.get((phase, who), 0) + int(count)
+        self.estimated_main += int(old.get("estimated_main") or 0)
         return bool(rows)
 
     def merge(self, other: Sums) -> None:
@@ -660,6 +736,7 @@ class Sums:
         self.kept += other.kept
         self.stops += other.stops
         self.unread += other.unread
+        self.estimated_main += other.estimated_main
         self.notes += other.notes
 
     def stats(self) -> dict:
@@ -672,6 +749,8 @@ class Sums:
         for name in ("kept", "stops", "unread"):
             if getattr(self, name):
                 found[name] = sorted(set(getattr(self, name)))
+        if self.estimated_main:
+            found["estimated_main"] = self.estimated_main
         return found
 
 
@@ -760,21 +839,31 @@ def _session(all_lines: list[dict], session: str, task_key: str, here: list[tupl
     main = _main(all_lines, session)
     codex_main, codex_agents = (None, []) if main else codex_files(session)
     parts = {MAIN: Sums()}
+    shared = _shared_tasks(all_lines, session, here)
+    named_calls: dict[str, set[str]] = {}
     try:
-        calls = read(Path(main)) if main else read_codex(codex_main).calls if codex_main else None
+        calls = read(Path(main), named_calls=named_calls if shared else None) if main else \
+            read_codex(codex_main).calls if codex_main else None
     except OSError:
         calls = None
     if calls is None:
-        earlier = old.get(MAIN) or {"rows": [row for row in kept.get("rows") or [] if row[1] == MAIN]}
+        earlier = old.get(MAIN) or {"rows": [row for row in kept.get("rows") or [] if row[1] == MAIN],
+                                    "estimated_main": kept.get("estimated_main", 0)}
         (parts[MAIN].kept if parts[MAIN].take(earlier) else parts[MAIN].unread).append("the main session")
     for call in calls or []:
         if call.id not in seen:
             seen.add(call.id)
             whose, stage = _at(here, call.at)
+            names = named_calls.get(call.id, set())
+            named = _at(shared.get(next(iter(names)), []), call.at) if len(names) == 1 else ("", "")
+            if named[0]:
+                whose, stage = named
             if whose == task_key:
                 now, number = phases.at(call.at)
                 phase = _phase(MAIN, stage, now, False)
                 parts[MAIN].add(phase, number if phase == now else 0, MAIN, call.model, call.tokens, call.size)
+                if shared and not named[0]:
+                    parts[MAIN].estimated_main += 1
     agent_lines = [line for line in all_lines if line.get("kind") == "agent" and line.get("session") == session]
     stops: dict[str, list[dict]] = {}
     for line in agent_lines:
@@ -813,7 +902,20 @@ def _session(all_lines: list[dict], session: str, task_key: str, here: list[tupl
             _cut(name, kinds[name], fresh, stops.get(name, []), loaded[name][1])
         for one in rounds:
             _take_round(parts[name], one, here, task_key, phases)
-    unread = {str(line.get("agent")) for line in agent_lines if line.get("unread")}
+    unread: set[str] = set()
+    unassigned: set[str] = set()
+    for line in agent_lines:
+        name = str(line.get("agent"))
+        if not line.get("unread") or name in loaded or name in stops or name in old:
+            continue
+        owner = line.get("key") or _at(here, float(line.get("at") or 0))[0]
+        if owner == task_key:
+            unread.add(name)
+        elif not owner:
+            unassigned.add(name)
+    if unassigned - unread:
+        parts[MAIN].notes.append(f"session {session[:SHORT]}: {len(unassigned - unread)} unread agent(s) stopped "
+                                 "without an active task; their usage could not be assigned")
     for name in sorted((set(stops) | set(old) | unread) - set(loaded) - {MAIN}):
         part = parts[name] = Sums()
         if name in old:                               # an earlier count read it: also when it gave nothing
@@ -848,8 +950,9 @@ def measure(root: Path, task_key: str, kept: dict[str, dict] | None = None, carr
             whole.merge(part)
         others = {whose for _when_, whose, _stage in here if whose and whose != task_key}
         if others:
-            whole.notes.append(f"session {session[:SHORT]} also worked on {len(others)} other task(s): each call of "
-                               "its main session counts for the task of the last step before it")
+            whole.notes.append(f"session {session[:SHORT]} also worked on {len(others)} other task(s). A direct Claude shell "
+                               "command naming one active task counts there. Other main calls use the last recorded "
+                               "step of the session")
         found.sessions[session], found.parts[session] = whole, parts
     return found
 
@@ -1007,6 +1110,16 @@ def table(root: Path, name: str) -> list[str]:
     rows = _rows(stats)
     said = _head(name, rows) if rows else [f"task {name} has a record, and no call of a model that Akasha could "
                                            "count yet"]
+    coverage = dict(stats["sessions"])
+    for session, sums in found.items():
+        if session not in coverage:
+            coverage[session] = sums.stats()
+    missing = sum(len(sums.get("unread") or []) for sums in coverage.values())
+    estimated = sum(int(sums.get("estimated_main") or 0) for sums in coverage.values())
+    if missing:
+        said[0] += f" {missing} unread source(s) excluded."
+    if estimated:
+        said[0] += f" {estimated} main call(s) assigned by time in a shared session."
     counts: dict[tuple[str, str], int] = {}
     for sums in stats["sessions"].values():
         for phase, who, many in sums.get("rounds") or []:

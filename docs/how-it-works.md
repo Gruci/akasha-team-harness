@@ -157,7 +157,7 @@ one looks only at what the change makes new, so a team turns a rule on in a repo
 | Check | It fails when |
 |:--|:--|
 | `proof` | A rule or a value of the preview has no test with its mark (`akasha: rule=<key>`, `akasha: value=<key>` in a comment of a test file) |
-| `scope` | The plan has no steps, a rule of the preview is in no step, or the task changes a file of code that no step names. A test, the sheet of an area, and the records need no step |
+| `scope` | The plan has no steps, a rule of the preview is in no step, or the task changes a file of code that no step names. A test, the sheet of an area, and the records need no step. A rule is its key in `- rules:`, with a comma between two keys: when a rule has no step, the check names each piece of those lines that it did not read as a key (`csv-filter;`). Akasha asks the first two before the review of the plan too (see "The notes between the steps") |
 | `map` | See "The map of the product" |
 | `ops` | A new line of a migration removes or renames a table or a column, two migrations have one number, a new line reads a setting that the file of the settings does not name, calls another system without a time limit, or catches an error and does nothing with it (`[ops]`) |
 | `size` | A function that the change makes or makes longer is over the limit (Python), a file over the limit grows, or the task changes more lines of code than the limit (`[size]`). A move of a file counts as no change |
@@ -186,6 +186,13 @@ the build. A machine examined what a machine can see; the reviewer judges the re
   review, and a merge of the default branch that only moves those lines does not.
 - The hook at the end of a subagent (`SubagentStop`) reads the mark and records it for that version. In Claude Code
   only the akasha-reviewer agent counts: a mark in the answer of another subagent does nothing.
+- An answer of the akasha-reviewer agent that records nothing (no mark, or a mark for another version) while a task
+  of the session waits for its review does not end the agent: the hook asks it once for its whole answer again, the
+  table and the mark. The hook names no digest: the reviewer names the version that it read. The two stops count as
+  one round of the review. Until a verdict of that version comes, `akasha status <task> --brief` has a line
+  `reviewer:` that tells why no review is recorded and what to ask the same agent, also when the agent ended a
+  second time without its mark. When several tasks waited and the answer named none, the line says that Akasha does
+  not know which task the agent read.
 - A PASS mark counts only when each item has a row that is PASS, or N/A where it may be. Else Akasha records CHANGES
   and the next step tells why. The whole answer goes into `review.md` (the plan) or `result.md` (the result) in the
   records, and the pull request shows the verdict, so each change keeps why it passed.
@@ -278,6 +285,10 @@ in the records of the task.
 - `akasha notes <task>` examines the part of the step that ends: each field is there (`none` for a field with
   nothing), each fact names a file with a line, and each `path:line` of the part is in the work copy. A reference to
   a file that is not there, or to a line after its end, fails. Akasha keeps the digest of the part that passed.
+- At the end of the step of the plan, `akasha notes <task>` also examines `plan.md`: it has steps, each step names
+  its files, and each rule of the preview is in a step. That is what the check `scope` asks of the plan alone, with
+  the same answer, so the worker repairs it in the context that wrote the plan. The status asks for no review of a
+  plan that fails it: a repair after the review changes the digest of the plan, and asks for the review again.
 - Akasha does not go on to the next step without the part: `akasha preview` shows no preview without the part
   Preview, no code changes without the part Plan (the gate of the build), and the status asks for the part Build
   before the review of the result. Akasha examines a part once, at the end of its step: the build moves the lines
@@ -341,8 +352,8 @@ step after it measured it.
   | `check-fix` | A failed check in the build | The checks pass |
   | `result` | The rounds of the reviewer of the result | Its verdict |
   | `result-fix` | A CHANGES of the review of the result | The next verdict of that review. A failed check in it stays in it |
-  | `land` | The review of the result passed, or the landing started | The merge |
-  | `land-fix` | The landing went back | The next landing |
+  | `land` | Akasha recorded the start of the landing | The merge, a new local full check, or a return to the build |
+  | `land-fix` | The landing went back, or the changed work was checked again during the landing | The next landing |
 
 - Claude Code writes each call of a model with its tokens into a transcript file: one for a session, and one for
   each subagent. Akasha adds what tells the tasks and the phases apart, in `.docs/state/usage.jsonl` on each
@@ -359,9 +370,12 @@ step after it measured it.
   phase is a part of the step that the worker ran (a build round in a `result-fix` is that repair); else it counts
   in its own step, for example a repair of the preview after the approval. The main session and another agent
   count in the phase of the task.
-- A main session works for no single task. Each of its calls belongs to the task that the last mark of that
-  session before it named: an event, or the start of a round of an agent. A session that works on two tasks gives
-  each call to the task of the last mark, and the table says so.
+- A quick task stays in the build after its change passes review and until its preview is shown. Passing a
+  review does not start the landing.
+- In a shared Claude session a direct Akasha shell command naming one active task counts for that task. Other
+  main calls use the last recorded task event or agent round. The total shows how many main calls used that
+  estimate and how many unread sources were excluded. An unread agent with no recorded owner is matched to the
+  task active at its stop. The table reports agents that stopped outside a task separately.
 - One answer can be in several files: a session that continues another one copies its answers, and an agent that
   starts with the talk of its session holds them too. It counts once, for the main session first.
 - `akasha usage <task>` shows the table: each phase, who, and model with its rounds, its calls, its tokens, and

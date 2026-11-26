@@ -522,7 +522,14 @@ def _run(agent: str, event: str, payload: dict, cwd: Path, tool: str, tool_input
         if usage.repeated(root, payload, agent):      # the same stop a second time: its review is recorded
             return 0
         judged: list[tuple[str, str]] = []            # the task and the review of each verdict of this stop
-        review.on_subagent_stop(root, payload, agent, judged)
+        stale: list[str] = []                         # the tasks whose mark named another version
+        review.on_subagent_stop(root, payload, agent, judged, stale)
+        again = review.unrecorded(root, payload, judged, stale) if agent == "claude" else ""
+        if again:
+            # The reviewer goes on, and its next stop counts this round and the answer after it as one: no line of
+            # the usage here, so that one review is one round
+            print(json.dumps({"decision": "block", "reason": again}, ensure_ascii=False))
+            return 0
         usage.on_subagent_stop(root, payload, agent, judged)
     if event == "Stop":
         return on_stop(root, payload)

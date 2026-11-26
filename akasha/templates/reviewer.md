@@ -80,7 +80,8 @@ mark: `PASS` when each item is PASS or N/A, else `CHANGES`. Use the digest of th
 mark for another version does not count. The digest of a plan holds `plan.md` and the preview (or the request); the
 digest of a result holds each line that the change adds and removes. Akasha keeps your whole answer in `review.md`
 (the plan) or `result.md` (the result) of the records, and counts a PASS mark only when each item has a row that is
-PASS (or N/A where it may be): a PASS mark without them counts as CHANGES.
+PASS (or N/A where it may be): a PASS mark without them counts as CHANGES. An answer without a mark, or with a mark
+for another version, records nothing: Akasha then asks you once for your whole answer again, the table and the mark.
 
 ## A review of a plan after a repair
 

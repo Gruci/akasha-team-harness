@@ -82,12 +82,15 @@ PLAN = """\
 
 <!-- The work in the order to build it. One step is small enough for one go. Akasha reads `files`, `rules`, and
      `tests` (the check `scope`): each file of code that the task changes is in a step, and each rule of the preview
-     is in a step. A test file needs no step. Nobody marks a step as done: Akasha sees it in the change.
+     is in a step. A test file needs no step. Nobody marks a step as done: Akasha sees it in the change. `rules`
+     holds only the keys of the rules of the preview that the step builds, with a comma between two: Akasha reads
+     no other piece of that line as a key (`csv-filter;` is none). `akasha notes` examines this at the end of the
+     step of the plan, before the review.
 
      ### S1 <what the step makes>
      - files: `path/of/file.py`, `path/of/other.py`
      - uses: `existing_name(arguments)` in path/of/it.py:44, and what it gives
-     - rules: the keys of the rules and the values of the preview that this step builds
+     - rules: csv-filter, csv-empty
      - tests: `path/of/test_file.py`, with the example of the preview as the expected value
      - done when: what shows that the step is complete -->
 

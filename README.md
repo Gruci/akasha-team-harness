@@ -240,7 +240,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
-| **v2.0.7** | Codex also moves to the version of the team by itself when a session starts: nobody types the pip line |
+| **v2.0.7** | Codex also moves to the version of the team by itself when a session starts: nobody types the pip line. A plan that is written wrong stops before its review, not after the build. A review that ends without its mark is asked for it once, and the status tells when no verdict came. Usage starts the landing phase at the recorded attempt and flags missing sources and time-based estimates in shared sessions |
 | **v2.0.6** | The work copy of a merged task leaves also when GitHub is slow, and a new stage is always told |
 | **v2.0.5** | A task shows how far it is and how long it still takes |
 | **v2.0.4** | A task shows the tokens of each phase and of each repair |

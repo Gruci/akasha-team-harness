@@ -28,6 +28,10 @@ Akasha does not go on to the next step without it: `akasha preview` shows no pre
 code changes without the part Plan (flow.gate). Akasha examines a part once, at the end of its step: the build moves
 the lines that the part Plan names, and that stops nothing.
 
+The step of the plan ends with a plan that its review can read: `akasha notes` examines there what the check `scope`
+asks of the plan alone (steps.unready), in the context that wrote the plan. After the review, a repair of the way
+the plan is written would change its digest, and ask for the review again.
+
 The reviewer never reads the notes: they hold what the worker believes, and a mistake of the worker must not reach
 the review through them. The reviewer reads the code itself.
 
@@ -40,8 +44,8 @@ import hashlib
 import re
 from pathlib import Path
 
-from akasha import review
-from akasha.task import Task, load, record, records, save
+from akasha import review, steps
+from akasha.task import PLAN, Task, load, record, records, save
 
 NOTES = "notes.md"
 PARTS = ("preview", "plan", "build")             # in the order of the steps
@@ -240,6 +244,11 @@ def examine(root: Path, task_id: str) -> str:
         return (f"Task {task.id} keeps no notes between its steps"
                 + (": a quick task has no steps." if task.kind == "quick" else "."))
     path, tree, step = record(task, NOTES), Path(task.workcopy), now(task)
+    if step == "plan":                                # the step ends with a plan that its review can read
+        stops = steps.unready(task)
+        if stops:
+            raise ValueError(f"the plan is not ready for its review: {stops.replace(chr(10), '; ')}. Repair "
+                             f"{record(task, PLAN)}, and run `akasha notes {task.id}` again")
     try:
         found = read(path.read_text(encoding="utf-8", errors="replace"))
     except OSError:
