@@ -109,8 +109,9 @@ def _uses_akasha(root: Path, branch: str) -> bool:
 
 
 def _team_lines(root: Path, folder: Path | None = None, agent: str = "claude") -> list[str]:
-    """The guides of the team, and the version of Akasha that it fixes. In Claude Code a computer that runs
-    another version updates its plugin by itself (version.start_update): the person only restarts the session."""
+    """The guides of the team, and the version of Akasha that it fixes. A computer that runs another version
+    moves to it by itself: Claude Code updates its plugin (version.start_update), and the person restarts the session;
+    Codex installs the package with pip (version.start_install), and the next hook runs it."""
     try:
         team = flow.rules(root)
     except config.ConfigError as error:
@@ -121,7 +122,8 @@ def _team_lines(root: Path, folder: Path | None = None, agent: str = "claude") -
     # No map at the start of a session: the first one takes seconds. `akasha start` shows the map of its scope
     lines.append("[AKASHA] Before new code: `akasha find <words>` searches the names and the descriptions of the "
                  "code that the repository has, and `akasha map <folder>` shows each public name of a folder.")
-    started = version.start_update(root, folder or root, team.version) if agent == "claude" else ""
+    started = version.start_update(root, folder or root, team.version) if agent == "claude" else \
+        version.start_install(root, team.version) if agent == "codex" else ""
     differs = started or version.mismatch(team.version, root=root) or version.other_patch(team.version, root=root)
     if differs:
         lines.append(f"[AKASHA] {differs} Tell the person.")

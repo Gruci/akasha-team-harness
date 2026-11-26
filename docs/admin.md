@@ -139,8 +139,10 @@ rules, or update Akasha"). The committed `.claude/settings.json` turns the plugi
 team (its `ready` command, else its program).
 
 Codex needs Akasha as a package in the Python of its hooks: on Windows
-`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.6"`, elsewhere `python3 -m pip install …`.
-Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere.
+`py -3 -m pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.7"`, elsewhere `python3 -m pip install …`.
+Codex runs Akasha as `py -3 -X utf8 -m akasha` on Windows and `python3 -m akasha` elsewhere. This install is the
+only one by hand: from Akasha 2.0.7 on, a session start of Codex installs the version of the team by itself (see
+"Change the rules, or update Akasha").
 
 ## Agent accounts
 
@@ -185,12 +187,13 @@ also of an administrator, starts no task, takes over no task, and hands no task 
 another patch runs the same rules, so nothing stops: the session start notice tells the one command that moves the
 computer, and `akasha doctor` fails until it ran.
 
-No computer takes a new Akasha by itself. `akasha setup` writes the version into two files beside `akasha.toml`:
+No computer takes a version that the team did not fix. `akasha setup` writes the version into two files beside
+`akasha.toml`:
 
 | File | What it names | Who reads it |
 |:--|:--|:--|
 | `.github/akasha/.claude-plugin/marketplace.json` | The release tag of the version, as the source of the plugin | Claude Code, on each computer |
-| `AGENTS.md` | The pip line with the tag (`@v2.0.6`) | Codex |
+| `AGENTS.md` | The pip line with the tag (`@v2.0.7`) | Codex |
 
 The workflows name no version: their install step reads `[team] version` of the checkout when it runs. The shared
 settings and `CLAUDE.md` name none either.
@@ -210,7 +213,12 @@ takes the version that the file names, newer or older. Without a change of the f
    Code updates the plugin by itself: it runs `claude plugin update akasha@akasha` in the background for the folder
    of the session and for the person, and tells the person to restart the session. Claude Code keeps one install
    for each folder, also for each work copy of a task, so a session that starts in another folder updates that one
-   too. An older Akasha says to run `/plugin update akasha@akasha` and restart the agent app. Codex:
+   too. An older Akasha says to run `/plugin update akasha@akasha` and restart the agent app. From Akasha 2.0.7 on, the
+   next session start of Codex installs the version too: it runs `pip install` of the release tag in the background,
+   into the Python of the hooks, with `--user` when Akasha is in the folder of the person. Codex starts that Python
+   for each hook and each command, so the next one runs the new version, without a restart. What pip said is in
+   `.docs/state/pip-install.log`. Akasha does not replace a checkout or an install in edit mode. A computer that runs
+   an Akasha before 2.0.7 in Codex runs the pip line once by hand:
    `pip install "git+https://github.com/Gruci/akasha-team-harness@v<version>"`.
 5. When `akasha doctor` of the new version names old server rules, or the agent instructions changed in the new
    version, run `akasha setup` again in a task.

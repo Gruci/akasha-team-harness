@@ -10,7 +10,7 @@ When people who don't code build with AI on their own, the product drifts:<br>
 odd results, and changes nobody asked for.<br>
 With Akasha, each person approves one preview, and only that gets built, under your team's rules.
 
-<img src="https://img.shields.io/badge/version-2.0.6-7c3aed" alt="Version 2.0.6">
+<img src="https://img.shields.io/badge/version-2.0.7-7c3aed" alt="Version 2.0.7">
 <a href="#license"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white" alt="Python 3.11 or later">
 <img src="https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex-111827" alt="Engines: Claude Code and Codex">
@@ -73,8 +73,8 @@ Approve it in your own words, in any language, or tell what to change.<br>
 The AI does the rest, and tells you when the change is merged and when it is live.
 
 > **NOTE:** Python 3.11 or later (the hooks find it as `py -3`, `python3`, or `python`), git, GitHub, and the GitHub
-> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.6"` in that Python
-> (on Windows `py -3 -m pip install …`).
+> CLI `gh`. Codex also needs `pip install "git+https://github.com/Gruci/akasha-team-harness@v2.0.7"` in that Python
+> once (on Windows `py -3 -m pip install …`). After that a session start of Codex installs the version of the team by itself.
 
 * * *
 
@@ -240,6 +240,7 @@ person can tune the harness freely.
 
 | Version | Changes |
 |:--|:--|
+| **v2.0.7** | Codex also moves to the version of the team by itself when a session starts: nobody types the pip line |
 | **v2.0.6** | The work copy of a merged task leaves also when GitHub is slow, and a new stage is always told |
 | **v2.0.5** | A task shows how far it is and how long it still takes |
 | **v2.0.4** | A task shows the tokens of each phase and of each repair |

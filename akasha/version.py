@@ -7,7 +7,9 @@ runs other rules than the server. The team fixes the version for the computers t
 Python: the marketplace file of the repository (claude.py) names the release tag of that version, and nothing moves a
 computer without a change of that file. After the change, one command of Claude Code moves a computer: `/plugin update
 akasha@akasha`, and a session start of Claude Code runs it by itself (start_update): the person restarts the session.
-A computer that runs another patch is told, and nothing stops. Without the setting, nothing is
+Codex runs Akasha as a package of the Python of its hooks, and a session start of Codex installs the version of the team
+there by itself with pip (start_install): each hook starts that Python again, so the next one runs it, without a
+restart. A computer that runs another patch is told, and nothing stops. Without the setting, nothing is
 compared."""
 
 from __future__ import annotations
@@ -15,9 +17,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import site
 import subprocess
 import sys
 import time
+from importlib import metadata
 from pathlib import Path
 
 from akasha import REPOSITORY, VERSION, claude, repo, source
@@ -41,6 +45,11 @@ UPDATER = ("import subprocess, sys\n"
            "for scope in ('project', 'user'):\n"
            "    subprocess.run([sys.argv[1], 'plugin', 'update', 'akasha@akasha', '--scope', scope], cwd=sys.argv[2], "
            "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)\n")
+# The same for Codex: when this computer last started pip by itself, and what pip said, for the person who asks why
+# the computer still runs the old version
+INSTALLED = STATE_DIR / "pip-install.json"
+INSTALL_LOG = STATE_DIR / "pip-install.log"
+DISTRIBUTION = "akasha-team-harness"         # the name of the package of Akasha for pip
 
 
 def number(text: str) -> tuple[int, ...]:
@@ -158,6 +167,33 @@ def server_problem(wanted: tuple[str, ...], running: str = VERSION) -> str:
             f"runs `akasha setup` with Akasha {wanted[-1]} in a task when the workflows still name a version.")
 
 
+def _due(path: Path, record: dict) -> bool:
+    """True when this computer did not start the same update in the last minutes: a second session start does not
+    start it again. It keeps `record` with the time when it is due."""
+    try:
+        last = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        last = {}
+    if isinstance(last, dict) and all(last.get(key) == value for key, value in record.items()) \
+            and time.time() - float(last.get("at") or 0) < AGAIN_AFTER:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({**record, "at": time.time()}), encoding="utf-8")
+    return True
+
+
+def _launch(command: list[str], folder: Path, output=subprocess.DEVNULL) -> bool:
+    """Start `command` in the background, apart from the hook: the hook ends at once, and the command goes on."""
+    flags = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} \
+        if os.name == "nt" else {"start_new_session": True}
+    try:
+        subprocess.Popen(command, cwd=folder, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+                         **flags)
+    except OSError:
+        return False
+    return True
+
+
 def start_update(root: Path, folder: Path, wanted: str, running: str = VERSION) -> str:
     """Move this computer to the version of the team by itself: start `claude plugin update` in the background, for
     the folder of the session and for the person, when this computer runs another version, follows the folder of
@@ -170,23 +206,60 @@ def start_update(root: Path, folder: Path, wanted: str, running: str = VERSION) 
     found = shutil.which("claude")
     if not found:
         return ""
-    path = root / STARTED
-    try:
-        last = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        last = {}
     place = str(folder)
-    if not (isinstance(last, dict) and last.get("version") == wanted and last.get("folder") == place
-            and time.time() - float(last.get("at") or 0) < AGAIN_AFTER):
-        flags = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} \
-            if os.name == "nt" else {"start_new_session": True}
-        try:
-            subprocess.Popen([sys.executable, "-c", UPDATER, found, place], cwd=place, stdin=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **flags)
-        except OSError:
-            return ""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"version": wanted, "folder": place, "at": time.time()}), encoding="utf-8")
+    if _due(root / STARTED, {"version": wanted, "folder": place}) \
+            and not _launch([sys.executable, "-c", UPDATER, found, place], folder):
+        (root / STARTED).unlink(missing_ok=True)
+        return ""
     return (f"This computer runs Akasha {running}, and the team fixes {wanted}. Akasha updates the plugin of this "
             f"folder to {wanted} in the background (`claude plugin update akasha@akasha`): after a restart of the "
             "session in a minute, it runs the version of the team.")
+
+
+def _pip_package() -> list[str] | None:
+    """The options of pip for the package of Akasha that runs here, or None when pip did not install this Akasha: a
+    plugin folder of Claude Code, a checkout of a developer, an install in edit mode. pip must not replace those.
+    `--user` when the package is in the folder of the person: the folder of the Python can need an administrator."""
+    try:
+        found = metadata.distribution(DISTRIBUTION)
+        direct = json.loads(found.read_text("direct_url.json") or "{}")
+    except (metadata.PackageNotFoundError, ValueError):
+        return None
+    if not (found.read_text("INSTALLER") or "").strip():     # the metadata of a build in a checkout, not an install
+        return None
+    if isinstance(direct, dict) and (direct.get("dir_info") or {}).get("editable"):
+        return None
+    here = Path(__file__).resolve().parent
+    if Path(str(found.locate_file("akasha/__init__.py"))).resolve().parent != here:
+        return None
+    user = site.ENABLE_USER_SITE and here.is_relative_to(Path(site.getusersitepackages()).resolve())
+    return ["--user"] if user else []
+
+
+def start_install(root: Path, wanted: str, running: str = VERSION) -> str:
+    """Move this computer to the version of the team by itself in Codex: start `pip install` of the release tag in
+    the background, into the Python that runs the hooks, when this computer runs another version and pip installed
+    this Akasha. Codex starts that Python again for each hook and each command, so the next one runs the version of
+    the team, without a restart. The line for the session start notice, or "" when Akasha did not start it (then
+    `other_patch` and `mismatch` tell the command)."""
+    if not wanted or wanted == running or os.environ.get(SWITCH, "").lower() == "off":
+        return ""
+    options = _pip_package()
+    if options is None:
+        return ""
+    command = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-input", *options,
+               source(wanted)]
+    log = root / INSTALL_LOG
+    if _due(root / INSTALLED, {"version": wanted, "python": sys.executable}):
+        try:
+            with log.open("w", encoding="utf-8") as output:
+                started = _launch(command, root, output)
+        except OSError:
+            started = False
+        if not started:
+            (root / INSTALLED).unlink(missing_ok=True)
+            return ""
+    return (f"This computer runs Akasha {running}, and the team fixes {wanted}. Akasha installs {wanted} into the "
+            f'Python of the hooks in the background (`pip install "{source(wanted)}"`): in a minute or two each hook '
+            f"and each command of Akasha runs the version of the team, without a restart. When it still runs "
+            f"{running} after that, pip failed: see {INSTALL_LOG.as_posix()}.")
